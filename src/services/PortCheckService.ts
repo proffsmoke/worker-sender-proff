@@ -1,9 +1,8 @@
-// src/services/PortCheckService.ts
 import net from 'net';
 import logger from '../utils/logger';
 
 class PortCheckService {
-  async checkPort25(ip: string): Promise<boolean> {
+  async checkPort(ip: string, port: number): Promise<boolean> {
     return new Promise((resolve) => {
       const socket = new net.Socket();
       socket.setTimeout(5000);
@@ -15,14 +14,19 @@ class PortCheckService {
         resolve(false);
       }).on('error', () => {
         resolve(false);
-      }).connect(25, ip);
+      }).connect(port, ip);
     });
   }
 
-  async verifyPort25(ip: string): Promise<boolean> {
-    const isOpen = await this.checkPort25(ip);
-    logger.info(`Verificação de porta 25 para IP ${ip}: ${isOpen ? 'ABERTA' : 'FECHADA'}`);
-    return isOpen;
+  async verifyPort(ip: string = '0.0.0.0', ports: number[]): Promise<number | null> {
+    for (const port of ports) {
+      if (await this.checkPort(ip, port)) {
+        logger.info(`Verificação de porta ${port} para IP ${ip}: ABERTA`);
+        return port;
+      }
+    }
+    logger.warn(`Nenhuma porta disponível para IP ${ip}`);
+    return null;
   }
 }
 
