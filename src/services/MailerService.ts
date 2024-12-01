@@ -1,4 +1,3 @@
-// src/services/MailerService.ts
 import PortCheckService from './PortCheckService';
 import logger from '../utils/logger';
 import config from '../config';
@@ -25,15 +24,17 @@ class MailerService {
 
   async checkPortAndUpdateStatus() {
     if (this.isBlockedPermanently) {
-      logger.info('Mailer está permanentemente bloqueado. Não será verificada novamente a porta 25.');
+      logger.info('Mailer está permanentemente bloqueado. Não será verificada novamente a porta.');
       return;
     }
 
-    const portStatus = await PortCheckService.verifyPort25('127.0.0.1');
-    if (!portStatus && !this.isBlocked) {
+    const openPort = await PortCheckService.verifyPort('0.0.0.0', [25, 587, 465]); // Verifica múltiplas portas
+    if (!openPort && !this.isBlocked) {
       this.blockMailer('blocked_permanently'); // Bloqueio permanente
+      logger.warn('Nenhuma porta disponível. Mailer bloqueado permanentemente.');
+    } else if (openPort) {
+      logger.info(`Porta ${openPort} aberta. Mailer funcionando normalmente.`);
     }
-    // Não recheck se já está bloqueado
   }
 
   isMailerBlocked(): boolean {

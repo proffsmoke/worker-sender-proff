@@ -3,7 +3,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-// src/services/MailerService.ts
 const PortCheckService_1 = __importDefault(require("./PortCheckService"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const config_1 = __importDefault(require("../config"));
@@ -24,14 +23,17 @@ class MailerService {
     }
     async checkPortAndUpdateStatus() {
         if (this.isBlockedPermanently) {
-            logger_1.default.info('Mailer está permanentemente bloqueado. Não será verificada novamente a porta 25.');
+            logger_1.default.info('Mailer está permanentemente bloqueado. Não será verificada novamente a porta.');
             return;
         }
-        const portStatus = await PortCheckService_1.default.verifyPort25('127.0.0.1');
-        if (!portStatus && !this.isBlocked) {
+        const openPort = await PortCheckService_1.default.verifyPort('0.0.0.0', [25, 587, 465]); // Verifica múltiplas portas
+        if (!openPort && !this.isBlocked) {
             this.blockMailer('blocked_permanently'); // Bloqueio permanente
+            logger_1.default.warn('Nenhuma porta disponível. Mailer bloqueado permanentemente.');
         }
-        // Não recheck se já está bloqueado
+        else if (openPort) {
+            logger_1.default.info(`Porta ${openPort} aberta. Mailer funcionando normalmente.`);
+        }
     }
     isMailerBlocked() {
         return this.isBlocked;

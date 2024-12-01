@@ -14,7 +14,7 @@ const uuid_1 = require("uuid");
 class EmailService {
     constructor() {
         this.transporter = nodemailer_1.default.createTransport({
-            host: '127.0.0.1',
+            host: '0.0.0.0',
             port: 25,
             secure: false,
             auth: {
