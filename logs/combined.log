@@ -1,0 +1,138 @@
+{"level":"info","message":"Servidor rodando na porta 7777","timestamp":"2024-12-01T21:58:04.201Z"}
+{"address":"127.0.0.1","code":"ESOCKET","command":"CONN","errno":-61,"level":"error","message":"Erro ao verificar transportador SMTP: connect ECONNREFUSED 127.0.0.1:25","port":25,"stack":"Error: connect ECONNREFUSED 127.0.0.1:25\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1615:16)","syscall":"connect","timestamp":"2024-12-01T21:58:04.219Z"}
+{"level":"info","message":"Conectado ao MongoDB","timestamp":"2024-12-01T21:58:04.247Z"}
+{"level":"warn","message":"Nenhum mailer com IP \"127.0.0.1\" encontrado para enviar email de teste.","timestamp":"2024-12-01T21:58:04.260Z"}
+{"level":"warn","message":"Nenhum mailer com IP \"127.0.0.1\" encontrado para verificar a porta.","timestamp":"2024-12-01T21:58:24.272Z"}
+{"level":"warn","message":"Nenhum mailer com IP \"127.0.0.1\" encontrado para verificar a porta.","timestamp":"2024-12-01T21:58:44.272Z"}
+{"level":"warn","message":"Nenhum mailer com IP \"127.0.0.1\" encontrado para verificar a porta.","timestamp":"2024-12-01T21:59:04.275Z"}
+{"level":"warn","message":"Nenhum mailer com IP \"127.0.0.1\" encontrado para verificar a porta.","timestamp":"2024-12-01T21:59:24.277Z"}
+{"level":"warn","message":"Nenhum mailer com IP \"127.0.0.1\" encontrado para verificar a porta.","timestamp":"2024-12-01T21:59:44.275Z"}
+{"level":"warn","message":"Nenhum mailer com IP \"127.0.0.1\" encontrado para verificar a porta.","timestamp":"2024-12-01T22:00:04.277Z"}
+{"level":"warn","message":"Nenhum mailer com IP \"127.0.0.1\" encontrado para verificar a porta.","timestamp":"2024-12-01T22:00:24.292Z"}
+{"level":"warn","message":"Nenhum mailer com IP \"127.0.0.1\" encontrado para verificar a porta.","timestamp":"2024-12-01T22:00:44.281Z"}
+{"level":"warn","message":"Nenhum mailer com IP \"127.0.0.1\" encontrado para verificar a porta.","timestamp":"2024-12-01T22:01:04.290Z"}
+2024-12-01T22:09:57.809Z [INFO]: Servidor rodando na porta 7777 
+2024-12-01T22:09:57.818Z [ERROR]: Erro ao verificar transportador SMTP: connect ECONNREFUSED 127.0.0.1:25 {"errno":-61,"code":"ESOCKET","syscall":"connect","address":"127.0.0.1","port":25,"command":"CONN","stack":"Error: connect ECONNREFUSED 127.0.0.1:25\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1615:16)"}
+2024-12-01T22:09:57.833Z [INFO]: Conectado ao MongoDB 
+2024-12-01T22:09:57.843Z [WARN]: Nenhum mailer com IP "127.0.0.1" encontrado para enviar email de teste. {"ip":"127.0.0.1","status":"no_mailer_found"}
+2024-12-01T22:19:28.182Z [INFO]: Servidor rodando na porta 7777 
+2024-12-01T22:19:28.187Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:19:28.188Z [WARN]: Mailer bloqueado devido à porta 25 fechada. 
+2024-12-01T22:19:28.193Z [ERROR]: Erro ao verificar transportador SMTP: connect ECONNREFUSED 127.0.0.1:25 {"errno":-61,"code":"ESOCKET","syscall":"connect","address":"127.0.0.1","port":25,"command":"CONN","stack":"Error: connect ECONNREFUSED 127.0.0.1:25\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1615:16)"}
+2024-12-01T22:19:28.216Z [INFO]: Conectado ao MongoDB 
+2024-12-01T22:19:48.196Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:20:08.195Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:20:28.194Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:20:48.195Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:21:08.198Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:21:28.202Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:21:48.200Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:22:08.035Z [INFO]: Servidor rodando na porta 7777 
+2024-12-01T22:22:08.060Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:22:08.062Z [WARN]: Mailer bloqueado devido à porta 25 fechada. 
+2024-12-01T22:22:08.091Z [ERROR]: Erro ao verificar transportador SMTP: connect ECONNREFUSED 127.0.0.1:25 {"errno":-61,"code":"ESOCKET","syscall":"connect","address":"127.0.0.1","port":25,"command":"CONN","stack":"Error: connect ECONNREFUSED 127.0.0.1:25\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1615:16)"}
+2024-12-01T22:22:08.104Z [INFO]: Conectado ao MongoDB 
+2024-12-01T22:22:28.067Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:22:48.068Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:23:08.069Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:26:03.410Z [INFO]: Servidor rodando na porta 7777 
+2024-12-01T22:26:03.415Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:26:03.415Z [WARN]: Mailer bloqueado devido à porta 25 fechada. 
+2024-12-01T22:26:03.425Z [ERROR]: Erro ao verificar transportador SMTP: connect ECONNREFUSED 127.0.0.1:25 {"errno":-61,"code":"ESOCKET","syscall":"connect","address":"127.0.0.1","port":25,"command":"CONN","stack":"Error: connect ECONNREFUSED 127.0.0.1:25\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1615:16)"}
+2024-12-01T22:26:03.449Z [INFO]: Conectado ao MongoDB 
+2024-12-01T22:26:23.419Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:26:43.423Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:27:03.423Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:27:23.422Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:27:43.422Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:28:03.436Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:28:23.428Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:28:43.434Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:29:03.430Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:29:23.431Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:29:43.447Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:30:03.443Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:30:23.444Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:30:43.446Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:31:03.444Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:31:23.448Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:31:43.449Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:32:03.450Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:32:23.449Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:32:38.203Z [INFO]: Servidor rodando na porta 7777 
+2024-12-01T22:32:38.210Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:32:38.210Z [WARN]: Mailer bloqueado devido à porta 25 fechada. 
+2024-12-01T22:32:38.215Z [ERROR]: Erro ao verificar transportador SMTP: connect ECONNREFUSED 127.0.0.1:25 {"errno":-61,"code":"ESOCKET","syscall":"connect","address":"127.0.0.1","port":25,"command":"CONN","stack":"Error: connect ECONNREFUSED 127.0.0.1:25\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1615:16)"}
+2024-12-01T22:32:38.220Z [INFO]: Conectado ao MongoDB 
+2024-12-01T22:32:54.777Z [INFO]: Servidor rodando na porta 7777 
+2024-12-01T22:32:54.780Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:32:54.780Z [WARN]: Mailer bloqueado devido à porta 25 fechada. 
+2024-12-01T22:32:54.785Z [ERROR]: Erro ao verificar transportador SMTP: connect ECONNREFUSED 127.0.0.1:25 {"errno":-61,"code":"ESOCKET","syscall":"connect","address":"127.0.0.1","port":25,"command":"CONN","stack":"Error: connect ECONNREFUSED 127.0.0.1:25\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1615:16)"}
+2024-12-01T22:32:54.818Z [INFO]: Conectado ao MongoDB 
+2024-12-01T22:33:14.784Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:33:34.785Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:33:54.787Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:34:14.789Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:34:34.790Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:34:54.791Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:35:14.789Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:35:34.792Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:35:54.792Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:36:14.794Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:36:34.795Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:36:54.794Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:37:14.794Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:37:24.846Z [INFO]: Servidor rodando na porta 7777 
+2024-12-01T22:37:24.850Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:37:24.850Z [WARN]: Mailer bloqueado devido à porta 25 fechada. 
+2024-12-01T22:37:24.854Z [ERROR]: Erro ao verificar transportador SMTP: connect ECONNREFUSED 127.0.0.1:25 {"errno":-61,"code":"ESOCKET","syscall":"connect","address":"127.0.0.1","port":25,"command":"CONN","stack":"Error: connect ECONNREFUSED 127.0.0.1:25\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1615:16)"}
+2024-12-01T22:37:24.860Z [INFO]: Conectado ao MongoDB 
+2024-12-01T22:37:44.860Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:38:04.857Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:39:21.259Z [INFO]: Servidor rodando na porta 7777 
+2024-12-01T22:39:21.264Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:39:21.264Z [WARN]: Mailer bloqueado devido à porta 25 fechada. 
+2024-12-01T22:39:21.269Z [ERROR]: Erro ao verificar transportador SMTP: connect ECONNREFUSED 127.0.0.1:25 {"errno":-61,"code":"ESOCKET","syscall":"connect","address":"127.0.0.1","port":25,"command":"CONN","stack":"Error: connect ECONNREFUSED 127.0.0.1:25\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1615:16)"}
+2024-12-01T22:39:21.284Z [INFO]: Conectado ao MongoDB 
+2024-12-01T22:39:22.616Z [ERROR]: Erro ao enviar email normal: Cannot read properties of undefined (reading 'load') 
+2024-12-01T22:39:41.269Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:40:01.272Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:40:21.274Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:40:41.273Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:41:01.277Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:41:21.275Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:41:41.277Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:42:01.279Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:42:21.278Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:42:41.334Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:43:01.287Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:43:21.286Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:43:41.287Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:44:01.289Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:44:06.613Z [INFO]: Servidor rodando na porta 7777 
+2024-12-01T22:44:06.617Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:44:06.617Z [WARN]: Mailer bloqueado devido à porta 25 fechada. 
+2024-12-01T22:44:06.621Z [ERROR]: Erro ao verificar transportador SMTP: {"error":{"errno":-61,"code":"ESOCKET","syscall":"connect","address":"127.0.0.1","port":25,"command":"CONN"}}
+2024-12-01T22:44:06.640Z [INFO]: Conectado ao MongoDB 
+2024-12-01T22:44:15.553Z [ERROR]: Erro ao enviar email normal para recipient@example.com: Cannot read properties of undefined (reading 'load') {"subject":"Teste de envio","html":"<h1>Este é um teste</h1><p>Email enviado pelo sistema.</p>","stack":"TypeError: Cannot read properties of undefined (reading 'load')\n    at antiSpam (/Users/proff/Documents/node/sender-worker-proff/dist/utils/antiSpam.js:30:33)\n    at sendNormal (/Users/proff/Documents/node/sender-worker-proff/dist/controllers/EmailController.js:18:58)\n    at /Users/proff/Documents/node/sender-worker-proff/dist/utils/asyncHandler.js:5:25\n    at Layer.handle [as handle_request] (/Users/proff/Documents/node/sender-worker-proff/node_modules/express/lib/router/layer.js:95:5)\n    at next (/Users/proff/Documents/node/sender-worker-proff/node_modules/express/lib/router/route.js:149:13)\n    at Route.dispatch (/Users/proff/Documents/node/sender-worker-proff/node_modules/express/lib/router/route.js:119:3)\n    at Layer.handle [as handle_request] (/Users/proff/Documents/node/sender-worker-proff/node_modules/express/lib/router/layer.js:95:5)\n    at /Users/proff/Documents/node/sender-worker-proff/node_modules/express/lib/router/index.js:284:15\n    at Function.process_params (/Users/proff/Documents/node/sender-worker-proff/node_modules/express/lib/router/index.js:346:12)\n    at next (/Users/proff/Documents/node/sender-worker-proff/node_modules/express/lib/router/index.js:280:10)"}
+2024-12-01T22:44:26.623Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:44:46.623Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:47:12.928Z [INFO]: Servidor rodando na porta 7777 
+2024-12-01T22:47:12.931Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:47:12.932Z [WARN]: Mailer bloqueado devido à porta 25 fechada. 
+2024-12-01T22:47:12.934Z [ERROR]: Erro ao verificar transportador SMTP: {"error":{"errno":-61,"code":"ESOCKET","syscall":"connect","address":"127.0.0.1","port":25,"command":"CONN"}}
+2024-12-01T22:47:12.951Z [INFO]: Conectado ao MongoDB 
+2024-12-01T22:47:32.935Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:47:52.936Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:48:12.936Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:48:18.193Z [WARN]: Tentativa de envio bloqueada para recipient@example.com: Mailer está bloqueado. Não é possível enviar emails no momento. {"to":"recipient@example.com","subject":"Teste de envio"}
+2024-12-01T22:48:32.937Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:48:52.943Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:49:12.938Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:49:32.942Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:49:37.786Z [INFO]: Servidor rodando na porta 7777 
+2024-12-01T22:49:37.789Z [INFO]: Verificação de porta 25 para IP 127.0.0.1: FECHADA 
+2024-12-01T22:49:37.789Z [WARN]: Mailer bloqueado com status: blocked_permanently 
+2024-12-01T22:49:37.795Z [ERROR]: Erro ao verificar transportador SMTP: {"error":{"errno":-61,"code":"ESOCKET","syscall":"connect","address":"127.0.0.1","port":25,"command":"CONN"}}
+2024-12-01T22:49:37.801Z [INFO]: Conectado ao MongoDB 
+2024-12-01T22:49:49.301Z [WARN]: Tentativa de envio bloqueada para recipient@example.com: Mailer está bloqueado. Não é possível enviar emails no momento. {"to":"recipient@example.com","subject":"Teste de envio"}
