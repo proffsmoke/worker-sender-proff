@@ -20,31 +20,30 @@ class EmailService {
     async sendEmail(params) {
         const { fromName, emailDomain, to, bcc, subject, html, uuid } = params;
         const from = `"${fromName}" <no-reply@${emailDomain}>`;
+        const recipients = Array.isArray(to) ? to : [to];
+        const allRecipients = [...recipients, ...(bcc || [])];
         try {
-            // Start monitoring logs
             this.logParser.startMonitoring();
-            const mailOptions = { from, to, bcc, subject, html };
-            const recipients = Array.isArray(to) ? to : [to];
+            const mailOptions = { from, to: recipients.join(', '), bcc, subject, html };
             const info = await this.transporter.sendMail(mailOptions);
             logger_1.default.info(`Email enviado: ${JSON.stringify(mailOptions)}`);
             logger_1.default.debug(`Resposta do servidor SMTP: ${info.response}`);
-            // Extract Queue ID from SMTP response
             const queueIdMatch = info.response.match(/queued as (\S+)/i);
             const queueId = queueIdMatch ? queueIdMatch[1] : null;
             if (!queueId) {
                 throw new Error('Queue ID não encontrado na resposta SMTP.');
             }
             logger_1.default.info(`Queue ID capturado diretamente: ${queueId}`);
-            // Wait for log monitoring to complete for the captured queue ID
-            await Promise.all(recipients.map(async (recipient) => {
-                const status = await this.logParser.waitForQueueId(queueId);
-                // Save the log for each recipient
+            const results = await Promise.all(allRecipients.map(async (recipient) => {
+                const logStatus = await this.logParser.waitForQueueId(queueId);
+                // Ensure logStatus is a string before comparing
+                const success = typeof logStatus === 'string' && logStatus === 'sent';
                 const emailLog = new EmailLog_1.default({
                     mailId: uuid,
                     sendmailQueueId: queueId,
                     email: recipient,
-                    message: `Status atualizado: ${status ? 'sent' : 'failed'}`,
-                    success: status,
+                    message: `Status: ${success ? 'Enviado' : 'Falha'}`,
+                    success,
                     detail: {
                         queueId,
                         rawResponse: info.response,
@@ -52,20 +51,22 @@ class EmailService {
                     },
                 });
                 await emailLog.save();
-                return {
-                    recipient,
-                    success: status,
-                };
+                return { recipient, success };
             }));
-            logger_1.default.info(`Resultado do envio: MailID: ${uuid}, QueueID: ${queueId}, Recipients: ${JSON.stringify(recipients)}`);
+            logger_1.default.info(`Resultado do envio: MailID: ${uuid}, QueueID: ${queueId}, Recipients: ${JSON.stringify(results)}`);
             return {
                 mailId: uuid,
                 queueId,
-                recipients: recipients.map((recipient) => ({ recipient, success: true })),
+                recipients: results,
             };
         }
         catch (error) {
-            // logger.error(`Erro ao enviar e-mail: ${error.message}`, { stack: error.stack });
+            if (error instanceof Error) {
+                logger_1.default.error(`Erro ao enviar e-mail: ${error.message}`, { stack: error.stack });
+            }
+            else {
+                logger_1.default.error(`Erro desconhecido ao enviar e-mail: ${JSON.stringify(error)}`);
+            }
             throw error;
         }
         finally {
