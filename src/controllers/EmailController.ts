@@ -1,18 +1,18 @@
-// src/controllers/EmailController.ts
-
 import { Request, Response, NextFunction } from 'express';
 import EmailService from '../services/EmailService';
 import logger from '../utils/logger';
 import antiSpam from '../utils/antiSpam';
 
 class EmailController {
-    // Rota para envio normal
+    // Envio normal
     async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void> {
-        const { fromName, emailDomain, to, subject, html } = req.body;
+        const { fromName, emailDomain, to, subject, html, uuid } = req.body;
 
-        // Validação dos parâmetros obrigatórios
-        if (!fromName || !emailDomain || !to || !subject || !html) {
-            res.status(400).json({ success: false, message: 'Dados inválidos. "fromName", "emailDomain", "to", "subject" e "html" são obrigatórios.' });
+        if (!fromName || !emailDomain || !to || !subject || !html || !uuid) {
+            res.status(400).json({
+                success: false,
+                message: 'Dados inválidos. "fromName", "emailDomain", "to", "subject", "html" e "uuid" são obrigatórios.',
+            });
             return;
         }
 
@@ -25,25 +25,34 @@ class EmailController {
                 bcc: [],
                 subject,
                 html: processedHtml,
+                uuid,
             });
-            console.log('Resultado de envio normal:', result);
-            res.json({ success: true, status: 'queued' }); // Retorna "queued" imediatamente
-        }
-        catch (error: unknown) {
-            if (error instanceof Error) {
-                logger.error(`Erro ao enviar email normal para ${to}: ${error.message}`, { subject, html, stack: error.stack });
-            }
+            res.json({ success: true, status: result });
+        } catch (error) {
+            logger.error(`Erro ao enviar email normal:`, error);
             res.status(500).json({ success: false, message: 'Erro ao enviar email.' });
         }
     }
 
-    // Rota para envio em massa
+    // Envio em massa
     async sendBulk(req: Request, res: Response, next: NextFunction): Promise<void> {
-        const { fromName, emailDomain, to, bcc, subject, html } = req.body;
+        const { fromName, emailDomain, to, bcc, subject, html, uuid } = req.body;
 
-        // Validação dos parâmetros obrigatórios
-        if (!fromName || !emailDomain || !to || !bcc || !Array.isArray(bcc) || bcc.length === 0 || !subject || !html) {
-            res.status(400).json({ success: false, message: 'Dados inválidos. "fromName", "emailDomain", "to", "bcc", "subject" e "html" são obrigatórios.' });
+        if (
+            !fromName ||
+            !emailDomain ||
+            !to ||
+            !bcc ||
+            !Array.isArray(bcc) ||
+            bcc.length === 0 ||
+            !subject ||
+            !html ||
+            !uuid
+        ) {
+            res.status(400).json({
+                success: false,
+                message: 'Dados inválidos. "fromName", "emailDomain", "to", "bcc", "subject", "html" e "uuid" são obrigatórios.',
+            });
             return;
         }
 
@@ -56,14 +65,11 @@ class EmailController {
                 bcc,
                 subject,
                 html: processedHtml,
+                uuid,
             });
-            console.log('Resultado de envio em massa:', result);
-            res.json({ success: true, status: 'queued' }); // Retorna "queued" imediatamente
-        }
-        catch (error: unknown) {
-            if (error instanceof Error) {
-                logger.error(`Erro ao enviar email em massa para ${to} e BCC: ${error.message}`, { bcc, subject, html, stack: error.stack });
-            }
+            res.json({ success: true, status: result });
+        } catch (error) {
+            logger.error(`Erro ao enviar emails em massa:`, error);
             res.status(500).json({ success: false, message: 'Erro ao enviar emails em massa.' });
         }
     }

@@ -26,5 +26,8 @@ const config = {
         host: '127.0.0.1',
         port: 25,
     },
+    server: {
+        logResultEndpoint: process.env.LOG_RESULT_ENDPOINT || 'https://mainserver.com/logs',
+    },
 };
 exports.default = config;

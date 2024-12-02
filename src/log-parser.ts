@@ -1,5 +1,3 @@
-// src/log-parser.ts
-
 import { Tail } from 'tail';
 import EmailLog, { IEmailLog } from './models/EmailLog';
 import logger from './utils/logger';
@@ -32,15 +30,8 @@ class LogParser {
     }
 
     private async handleLogLine(line: string) {
-        console.log(`Linha de log recebida: ${line}`); // Log para debug
+        console.log(`Linha de log recebida: ${line}`);
 
-        /**
-         * Exemplos de linhas de log:
-         * sendmail[34063]: 4B20po7G034063: to=recipient@example.com, ctladdr=naoresponder@seu-dominio.com (0/0), delay=00:00:00, xdelay=00:00:00, mailer=relay, pri=31004, relay=[127.0.0.1] [127.0.0.1], dsn=2.0.0, stat=Sent (4B20pogp034064 Message accepted for delivery)
-         * sm-mta[35942]: 4B24QxX9035940: to=<prasmatic@outlook.comm>, delay=00:00:00, xdelay=00:00:00, mailer=esmtp, pri=31235, relay=outlook.com., dsn=5.1.2, stat=Host unknown (Name server: outlook.comm: host not found)
-         */
-
-        // Atualize a expressão regular para capturar diferentes formatos e status
         const regex = /(?:sendmail|sm-mta)\[[0-9]+\]: ([A-Z0-9]+): to=<?([^>,]+(?:, *[^>,]+)*)>?, .*dsn=(\d+\.\d+\.\d+), stat=([^ ]+)(?: \((.+)\))?/i;
         const match = line.match(regex);
 
@@ -55,7 +46,7 @@ class LogParser {
 
             const emailList = emails.split(',').map(email => email.trim());
 
-            console.log(`MailId: ${mailId}, Emails: ${emailList.join(', ')}, Status: ${status}, DSN: ${dsn}, Message: ${statusMessage}`); // Log para debug
+            console.log(`MailId: ${mailId}, Emails: ${emailList.join(', ')}, Status: ${status}, DSN: ${dsn}, Message: ${statusMessage}`);
 
             for (const email of emailList) {
                 try {
@@ -75,7 +66,7 @@ class LogParser {
                 }
             }
         } else {
-            console.log(`Linha de log não correspondida pelo regex: ${line}`); // Log para debug
+            console.log(`Linha de log não correspondida pelo regex: ${line}`);
         }
     }
 
@@ -94,32 +85,25 @@ class LogParser {
         if (message.toLowerCase().includes('host unknown')) {
             detail['hostUnknown'] = true;
         }
-        // Adicione mais condições conforme necessário
 
         return detail;
     }
 
-    /**
-     * Recupera os logs associados a um mailId específico.
-     * @param mailId O ID único do email enviado.
-     * @param timeout Tempo máximo em segundos para aguardar os logs.
-     * @returns Array de logs ou null se nenhum log encontrado.
-     */
-    static async getResult(mailId: string, timeout: number = 50): Promise<IEmailLog[] | null> {
+    static async getResultByUUID(uuid: string, timeout: number = 50): Promise<IEmailLog[] | null> {
         for (let i = 0; i < timeout; i++) {
             await LogParser.sleep(1000);
             try {
-                const logs = await EmailLog.find({ mailId }).lean<IEmailLog[]>().exec();
+                const logs = await EmailLog.find({ mailId: uuid }).lean<IEmailLog[]>().exec();
                 if (logs.length > 0) {
-                    console.log(`Logs encontrados para mailId: ${mailId}`); // Log para debug
+                    console.log(`Logs encontrados para UUID: ${uuid}`);
                     return logs;
                 }
             } catch (error) {
-                logger.error(`Erro ao recuperar logs para mailId: ${mailId}:`, error);
+                logger.error(`Erro ao recuperar logs para UUID: ${uuid}:`, error);
                 return null;
             }
         }
-        console.log(`Nenhum log encontrado para mailId: ${mailId} após ${timeout} segundos`); // Log para debug
+        console.log(`Nenhum log encontrado para UUID: ${uuid} após ${timeout} segundos`);
         return null;
     }
 
