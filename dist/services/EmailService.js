@@ -1,10 +1,10 @@
 "use strict";
-// src/services/EmailService.ts
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const nodemailer_1 = __importDefault(require("nodemailer"));
+const child_process_1 = require("child_process");
 const EmailLog_1 = __importDefault(require("../models/EmailLog"));
 const logger_1 = __importDefault(require("../utils/logger"));
 class EmailService {
@@ -12,7 +12,7 @@ class EmailService {
         this.transporter = nodemailer_1.default.createTransport({
             sendmail: true,
             path: '/usr/sbin/sendmail',
-            args: ['-v'], // Ativa o modo verbose do Sendmail
+            args: ['-v'], // Ativa o modo verbose para captura de informações básicas
             newline: 'unix',
         });
     }
@@ -27,36 +27,76 @@ class EmailService {
                 subject,
                 html,
             };
-            // Enviar o e-mail e capturar a resposta completa
+            // Passo 1: Enviar o e-mail com Nodemailer
             const info = await this.transporter.sendMail(mailOptions);
             logger_1.default.info(`Headers enviados: ${JSON.stringify(mailOptions)}`);
-            logger_1.default.info(`Saída completa do Sendmail: ${info.response}`);
-            // Regex para capturar possíveis Queue IDs
-            const queueIdMatch = info.response.match(/(?:Message accepted for delivery|Queued mail for delivery).*?([A-Za-z0-9]+)/);
-            const queueId = queueIdMatch ? queueIdMatch[1] : null;
-            const emailLog = new EmailLog_1.default({
+            logger_1.default.info(`Saída básica do Sendmail: ${info.response}`);
+            // Passo 2: Executar Sendmail diretamente com '-v -q' para capturar detalhes
+            const queueId = await this.captureQueueId();
+            if (!queueId) {
+                logger_1.default.warn(`Queue ID não capturado. Salvando log para análise posterior.`);
+                await this.logEmail({
+                    mailId: uuid,
+                    email: to,
+                    message: `Erro ao capturar Queue ID após envio com -v -q.`,
+                    success: false,
+                    detail: {
+                        rawResponse: info.response,
+                        mailOptions,
+                    },
+                });
+                throw new Error('Não foi possível capturar o Queue ID.');
+            }
+            logger_1.default.info(`Queue ID capturado: ${queueId}`);
+            // Passo 3: Salvar log de sucesso no MongoDB
+            await this.logEmail({
                 mailId: uuid,
                 email: to,
-                message: queueId ? 'E-mail enfileirado.' : `Erro ao capturar Queue ID: ${info.response}`,
-                success: queueId ? null : false, // Definir false se não conseguiu capturar o Queue ID
+                message: 'E-mail enfileirado com sucesso.',
+                success: true,
                 detail: {
                     queueId,
                     rawResponse: info.response,
                     mailOptions,
                 },
             });
-            await emailLog.save();
-            if (!queueId) {
-                logger_1.default.warn(`Queue ID não capturado. Salvando log para análise posterior.`);
-                throw new Error('Não foi possível capturar o Queue ID.');
-            }
-            logger_1.default.info(`Queue ID capturado: ${queueId}`);
             return queueId;
         }
         catch (error) {
             logger_1.default.error(`Erro ao enviar e-mail: ${error}`);
             throw error;
         }
+    }
+    /**
+     * Captura o Queue ID executando Sendmail com os argumentos -v -q.
+     */
+    async captureQueueId() {
+        return new Promise((resolve, reject) => {
+            (0, child_process_1.exec)('/usr/sbin/sendmail -v -q', (error, stdout, stderr) => {
+                if (error) {
+                    logger_1.default.error(`Erro ao executar Sendmail: ${error.message}`);
+                    reject(null);
+                }
+                logger_1.default.info(`Saída completa do Sendmail (-v -q): ${stdout || stderr}`);
+                // Regex para capturar Queue ID na saída do Sendmail
+                const queueIdMatch = (stdout || stderr).match(/(?:Message accepted for delivery|Queued mail for delivery).*?([A-Za-z0-9]+)/);
+                resolve(queueIdMatch ? queueIdMatch[1] : null);
+            });
+        });
+    }
+    /**
+     * Salva um log de e-mail no MongoDB.
+     */
+    async logEmail(log) {
+        const emailLog = new EmailLog_1.default({
+            mailId: log.mailId,
+            email: log.email,
+            message: log.message,
+            success: log.success,
+            detail: log.detail,
+            sentAt: new Date(),
+        });
+        await emailLog.save();
     }
 }
 exports.default = new EmailService();
