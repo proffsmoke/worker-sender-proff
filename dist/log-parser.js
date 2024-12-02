@@ -26,12 +26,13 @@ class LogParser {
         logger_1.default.info(`Iniciando LogParser para monitorar: ${this.logFilePath}`);
     }
     async handleLogLine(line) {
+        console.log(`Linha de log recebida: ${line}`); // Log para debug
         /**
          * Exemplos de linhas de log:
          * sendmail[34063]: 4B20po7G034063: to=recipient@example.com, ctladdr=naoresponder@seu-dominio.com (0/0), delay=00:00:00, xdelay=00:00:00, mailer=relay, pri=31004, relay=[127.0.0.1] [127.0.0.1], dsn=2.0.0, stat=Sent (4B20pogp034064 Message accepted for delivery)
          * sm-mta[35942]: 4B24QxX9035940: to=<prasmatic@outlook.comm>, delay=00:00:00, xdelay=00:00:00, mailer=esmtp, pri=31235, relay=outlook.com., dsn=5.1.2, stat=Host unknown (Name server: outlook.comm: host not found)
          */
-        const regex = /(?:sendmail|sm-mta)\[[0-9]+\]: ([A-Z0-9]+): to=<([^>]+)>, .*dsn=(\d+\.\d+\.\d+), stat=([^ ]+)(?: \((.+)\))?/;
+        const regex = /(?:sendmail|sm-mta)\[[0-9]+\]: ([A-Z0-9]+): to=<?([^>,]+(?:, *[^>,]+)*)>?, .*dsn=(\d+\.\d+\.\d+), stat=([^ ]+)(?: \((.+)\))?/i;
         const match = line.match(regex);
         if (match) {
             const [, mailId, emails, dsn, status, statusMessage] = match;
@@ -41,6 +42,7 @@ class LogParser {
                 detail = this.parseStatusMessage(statusMessage);
             }
             const emailList = emails.split(',').map(email => email.trim());
+            console.log(`MailId: ${mailId}, Emails: ${emailList.join(', ')}, Status: ${status}, DSN: ${dsn}, Message: ${statusMessage}`); // Log para debug
             for (const email of emailList) {
                 try {
                     const logEntry = new EmailLog_1.default({
@@ -59,17 +61,23 @@ class LogParser {
                 }
             }
         }
+        else {
+            console.log(`Linha de log não correspondida pelo regex: ${line}`); // Log para debug
+        }
     }
     parseStatusMessage(message) {
         const detail = {};
-        if (message.includes('blocked')) {
+        if (message.toLowerCase().includes('blocked')) {
             detail['reason'] = 'blocked';
         }
-        else if (message.includes('timeout')) {
+        else if (message.toLowerCase().includes('timeout')) {
             detail['reason'] = 'timeout';
         }
-        else if (message.includes('rejected')) {
+        else if (message.toLowerCase().includes('rejected')) {
             detail['reason'] = 'rejected';
+        }
+        else {
+            detail['additional'] = message;
         }
         return detail;
     }
@@ -85,6 +93,7 @@ class LogParser {
             try {
                 const logs = await EmailLog_1.default.find({ mailId }).lean().exec();
                 if (logs.length > 0) {
+                    console.log(`Logs encontrados para mailId: ${mailId}`); // Log para debug
                     return logs;
                 }
             }
@@ -93,6 +102,7 @@ class LogParser {
                 return null;
             }
         }
+        console.log(`Nenhum log encontrado para mailId: ${mailId} após ${timeout} segundos`); // Log para debug
         return null;
     }
     static sleep(ms) {

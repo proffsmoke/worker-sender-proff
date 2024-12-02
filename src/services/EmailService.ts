@@ -1,7 +1,7 @@
 // src/services/EmailService.ts
 
 import nodemailer, { Transporter } from 'nodemailer';
-import Log from '../models/Log';
+import EmailLog from '../models/EmailLog'; // Atualizado para EmailLog
 import logger from '../utils/logger';
 import config from '../config';
 import BlockService from './BlockService';
@@ -63,22 +63,24 @@ class EmailService {
             console.log(`Email bloqueado para ${to}`, { subject, html, message });
 
             // Log para envio individual bloqueado
-            await Log.create({
-                to,
-                bcc,
-                success: false,
-                message,
+            await EmailLog.create({
                 mailId,
+                email: to,
+                message,
+                success: false,
+                detail: {},
+                sentAt: new Date(),
             });
 
             // Log para cada recipient no BCC bloqueado
             for (const recipient of bcc) {
-                await Log.create({
-                    to: recipient,
-                    bcc,
-                    success: false,
-                    message,
+                await EmailLog.create({
                     mailId,
+                    email: recipient,
+                    message,
+                    success: false,
+                    detail: {},
+                    sentAt: new Date(),
                 });
                 console.log(`Email bloqueado para ${recipient}`, { subject, html, message });
             }
@@ -100,22 +102,24 @@ class EmailService {
             console.log(`Email enviado para ${to}`, { subject, html, response: 'Messages queued for delivery' });
 
             // Log para envio individual
-            await Log.create({
-                to,
-                bcc,
-                success: true,
-                message: 'Messages queued for delivery',
+            await EmailLog.create({
                 mailId,
+                email: to,
+                message: 'Messages queued for delivery',
+                success: true,
+                detail: {},
+                sentAt: new Date(),
             });
 
             // Log para cada recipient no BCC
             for (const recipient of bcc) {
-                await Log.create({
-                    to: recipient,
-                    bcc,
-                    success: true,
-                    message: 'Messages queued for delivery',
+                await EmailLog.create({
                     mailId,
+                    email: recipient,
+                    message: 'Messages queued for delivery',
+                    success: true,
+                    detail: {},
+                    sentAt: new Date(),
                 });
                 console.log(`Email enviado para ${recipient}`, { subject, html, response: 'Messages queued for delivery' });
             }
@@ -130,23 +134,25 @@ class EmailService {
         catch (error: unknown) {
             if (error instanceof Error) {
                 // Log para envio individual falho
-                await Log.create({
-                    to,
-                    bcc,
-                    success: false,
-                    message: error.message,
+                await EmailLog.create({
                     mailId,
+                    email: to,
+                    message: error.message,
+                    success: false,
+                    detail: {},
+                    sentAt: new Date(),
                 });
                 console.log(`Erro ao enviar email para ${to}`, { subject, html, message: error.message });
 
                 // Log para cada recipient no BCC falho
                 for (const recipient of bcc) {
-                    await Log.create({
-                        to: recipient,
-                        bcc,
-                        success: false,
-                        message: error.message,
+                    await EmailLog.create({
                         mailId,
+                        email: recipient,
+                        message: error.message,
+                        success: false,
+                        detail: {},
+                        sentAt: new Date(),
                     });
                     console.log(`Erro ao enviar email para ${recipient}`, { subject, html, message: error.message });
                 }
