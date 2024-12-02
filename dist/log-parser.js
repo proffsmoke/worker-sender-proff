@@ -34,7 +34,7 @@ class LogParser {
         const match = line.match(regex);
         if (match) {
             const [, mailId, email, status, statusMessage] = match;
-            const success = status === 'sent';
+            const success = status.startsWith('sent');
             let detail = {};
             if (!success && statusMessage) {
                 detail = this.parseStatusMessage(statusMessage);

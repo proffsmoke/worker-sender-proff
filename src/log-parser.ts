@@ -42,7 +42,7 @@ class LogParser {
 
         if (match) {
             const [, mailId, email, status, statusMessage] = match;
-            const success = status === 'sent';
+            const success = status.startsWith('sent');
             let detail: Record<string, any> = {};
 
             if (!success && statusMessage) {
