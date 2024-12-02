@@ -1,4 +1,5 @@
 "use strict";
+// src/log-parser.ts
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -11,82 +12,36 @@ class LogParser {
     constructor(logFilePath = '/var/log/mail.log') {
         this.logFilePath = logFilePath;
         if (!fs_1.default.existsSync(this.logFilePath)) {
-            logger_1.default.error(`Arquivo de log não encontrado: ${this.logFilePath}`);
             throw new Error(`Arquivo de log não encontrado: ${this.logFilePath}`);
         }
         this.tail = new tail_1.Tail(this.logFilePath, { useWatchFile: true });
-        this.initialize();
     }
-    initialize() {
+    startMonitoring() {
         this.tail.on('line', this.handleLogLine.bind(this));
         this.tail.on('error', (error) => {
-            logger_1.default.error('Erro ao monitorar o arquivo de log:', error);
+            logger_1.default.error('Erro ao monitorar os logs:', error);
         });
-        logger_1.default.info(`Iniciando LogParser para monitorar: ${this.logFilePath}`);
+        logger_1.default.info(`Monitorando o arquivo de log: ${this.logFilePath}`);
     }
     async handleLogLine(line) {
-        console.log(`Linha de log recebida: ${line}`);
-        // Regex atualizado para capturar o UUID
-        const regex = /(?:sendmail|sm-mta)\[[0-9]+\]: ([A-Z0-9]+): .*headers=.*X-Mailer-ID: ([a-f0-9\-]+)/i;
+        // Regex para capturar o Queue ID e status
+        const regex = /(?:sendmail|sm-mta)\[\d+\]: ([A-Za-z0-9]+): .*stat=(\w+)/;
         const match = line.match(regex);
         if (match) {
-            const [, mailId, uuid] = match;
-            console.log(`MailId: ${mailId}, UUID: ${uuid}`);
+            const [_, queueId, status] = match;
             try {
-                const logEntry = new EmailLog_1.default({
-                    mailId: uuid, // Usando o UUID como mailId
-                    email: 'unknown', // Atualize isso se o e-mail puder ser capturado
-                    message: `Log capturado para MailId ${mailId}`,
-                    success: true,
-                    sentAt: new Date(),
-                });
-                await logEntry.save();
-                logger_1.default.info(`Log armazenado para MailId: ${mailId}, UUID: ${uuid}`);
-            }
-            catch (error) {
-                logger_1.default.error(`Erro ao salvar log no MongoDB para UUID: ${uuid}`, error);
-            }
-        }
-        else {
-            console.log(`Linha de log não correspondida pelo regex: ${line}`);
-        }
-    }
-    parseStatusMessage(message) {
-        const detail = {};
-        if (message.toLowerCase().includes('blocked')) {
-            detail['blocked'] = true;
-        }
-        if (message.toLowerCase().includes('timeout')) {
-            detail['timeout'] = true;
-        }
-        if (message.toLowerCase().includes('rejected')) {
-            detail['rejected'] = true;
-        }
-        if (message.toLowerCase().includes('host unknown')) {
-            detail['hostUnknown'] = true;
-        }
-        return detail;
-    }
-    static async getResultByUUID(uuid, timeout = 50) {
-        for (let i = 0; i < timeout; i++) {
-            await LogParser.sleep(1000);
-            try {
-                const logs = await EmailLog_1.default.find({ mailId: uuid }).lean().exec();
-                if (logs.length > 0) {
-                    console.log(`Logs encontrados para UUID: ${uuid}`);
-                    return logs;
+                const emailLog = await EmailLog_1.default.findOne({ 'detail.queueId': queueId });
+                if (emailLog) {
+                    emailLog.success = status === 'Sent';
+                    emailLog.message = `Status atualizado: ${status}`;
+                    await emailLog.save();
+                    logger_1.default.info(`Log atualizado: Queue ID ${queueId}, Status: ${status}`);
                 }
             }
             catch (error) {
-                logger_1.default.error(`Erro ao recuperar logs para UUID: ${uuid}:`, error);
-                return null;
+                logger_1.default.error(`Erro ao atualizar o log para Queue ID ${queueId}:`, error);
             }
         }
-        console.log(`Nenhum log encontrado para UUID: ${uuid} após ${timeout} segundos`);
-        return null;
-    }
-    static sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
 exports.default = LogParser;

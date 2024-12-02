@@ -37,6 +37,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const EmailLogSchema = new mongoose_1.Schema({
     mailId: { type: String, required: true, index: true },
+    sendmailQueueId: { type: String, index: true },
     email: { type: String, required: true, index: true },
     message: { type: String, required: true },
     success: { type: Boolean, required: true },

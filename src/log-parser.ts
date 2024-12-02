@@ -1,106 +1,57 @@
+// src/log-parser.ts
+
 import { Tail } from 'tail';
 import EmailLog, { IEmailLog } from './models/EmailLog';
 import logger from './utils/logger';
-import path from 'path';
 import fs from 'fs';
 
+
 class LogParser {
-    private logFilePath: string;
-    private tail: Tail;
+  private logFilePath: string;
+  private tail: Tail;
 
-    constructor(logFilePath: string = '/var/log/mail.log') {
-        this.logFilePath = logFilePath;
+  constructor(logFilePath: string = '/var/log/mail.log') {
+    this.logFilePath = logFilePath;
 
-        if (!fs.existsSync(this.logFilePath)) {
-            logger.error(`Arquivo de log não encontrado: ${this.logFilePath}`);
-            throw new Error(`Arquivo de log não encontrado: ${this.logFilePath}`);
-        }
-
-        this.tail = new Tail(this.logFilePath, { useWatchFile: true });
-        this.initialize();
+    if (!fs.existsSync(this.logFilePath)) {
+      throw new Error(`Arquivo de log não encontrado: ${this.logFilePath}`);
     }
 
-    private initialize() {
-        this.tail.on('line', this.handleLogLine.bind(this));
-        this.tail.on('error', (error: Error) => {
-            logger.error('Erro ao monitorar o arquivo de log:', error);
-        });
+    this.tail = new Tail(this.logFilePath, { useWatchFile: true });
+  }
 
-        logger.info(`Iniciando LogParser para monitorar: ${this.logFilePath}`);
-    }
+  startMonitoring() {
+    this.tail.on('line', this.handleLogLine.bind(this));
+    this.tail.on('error', (error) => {
+      logger.error('Erro ao monitorar os logs:', error);
+    });
 
-private async handleLogLine(line: string) {
-    console.log(`Linha de log recebida: ${line}`);
+    logger.info(`Monitorando o arquivo de log: ${this.logFilePath}`);
+  }
 
-    // Regex atualizado para capturar o UUID
-    const regex = /(?:sendmail|sm-mta)\[[0-9]+\]: ([A-Z0-9]+): .*headers=.*X-Mailer-ID: ([a-f0-9\-]+)/i;
+  private async handleLogLine(line: string) {
+    // Regex para capturar o Queue ID e status
+    const regex = /(?:sendmail|sm-mta)\[\d+\]: ([A-Za-z0-9]+): .*stat=(\w+)/;
     const match = line.match(regex);
 
     if (match) {
-        const [, mailId, uuid] = match;
+      const [_, queueId, status] = match;
 
-        console.log(`MailId: ${mailId}, UUID: ${uuid}`);
+      try {
+        const emailLog = await EmailLog.findOne({ 'detail.queueId': queueId });
 
-        try {
-            const logEntry: IEmailLog = new EmailLog({
-                mailId: uuid, // Usando o UUID como mailId
-                email: 'unknown', // Atualize isso se o e-mail puder ser capturado
-                message: `Log capturado para MailId ${mailId}`,
-                success: true,
-                sentAt: new Date(),
-            });
+        if (emailLog) {
+          emailLog.success = status === 'Sent';
+          emailLog.message = `Status atualizado: ${status}`;
+          await emailLog.save();
 
-            await logEntry.save();
-            logger.info(`Log armazenado para MailId: ${mailId}, UUID: ${uuid}`);
-        } catch (error) {
-            logger.error(`Erro ao salvar log no MongoDB para UUID: ${uuid}`, error);
+          logger.info(`Log atualizado: Queue ID ${queueId}, Status: ${status}`);
         }
-    } else {
-        console.log(`Linha de log não correspondida pelo regex: ${line}`);
+      } catch (error) {
+        logger.error(`Erro ao atualizar o log para Queue ID ${queueId}:`, error);
+      }
     }
-}
-
-
-    private parseStatusMessage(message: string): Record<string, any> {
-        const detail: Record<string, any> = {};
-
-        if (message.toLowerCase().includes('blocked')) {
-            detail['blocked'] = true;
-        }
-        if (message.toLowerCase().includes('timeout')) {
-            detail['timeout'] = true;
-        }
-        if (message.toLowerCase().includes('rejected')) {
-            detail['rejected'] = true;
-        }
-        if (message.toLowerCase().includes('host unknown')) {
-            detail['hostUnknown'] = true;
-        }
-
-        return detail;
-    }
-
-    static async getResultByUUID(uuid: string, timeout: number = 50): Promise<IEmailLog[] | null> {
-        for (let i = 0; i < timeout; i++) {
-            await LogParser.sleep(1000);
-            try {
-                const logs = await EmailLog.find({ mailId: uuid }).lean<IEmailLog[]>().exec();
-                if (logs.length > 0) {
-                    console.log(`Logs encontrados para UUID: ${uuid}`);
-                    return logs;
-                }
-            } catch (error) {
-                logger.error(`Erro ao recuperar logs para UUID: ${uuid}:`, error);
-                return null;
-            }
-        }
-        console.log(`Nenhum log encontrado para UUID: ${uuid} após ${timeout} segundos`);
-        return null;
-    }
-
-    private static sleep(ms: number): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
+  }
 }
 
 export default LogParser;

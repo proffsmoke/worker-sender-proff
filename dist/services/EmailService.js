@@ -1,18 +1,18 @@
 "use strict";
+// src/services/EmailService.ts
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const axios_1 = __importDefault(require("axios"));
 const nodemailer_1 = __importDefault(require("nodemailer"));
+const EmailLog_1 = __importDefault(require("../models/EmailLog"));
 const logger_1 = __importDefault(require("../utils/logger"));
-const config_1 = __importDefault(require("../config"));
-const log_parser_1 = __importDefault(require("../log-parser"));
 class EmailService {
     constructor() {
         this.transporter = nodemailer_1.default.createTransport({
             sendmail: true,
             path: '/usr/sbin/sendmail',
+            newline: 'unix',
         });
     }
     async sendEmail(params) {
@@ -25,45 +25,31 @@ class EmailService {
                 bcc,
                 subject,
                 html,
-                headers: { 'X-Mailer-ID': uuid }, // Cabeçalho personalizado com UUID
+                headers: { 'X-Mailer-ID': uuid },
             };
-            await this.transporter.sendMail(mailOptions);
-            logger_1.default.info(`Email enviado para ${to}`);
-            this.processLog(uuid, to, bcc);
-            return 'queued';
+            const info = await this.transporter.sendMail(mailOptions);
+            // Extrair o Queue ID do Sendmail
+            const sendmailOutput = info.response;
+            const queueIdMatch = sendmailOutput.match(/Queued! id=([A-Za-z0-9]+)/);
+            const queueId = queueIdMatch ? queueIdMatch[1] : '';
+            if (!queueId) {
+                throw new Error('Não foi possível capturar o Queue ID.');
+            }
+            logger_1.default.info(`E-mail enviado. Queue ID: ${queueId}`);
+            // Salvar o UUID e Queue ID no MongoDB
+            const emailLog = new EmailLog_1.default({
+                mailId: uuid,
+                email: to,
+                message: 'E-mail enfileirado.',
+                success: null,
+                detail: { queueId },
+            });
+            await emailLog.save();
+            return queueId;
         }
         catch (error) {
-            logger_1.default.error(`Erro ao enviar email para ${to}:`, error);
-            return 'failed';
-        }
-    }
-    async processLog(uuid, to, bcc) {
-        try {
-            const logs = await log_parser_1.default.getResultByUUID(uuid, 50);
-            if (logs) {
-                const payload = logs.map(log => ({
-                    email: log.email,
-                    success: log.success,
-                    message: log.message,
-                    detail: log.detail,
-                }));
-                const response = await axios_1.default.post(config_1.default.server.logResultEndpoint, {
-                    uuid,
-                    logs: payload,
-                });
-                if (response.status === 200) {
-                    logger_1.default.info(`Logs enviados com sucesso para o servidor principal para UUID: ${uuid}`);
-                }
-                else {
-                    logger_1.default.error(`Erro ao enviar logs para o servidor principal para UUID: ${uuid}`);
-                }
-            }
-            else {
-                logger_1.default.warn(`Nenhum log encontrado para UUID: ${uuid}`);
-            }
-        }
-        catch (error) {
-            logger_1.default.error(`Erro ao processar logs para UUID: ${uuid}:`, error);
+            logger_1.default.error('Erro ao enviar o e-mail:', error);
+            throw error;
         }
     }
 }

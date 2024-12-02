@@ -4,6 +4,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IEmailLog extends Document {
     mailId: string;
+    sendmailQueueId?: string;
     email: string;
     message: string;
     success: boolean;
@@ -14,6 +15,7 @@ export interface IEmailLog extends Document {
 const EmailLogSchema: Schema = new Schema(
     {
         mailId: { type: String, required: true, index: true },
+        sendmailQueueId: { type: String, index: true },
         email: { type: String, required: true, index: true },
         message: { type: String, required: true },
         success: { type: Boolean, required: true },
