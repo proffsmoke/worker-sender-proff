@@ -7,7 +7,7 @@ export interface IEmailLog extends Document {
   sendmailQueueId?: string;
   email: string;
   message: string;
-  success: boolean;
+  success: boolean | null; // Pode ser null até que o status seja atualizado
   detail?: Record<string, any>;
   sentAt: Date;
 }
@@ -18,7 +18,7 @@ const EmailLogSchema: Schema = new Schema(
     sendmailQueueId: { type: String, index: true },
     email: { type: String, required: true, index: true },
     message: { type: String, required: true },
-    success: { type: Boolean, required: true },
+    success: { type: Boolean, default: null }, // Valor padrão como null
     detail: { type: Schema.Types.Mixed, default: {} },
     sentAt: { type: Date, default: Date.now, index: true },
   },

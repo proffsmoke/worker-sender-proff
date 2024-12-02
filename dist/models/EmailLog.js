@@ -40,7 +40,7 @@ const EmailLogSchema = new mongoose_1.Schema({
     sendmailQueueId: { type: String, index: true },
     email: { type: String, required: true, index: true },
     message: { type: String, required: true },
-    success: { type: Boolean, required: true },
+    success: { type: Boolean, default: null }, // Valor padrão como null
     detail: { type: mongoose_1.Schema.Types.Mixed, default: {} },
     sentAt: { type: Date, default: Date.now, index: true },
 }, { timestamps: true });

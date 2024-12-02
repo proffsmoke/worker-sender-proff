@@ -24,20 +24,16 @@ class LogParser {
         logger_1.default.info(`Monitorando o arquivo de log: ${this.logFilePath}`);
     }
     async handleLogLine(line) {
-        // Regex para capturar Queue ID e status
         const regex = /(?:sendmail|sm-mta)\[\d+\]: ([A-Za-z0-9]+): .*stat=(\w+)/;
         const match = line.match(regex);
         if (match) {
             const [_, queueId, status] = match;
             try {
                 const emailLog = await EmailLog_1.default.findOne({
-                    $or: [
-                        { 'detail.queueId': queueId },
-                        { mailId: queueId }, // Fallback para UUID
-                    ],
+                    'detail.queueId': queueId,
                 });
                 if (emailLog) {
-                    emailLog.success = status === 'Sent';
+                    emailLog.success = status.toLowerCase() === 'sent';
                     emailLog.message = `Status atualizado: ${status}`;
                     await emailLog.save();
                     logger_1.default.info(`Log atualizado: Queue ID ${queueId}, Status: ${status}`);
