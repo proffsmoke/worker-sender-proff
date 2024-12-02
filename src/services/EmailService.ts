@@ -1,15 +1,9 @@
+import axios, { AxiosResponse } from 'axios';
 import nodemailer, { Transporter } from 'nodemailer';
 import EmailLog from '../models/EmailLog';
 import logger from '../utils/logger';
 import config from '../config';
 import LogParser from '../log-parser';
-let fetch: (url: string | Request | URL, init?: RequestInit) => Promise<Response>;
-
-(async () => {
-    const nodeFetch = await import('node-fetch');
-    fetch = nodeFetch.default as unknown as (url: string | Request | URL, init?: RequestInit) => Promise<Response>;
-})();
-
 
 interface SendEmailParams {
     fromName: string;
@@ -70,16 +64,15 @@ class EmailService {
                     detail: log.detail,
                 }));
 
-                const response = await fetch(`${config.server.logResultEndpoint}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ uuid, logs: payload }),
+                const response: AxiosResponse = await axios.post(config.server.logResultEndpoint, {
+                    uuid,
+                    logs: payload,
                 });
 
-                if (!response.ok) {
-                    logger.error(`Erro ao enviar logs para o servidor principal para UUID: ${uuid}`);
-                } else {
+                if (response.status === 200) {
                     logger.info(`Logs enviados com sucesso para o servidor principal para UUID: ${uuid}`);
+                } else {
+                    logger.error(`Erro ao enviar logs para o servidor principal para UUID: ${uuid}`);
                 }
             } else {
                 logger.warn(`Nenhum log encontrado para UUID: ${uuid}`);
