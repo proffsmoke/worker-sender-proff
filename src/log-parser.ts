@@ -1,14 +1,21 @@
 import { Tail } from 'tail';
 import logger from './utils/logger';
 import fs from 'fs';
+import EventEmitter from 'events';
 
-class LogParser {
+interface LogEntry {
+  queueId: string;
+  recipient: string;
+  status: string;
+  messageId: string;
+}
+
+class LogParser extends EventEmitter {
   private logFilePath: string;
   private tail: Tail | null = null;
-  private queueIdStatuses: Record<string, string> = {};
-  private resolveStatusMap: Map<string, (status: string) => void> = new Map();
 
   constructor(logFilePath: string = '/var/log/mail.log') {
+    super();
     this.logFilePath = logFilePath;
 
     if (!fs.existsSync(this.logFilePath)) {
@@ -42,42 +49,25 @@ class LogParser {
     }
   }
 
-  waitForQueueId(queueId: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        if (this.queueIdStatuses[queueId]) {
-          resolve(this.queueIdStatuses[queueId]);
-        } else {
-          logger.warn(`Timeout ao capturar status para Queue ID: ${queueId}`);
-          resolve('timeout');
-        }
-      }, 10000); // 10 segundos
-
-      this.resolveStatusMap.set(queueId, (status) => {
-        clearTimeout(timeout);
-        resolve(status);
-      });
-    });
-  }
-
   private handleLogLine(line: string) {
-    // Regex atualizado para Postfix SMTP logs
-    const regex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):.*status=(\w+)/i;
+    // Regex atualizado para capturar Queue ID, recipient, status e Message-ID
+    const regex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*status=(\w+).*<([^>]+)>/i;
     const match = line.match(regex);
 
     if (match) {
-      const [_, queueId, status] = match;
+      const [_, queueId, recipient, status, messageId] = match as RegExpMatchArray;
 
-      // Atualiza o status para o Queue ID
-      this.queueIdStatuses[queueId] = status;
+      const logEntry: LogEntry = {
+        queueId,
+        recipient,
+        status,
+        messageId,
+      };
 
-      // Resolve as promessas esperando por este Queue ID
-      if (this.resolveStatusMap.has(queueId)) {
-        this.resolveStatusMap.get(queueId)?.(status);
-        this.resolveStatusMap.delete(queueId);
-      }
+      logger.info(`LogParser capturou: Queue ID=${queueId}, Recipient=${recipient}, Status=${status}, Message-ID=${messageId}`);
 
-      logger.info(`Status do Queue ID ${queueId}: ${status}`);
+      // Emitir um evento com os detalhes do logEntry
+      this.emit('log', logEntry);
     }
   }
 }

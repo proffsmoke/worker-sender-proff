@@ -4,11 +4,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const nodemailer_1 = __importDefault(require("nodemailer"));
-const EmailLog_1 = __importDefault(require("../models/EmailLog"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const log_parser_1 = __importDefault(require("../log-parser"));
 class EmailService {
     constructor() {
+        this.pendingSends = new Map();
         this.transporter = nodemailer_1.default.createTransport({
             host: '127.0.0.1',
             port: 25,
@@ -17,46 +17,77 @@ class EmailService {
         });
         this.logParser = new log_parser_1.default('/var/log/mail.log');
         this.logParser.startMonitoring();
+        // Escutar os eventos de log
+        this.logParser.on('log', this.handleLogEntry.bind(this));
+    }
+    handleLogEntry(logEntry) {
+        // Verificar se há algum envio pendente com este Message-ID
+        for (const [messageId, sendData] of this.pendingSends.entries()) {
+            if (logEntry.messageId === messageId) {
+                const success = logEntry.status.toLowerCase() === 'sent';
+                // Atualizar o resultado para o destinatário
+                sendData.results.push({
+                    recipient: logEntry.recipient,
+                    success,
+                });
+                logger_1.default.info(`Atualizado status para ${logEntry.recipient}: ${success ? 'Enviado' : 'Falha'}`);
+                // Verificar se todos os destinatários foram processados
+                if (sendData.results.length === sendData.recipients.length) {
+                    // Resolver a promessa com os resultados
+                    sendData.resolve(sendData.results);
+                    // Remover o envio pendente
+                    this.pendingSends.delete(messageId);
+                }
+            }
+        }
     }
     async sendEmail(params) {
         const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
         const from = `"${fromName}" <no-reply@${emailDomain}>`;
+        // Combinar 'to' e 'bcc' em uma lista completa de destinatários
         const recipients = Array.isArray(to) ? [...to, ...bcc] : [to, ...bcc];
+        // Gerar um Message-ID único usando o UUID
+        const messageId = `${uuid}@${emailDomain}`;
         try {
-            const mailOptions = { from, to: Array.isArray(to) ? to.join(', ') : to, bcc, subject, html };
+            const mailOptions = {
+                from,
+                to: Array.isArray(to) ? to.join(', ') : to,
+                bcc,
+                subject,
+                html,
+                headers: {
+                    'Message-ID': `<${messageId}>`,
+                },
+            };
             const info = await this.transporter.sendMail(mailOptions);
             logger_1.default.info(`Email enviado: ${JSON.stringify(mailOptions)}`);
             logger_1.default.debug(`Resposta do servidor SMTP: ${info.response}`);
-            // Extrai o Queue ID da resposta SMTP, se disponível
-            const queueIdMatch = info.response.match(/id=([A-Z0-9-]+)/i);
-            const queueId = queueIdMatch ? queueIdMatch[1] : null;
-            if (!queueId) {
-                throw new Error('Queue ID não encontrado na resposta SMTP.');
-            }
-            logger_1.default.info(`Queue ID capturado diretamente: ${queueId}`);
-            // Espera pelo status de cada destinatário
-            const results = await Promise.all(recipients.map(async (recipient) => {
-                const status = await this.logParser.waitForQueueId(queueId);
-                const success = status === 'sent';
-                const emailLog = new EmailLog_1.default({
-                    mailId: uuid,
-                    sendmailQueueId: queueId,
-                    email: recipient,
-                    message: `Status: ${success ? 'Enviado' : 'Falha'}`,
-                    success,
-                    detail: {
-                        queueId,
-                        rawResponse: info.response,
-                        mailOptions,
-                    },
+            // Preparar a promessa para aguardar os resultados dos destinatários
+            const sendPromise = new Promise((resolve, reject) => {
+                // Adicionar ao mapa de envios pendentes
+                this.pendingSends.set(messageId, {
+                    uuid,
+                    recipients,
+                    results: [],
+                    resolve,
+                    reject,
                 });
-                await emailLog.save();
-                return { recipient, success };
-            }));
-            logger_1.default.info(`Resultado do envio: MailID: ${uuid}, QueueID: ${queueId}, Recipients: ${JSON.stringify(results)}`);
+                // Definir um timeout para evitar espera indefinida
+                setTimeout(() => {
+                    if (this.pendingSends.has(messageId)) {
+                        const sendData = this.pendingSends.get(messageId);
+                        sendData.reject(new Error('Timeout ao capturar status para todos os destinatários.'));
+                        this.pendingSends.delete(messageId);
+                    }
+                }, 10000); // 10 segundos
+            });
+            const results = await sendPromise;
+            // Verificar se todos os envios foram bem-sucedidos
+            const allSuccess = results.every((r) => r.success);
+            logger_1.default.info(`Resultado do envio: MailID: ${uuid}, Message-ID: ${messageId}, Destinatários: ${JSON.stringify(results)}`);
             return {
                 mailId: uuid,
-                queueId,
+                queueId: '', // Pode ser omitido ou ajustado conforme necessário
                 recipients: results,
             };
         }
