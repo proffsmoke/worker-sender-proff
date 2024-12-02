@@ -23,7 +23,7 @@ const config = {
             : 300000, // 5 minutos em ms
     },
     smtp: {
-        host: 'smtp.gmail.com',
+        host: '0.0.0.0',
         port: 25,
     },
 };

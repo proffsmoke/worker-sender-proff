@@ -154,3 +154,9 @@
 2024-12-02T00:12:53.697Z [WARN]: Nenhuma porta disponível para host smtp.gmail.com 
 2024-12-02T00:12:53.697Z [WARN]: Mailer bloqueado com status: blocked_permanently 
 2024-12-02T00:12:53.697Z [WARN]: Nenhuma porta disponível. Mailer bloqueado permanentemente. 
+2024-12-02T00:19:56.495Z [INFO]: Servidor rodando no endereço 0.0.0.0:7777 
+2024-12-02T00:19:56.501Z [ERROR]: Erro ao verificar transportador SMTP: {"error":{"errno":-61,"code":"ESOCKET","syscall":"connect","address":"0.0.0.0","port":25,"command":"CONN"}}
+2024-12-02T00:19:56.517Z [INFO]: Conectado ao MongoDB 
+2024-12-02T00:19:57.468Z [WARN]: Nenhuma porta disponível para host smtp.gmail.com 
+2024-12-02T00:19:57.468Z [WARN]: Mailer bloqueado com status: blocked_permanently 
+2024-12-02T00:19:57.469Z [WARN]: Nenhuma porta disponível. Mailer bloqueado permanentemente. 
