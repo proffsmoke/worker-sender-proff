@@ -40,12 +40,13 @@ class LogParser {
          * sm-mta[35942]: 4B24QxX9035940: to=<prasmatic@outlook.comm>, delay=00:00:00, xdelay=00:00:00, mailer=esmtp, pri=31235, relay=outlook.com., dsn=5.1.2, stat=Host unknown (Name server: outlook.comm: host not found)
          */
 
+        // Atualize a expressão regular para capturar diferentes formatos e status
         const regex = /(?:sendmail|sm-mta)\[[0-9]+\]: ([A-Z0-9]+): to=<?([^>,]+(?:, *[^>,]+)*)>?, .*dsn=(\d+\.\d+\.\d+), stat=([^ ]+)(?: \((.+)\))?/i;
         const match = line.match(regex);
 
         if (match) {
             const [, mailId, emails, dsn, status, statusMessage] = match;
-            const success = status.toLowerCase().startsWith('sent');
+            const success = status.toLowerCase().startsWith('sent') || status.toLowerCase().startsWith('queued');
             let detail: Record<string, any> = {};
 
             if (!success && statusMessage) {
@@ -82,14 +83,18 @@ class LogParser {
         const detail: Record<string, any> = {};
 
         if (message.toLowerCase().includes('blocked')) {
-            detail['reason'] = 'blocked';
-        } else if (message.toLowerCase().includes('timeout')) {
-            detail['reason'] = 'timeout';
-        } else if (message.toLowerCase().includes('rejected')) {
-            detail['reason'] = 'rejected';
-        } else {
-            detail['additional'] = message;
+            detail['blocked'] = true;
         }
+        if (message.toLowerCase().includes('timeout')) {
+            detail['timeout'] = true;
+        }
+        if (message.toLowerCase().includes('rejected')) {
+            detail['rejected'] = true;
+        }
+        if (message.toLowerCase().includes('host unknown')) {
+            detail['hostUnknown'] = true;
+        }
+        // Adicione mais condições conforme necessário
 
         return detail;
     }

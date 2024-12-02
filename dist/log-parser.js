@@ -32,11 +32,12 @@ class LogParser {
          * sendmail[34063]: 4B20po7G034063: to=recipient@example.com, ctladdr=naoresponder@seu-dominio.com (0/0), delay=00:00:00, xdelay=00:00:00, mailer=relay, pri=31004, relay=[127.0.0.1] [127.0.0.1], dsn=2.0.0, stat=Sent (4B20pogp034064 Message accepted for delivery)
          * sm-mta[35942]: 4B24QxX9035940: to=<prasmatic@outlook.comm>, delay=00:00:00, xdelay=00:00:00, mailer=esmtp, pri=31235, relay=outlook.com., dsn=5.1.2, stat=Host unknown (Name server: outlook.comm: host not found)
          */
+        // Atualize a expressão regular para capturar diferentes formatos e status
         const regex = /(?:sendmail|sm-mta)\[[0-9]+\]: ([A-Z0-9]+): to=<?([^>,]+(?:, *[^>,]+)*)>?, .*dsn=(\d+\.\d+\.\d+), stat=([^ ]+)(?: \((.+)\))?/i;
         const match = line.match(regex);
         if (match) {
             const [, mailId, emails, dsn, status, statusMessage] = match;
-            const success = status.toLowerCase().startsWith('sent');
+            const success = status.toLowerCase().startsWith('sent') || status.toLowerCase().startsWith('queued');
             let detail = {};
             if (!success && statusMessage) {
                 detail = this.parseStatusMessage(statusMessage);
@@ -68,17 +69,18 @@ class LogParser {
     parseStatusMessage(message) {
         const detail = {};
         if (message.toLowerCase().includes('blocked')) {
-            detail['reason'] = 'blocked';
+            detail['blocked'] = true;
         }
-        else if (message.toLowerCase().includes('timeout')) {
-            detail['reason'] = 'timeout';
+        if (message.toLowerCase().includes('timeout')) {
+            detail['timeout'] = true;
         }
-        else if (message.toLowerCase().includes('rejected')) {
-            detail['reason'] = 'rejected';
+        if (message.toLowerCase().includes('rejected')) {
+            detail['rejected'] = true;
         }
-        else {
-            detail['additional'] = message;
+        if (message.toLowerCase().includes('host unknown')) {
+            detail['hostUnknown'] = true;
         }
+        // Adicione mais condições conforme necessário
         return detail;
     }
     /**

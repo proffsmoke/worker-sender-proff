@@ -1,7 +1,7 @@
 // src/services/EmailService.ts
 
 import nodemailer, { Transporter } from 'nodemailer';
-import EmailLog from '../models/EmailLog'; // Atualizado para EmailLog
+import EmailLog from '../models/EmailLog';
 import logger from '../utils/logger';
 import config from '../config';
 import BlockService from './BlockService';
