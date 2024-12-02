@@ -1,25 +1,33 @@
-// src/log-parser.ts
-
 import { Tail } from 'tail';
-import EmailLog, { IEmailLog } from './models/EmailLog';
 import logger from './utils/logger';
 import fs from 'fs';
 
 class LogParser {
   private logFilePath: string;
-  private tail: Tail;
+  private tail: Tail | null = null; // Inicialize como nulo para evitar erros.
+  private queueIdPromise: Promise<string | null>;
+  private resolveQueueId: (queueId: string | null) => void = () => {};
 
   constructor(logFilePath: string = '/var/log/mail.log') {
     this.logFilePath = logFilePath;
 
     if (!fs.existsSync(this.logFilePath)) {
+      logger.error(`Arquivo de log não encontrado no caminho: ${this.logFilePath}`);
       throw new Error(`Arquivo de log não encontrado: ${this.logFilePath}`);
     }
 
     this.tail = new Tail(this.logFilePath, { useWatchFile: true });
+    this.queueIdPromise = new Promise((resolve) => {
+      this.resolveQueueId = resolve;
+    });
   }
 
   startMonitoring() {
+    if (!this.tail) {
+      logger.error('Tentativa de monitorar logs sem inicializar o Tail.');
+      return;
+    }
+
     this.tail.on('line', this.handleLogLine.bind(this));
     this.tail.on('error', (error) => {
       logger.error('Erro ao monitorar os logs:', error);
@@ -28,29 +36,34 @@ class LogParser {
     logger.info(`Monitorando o arquivo de log: ${this.logFilePath}`);
   }
 
-  private async handleLogLine(line: string) {
-    const regex = /(?:sendmail|sm-mta)\[\d+\]: ([A-Za-z0-9]+): .*stat=(\w+)/;
+  stopMonitoring() {
+    if (this.tail) {
+      this.tail.unwatch();
+      logger.info('Monitoramento de logs interrompido.');
+    } else {
+      logger.warn('Nenhum monitoramento ativo para interromper.');
+    }
+  }
+
+  async waitForQueueId(uuid: string): Promise<string | null> {
+    const timeout = new Promise<string | null>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Timeout ao capturar Queue ID para UUID: ${uuid}`));
+      }, 10000); // 10 segundos
+    });
+
+    return Promise.race([this.queueIdPromise, timeout]).finally(() => this.stopMonitoring());
+  }
+
+  private handleLogLine(line: string) {
+    const regex = /(?:sendmail|sm-mta)\[\d+\]: ([A-Za-z0-9]+): .*uuid=([A-Za-z0-9-]+)/;
     const match = line.match(regex);
 
     if (match) {
-      const [_, queueId, status] = match;
+      const [_, queueId, logUuid] = match;
 
-      try {
-        const emailLog = await EmailLog.findOne({
-          'detail.queueId': queueId,
-        });
-
-        if (emailLog) {
-          emailLog.success = status.toLowerCase() === 'sent';
-          emailLog.message = `Status atualizado: ${status}`;
-          await emailLog.save();
-
-          logger.info(`Log atualizado: Queue ID ${queueId}, Status: ${status}`);
-        } else {
-          logger.warn(`Nenhum log encontrado para Queue ID ${queueId}`);
-        }
-      } catch (error) {
-        logger.error(`Erro ao atualizar log para Queue ID ${queueId}:`, error);
+      if (this.resolveQueueId) {
+        this.resolveQueueId(queueId);
       }
     }
   }

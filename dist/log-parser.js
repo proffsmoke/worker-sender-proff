@@ -1,49 +1,60 @@
 "use strict";
-// src/log-parser.ts
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const tail_1 = require("tail");
-const EmailLog_1 = __importDefault(require("./models/EmailLog"));
 const logger_1 = __importDefault(require("./utils/logger"));
 const fs_1 = __importDefault(require("fs"));
 class LogParser {
     constructor(logFilePath = '/var/log/mail.log') {
+        this.tail = null; // Inicialize como nulo para evitar erros.
+        this.resolveQueueId = () => { };
         this.logFilePath = logFilePath;
         if (!fs_1.default.existsSync(this.logFilePath)) {
+            logger_1.default.error(`Arquivo de log não encontrado no caminho: ${this.logFilePath}`);
             throw new Error(`Arquivo de log não encontrado: ${this.logFilePath}`);
         }
         this.tail = new tail_1.Tail(this.logFilePath, { useWatchFile: true });
+        this.queueIdPromise = new Promise((resolve) => {
+            this.resolveQueueId = resolve;
+        });
     }
     startMonitoring() {
+        if (!this.tail) {
+            logger_1.default.error('Tentativa de monitorar logs sem inicializar o Tail.');
+            return;
+        }
         this.tail.on('line', this.handleLogLine.bind(this));
         this.tail.on('error', (error) => {
             logger_1.default.error('Erro ao monitorar os logs:', error);
         });
         logger_1.default.info(`Monitorando o arquivo de log: ${this.logFilePath}`);
     }
-    async handleLogLine(line) {
-        const regex = /(?:sendmail|sm-mta)\[\d+\]: ([A-Za-z0-9]+): .*stat=(\w+)/;
+    stopMonitoring() {
+        if (this.tail) {
+            this.tail.unwatch();
+            logger_1.default.info('Monitoramento de logs interrompido.');
+        }
+        else {
+            logger_1.default.warn('Nenhum monitoramento ativo para interromper.');
+        }
+    }
+    async waitForQueueId(uuid) {
+        const timeout = new Promise((_, reject) => {
+            setTimeout(() => {
+                reject(new Error(`Timeout ao capturar Queue ID para UUID: ${uuid}`));
+            }, 10000); // 10 segundos
+        });
+        return Promise.race([this.queueIdPromise, timeout]).finally(() => this.stopMonitoring());
+    }
+    handleLogLine(line) {
+        const regex = /(?:sendmail|sm-mta)\[\d+\]: ([A-Za-z0-9]+): .*uuid=([A-Za-z0-9-]+)/;
         const match = line.match(regex);
         if (match) {
-            const [_, queueId, status] = match;
-            try {
-                const emailLog = await EmailLog_1.default.findOne({
-                    'detail.queueId': queueId,
-                });
-                if (emailLog) {
-                    emailLog.success = status.toLowerCase() === 'sent';
-                    emailLog.message = `Status atualizado: ${status}`;
-                    await emailLog.save();
-                    logger_1.default.info(`Log atualizado: Queue ID ${queueId}, Status: ${status}`);
-                }
-                else {
-                    logger_1.default.warn(`Nenhum log encontrado para Queue ID ${queueId}`);
-                }
-            }
-            catch (error) {
-                logger_1.default.error(`Erro ao atualizar log para Queue ID ${queueId}:`, error);
+            const [_, queueId, logUuid] = match;
+            if (this.resolveQueueId) {
+                this.resolveQueueId(queueId);
             }
         }
     }
