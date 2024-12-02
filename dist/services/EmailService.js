@@ -1,9 +1,9 @@
 "use strict";
+// src/services/EmailService.ts
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-// src/services/EmailService.ts
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const Log_1 = __importDefault(require("../models/Log"));
 const logger_1 = __importDefault(require("../utils/logger"));
@@ -11,28 +11,37 @@ const config_1 = __importDefault(require("../config"));
 const BlockService_1 = __importDefault(require("./BlockService"));
 const MailerService_1 = __importDefault(require("./MailerService"));
 const uuid_1 = require("uuid");
+// Função auxiliar para selecionar um elemento aleatório de um array
+function randomOne(array) {
+    return array[Math.floor(Math.random() * array.length)];
+}
 class EmailService {
     constructor() {
         this.transporter = nodemailer_1.default.createTransport({
-            host: '127.0.0.1', // Alterado para localhost
-            port: 25, // Alterado para 25
-            secure: false,
-            auth: {
-                user: config_1.default.auth.login,
-                pass: config_1.default.auth.password,
-            },
+            sendmail: true,
+            path: '/usr/sbin/sendmail', // Caminho padrão do sendmail no Ubuntu
         });
         this.transporter.verify()
             .then(() => {
-            logger_1.default.info('Transportador SMTP está pronto para enviar emails.');
+            logger_1.default.info('Transportador Sendmail está pronto para enviar emails.');
         })
             .catch((error) => {
-            logger_1.default.error('Erro ao verificar transportador SMTP:', { error });
+            logger_1.default.error('Erro ao verificar transportador Sendmail:', { error });
         });
     }
-    async sendEmail(to, bcc, subject, html) {
+    /**
+     * Envia emails individuais ou em massa.
+     * @param params Objeto contendo os parâmetros do email.
+     * @returns Array de resultados de envio.
+     */
+    async sendEmail(params) {
+        const { fromName, emailDomain, to, bcc, subject, html } = params;
         const results = [];
         const mailId = (0, uuid_1.v4)();
+        // Lista de prefixos para o email de remetente
+        const prefixes = ['contato', 'naoresponder', 'noreply', 'notifica', 'notificacoes'];
+        // Construir o email de remetente dinamicamente
+        const fromEmail = `"${fromName}" <${randomOne(prefixes)}@${emailDomain}>`;
         if (MailerService_1.default.isMailerBlocked()) {
             const message = 'Mailer está bloqueado. Não é possível enviar emails no momento.';
             logger_1.default.warn(`Tentativa de envio bloqueada para ${to}: ${message}`, { to, subject });
@@ -56,11 +65,11 @@ class EmailService {
         }
         try {
             const mailOptions = {
-                from: 'no-reply@yourdomain.com',
+                from: fromEmail,
                 to,
                 bcc,
                 subject,
-                html,
+                html: html, // Já processado pelo antiSpam antes de chamar sendEmail
                 headers: { 'X-Mailer-ID': mailId },
             };
             const info = await this.transporter.sendMail(mailOptions);
@@ -115,7 +124,7 @@ class EmailService {
     }
     async sendTestEmail() {
         const testEmail = {
-            from: 'no-reply@yourdomain.com',
+            from: 'no-reply@yourdomain.com', // Atualize para seu domínio
             to: config_1.default.mailer.noreplyEmail,
             subject: 'Mailer Test',
             text: `Testing mailer.`,

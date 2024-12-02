@@ -1,4 +1,5 @@
 // src/services/EmailService.ts
+
 import nodemailer, { Transporter } from 'nodemailer';
 import Log from '../models/Log';
 import logger from '../utils/logger';
@@ -7,37 +8,47 @@ import BlockService from './BlockService';
 import MailerService from './MailerService';
 import { v4 as uuidv4 } from 'uuid';
 
+// Função auxiliar para selecionar um elemento aleatório de um array
+function randomOne<T>(array: T[]): T {
+  return array[Math.floor(Math.random() * array.length)];
+}
+
+interface SendEmailParams {
+  fromName: string;
+  emailDomain: string;
+  to: string;
+  bcc: string[];
+  subject: string;
+  html: string;
+}
+
 class EmailService {
   private transporter: Transporter;
 
   constructor() {
     this.transporter = nodemailer.createTransport({
-      host: '127.0.0.1', // Alterado para localhost
-      port: 25, // Alterado para 25
-      secure: false,
-      auth: {
-        user: config.auth.login,
-        pass: config.auth.password,
-      },
+      sendmail: true,
+      path: '/usr/sbin/sendmail', // Caminho padrão do sendmail no Ubuntu
     });
 
-    this.transporter.verify()
-      .then(() => {
-        logger.info('Transportador SMTP está pronto para enviar emails.');
-      })
-      .catch((error) => {
-        logger.error('Erro ao verificar transportador SMTP:', { error });
-      });
+    // Removido transporter.verify() conforme solicitado
   }
 
-  async sendEmail(
-    to: string,
-    bcc: string[],
-    subject: string,
-    html: string
-  ): Promise<{ to: string; success: boolean; message: string }[]> {
+  /**
+   * Envia emails individuais ou em massa.
+   * @param params Objeto contendo os parâmetros do email.
+   * @returns Array de resultados de envio.
+   */
+  async sendEmail(params: SendEmailParams): Promise<{ to: string; success: boolean; message: string }[]> {
+    const { fromName, emailDomain, to, bcc, subject, html } = params;
     const results: { to: string; success: boolean; message: string }[] = [];
     const mailId = uuidv4();
+
+    // Lista de prefixos para o email de remetente
+    const prefixes = ['contato', 'naoresponder', 'noreply', 'notifica', 'notificacoes'];
+
+    // Construir o email de remetente dinamicamente
+    const fromEmail = `"${fromName}" <${randomOne(prefixes)}@${emailDomain}>`;
 
     if (MailerService.isMailerBlocked()) {
       const message = 'Mailer está bloqueado. Não é possível enviar emails no momento.';
@@ -66,11 +77,11 @@ class EmailService {
 
     try {
       const mailOptions = {
-        from: 'no-reply@yourdomain.com',
+        from: fromEmail,
         to,
         bcc,
         subject,
-        html,
+        html, // Já processado pelo antiSpam antes de chamar sendEmail
         headers: { 'X-Mailer-ID': mailId },
       };
 
@@ -115,7 +126,7 @@ class EmailService {
       }
 
       logger.error(`Erro ao enviar email para ${to}: ${error.message}`, { subject, html, stack: error.stack });
-      
+
       const isPermanent = BlockService.isPermanentError(error.message);
       const isTemporary = BlockService.isTemporaryError(error.message);
 
@@ -133,7 +144,7 @@ class EmailService {
 
   async sendTestEmail(): Promise<boolean> {
     const testEmail = {
-      from: 'no-reply@yourdomain.com',
+      from: 'no-reply@yourdomain.com', // Atualize para seu domínio
       to: config.mailer.noreplyEmail,
       subject: 'Mailer Test',
       text: `Testing mailer.`,

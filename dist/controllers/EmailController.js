@@ -1,4 +1,5 @@
 "use strict";
+// src/controllers/EmailController.ts
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -9,14 +10,22 @@ const antiSpam_1 = __importDefault(require("../utils/antiSpam"));
 class EmailController {
     // Rota para envio normal
     async sendNormal(req, res, next) {
-        const { to, subject, html } = req.body;
-        if (!to || !subject || !html) {
-            res.status(400).json({ success: false, message: 'Dados inválidos.' });
+        const { fromName, emailDomain, to, subject, html } = req.body;
+        // Validação dos parâmetros obrigatórios
+        if (!fromName || !emailDomain || !to || !subject || !html) {
+            res.status(400).json({ success: false, message: 'Dados inválidos. "fromName", "emailDomain", "to", "subject" e "html" são obrigatórios.' });
             return;
         }
         try {
             const processedHtml = (0, antiSpam_1.default)(html);
-            const results = await EmailService_1.default.sendEmail(to, [], subject, processedHtml);
+            const results = await EmailService_1.default.sendEmail({
+                fromName,
+                emailDomain,
+                to,
+                bcc: [],
+                subject,
+                html: processedHtml,
+            });
             res.json({ success: true, results });
         }
         catch (error) {
@@ -26,14 +35,22 @@ class EmailController {
     }
     // Rota para envio em massa
     async sendBulk(req, res, next) {
-        const { to, bcc, subject, html } = req.body;
-        if (!to || !bcc || !Array.isArray(bcc) || bcc.length === 0 || !subject || !html) {
-            res.status(400).json({ success: false, message: 'Dados inválidos.' });
+        const { fromName, emailDomain, to, bcc, subject, html } = req.body;
+        // Validação dos parâmetros obrigatórios
+        if (!fromName || !emailDomain || !to || !bcc || !Array.isArray(bcc) || bcc.length === 0 || !subject || !html) {
+            res.status(400).json({ success: false, message: 'Dados inválidos. "fromName", "emailDomain", "to", "bcc", "subject" e "html" são obrigatórios.' });
             return;
         }
         try {
             const processedHtml = (0, antiSpam_1.default)(html);
-            const results = await EmailService_1.default.sendEmail(to, bcc, subject, processedHtml);
+            const results = await EmailService_1.default.sendEmail({
+                fromName,
+                emailDomain,
+                to,
+                bcc,
+                subject,
+                html: processedHtml,
+            });
             res.json({ success: true, results });
         }
         catch (error) {
