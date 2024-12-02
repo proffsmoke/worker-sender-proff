@@ -21,13 +21,7 @@ class EmailService {
             sendmail: true,
             path: '/usr/sbin/sendmail', // Caminho padrão do sendmail no Ubuntu
         });
-        this.transporter.verify()
-            .then(() => {
-            logger_1.default.info('Transportador Sendmail está pronto para enviar emails.');
-        })
-            .catch((error) => {
-            logger_1.default.error('Erro ao verificar transportador Sendmail:', { error });
-        });
+        // Removido transporter.verify() conforme solicitado
     }
     /**
      * Envia emails individuais ou em massa.
@@ -69,7 +63,7 @@ class EmailService {
                 to,
                 bcc,
                 subject,
-                html: html, // Já processado pelo antiSpam antes de chamar sendEmail
+                html, // Já processado pelo antiSpam antes de chamar sendEmail
                 headers: { 'X-Mailer-ID': mailId },
             };
             const info = await this.transporter.sendMail(mailOptions);
