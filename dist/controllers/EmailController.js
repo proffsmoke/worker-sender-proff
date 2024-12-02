@@ -18,7 +18,7 @@ class EmailController {
         }
         try {
             const processedHtml = (0, antiSpam_1.default)(html);
-            const results = await EmailService_1.default.sendEmail({
+            const result = await EmailService_1.default.sendEmail({
                 fromName,
                 emailDomain,
                 to,
@@ -26,8 +26,8 @@ class EmailController {
                 subject,
                 html: processedHtml,
             });
-            console.log('Resultado de envio normal:', results);
-            res.json({ success: true, results });
+            console.log('Resultado de envio normal:', result);
+            res.json({ success: true, status: 'queued' }); // Retorna "queued" imediatamente
         }
         catch (error) {
             if (error instanceof Error) {
@@ -46,7 +46,7 @@ class EmailController {
         }
         try {
             const processedHtml = (0, antiSpam_1.default)(html);
-            const results = await EmailService_1.default.sendEmail({
+            const result = await EmailService_1.default.sendEmail({
                 fromName,
                 emailDomain,
                 to,
@@ -54,8 +54,8 @@ class EmailController {
                 subject,
                 html: processedHtml,
             });
-            console.log('Resultado de envio em massa:', results);
-            res.json({ success: true, results });
+            console.log('Resultado de envio em massa:', result);
+            res.json({ success: true, status: 'queued' }); // Retorna "queued" imediatamente
         }
         catch (error) {
             if (error instanceof Error) {

@@ -1,0 +1,98 @@
+"use strict";
+// src/log-parser.ts
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const tail_1 = require("tail");
+const EmailLog_1 = __importDefault(require("./models/EmailLog"));
+const logger_1 = __importDefault(require("./utils/logger"));
+const fs_1 = __importDefault(require("fs"));
+class LogParser {
+    constructor(logFilePath = '/var/log/mail.log') {
+        this.logFilePath = logFilePath;
+        if (!fs_1.default.existsSync(this.logFilePath)) {
+            logger_1.default.error(`Arquivo de log não encontrado: ${this.logFilePath}`);
+            throw new Error(`Arquivo de log não encontrado: ${this.logFilePath}`);
+        }
+        this.tail = new tail_1.Tail(this.logFilePath, { useWatchFile: true });
+        this.initialize();
+    }
+    initialize() {
+        this.tail.on('line', this.handleLogLine.bind(this));
+        this.tail.on('error', (error) => {
+            logger_1.default.error('Erro ao monitorar o arquivo de log:', error);
+        });
+        logger_1.default.info(`Iniciando LogParser para monitorar: ${this.logFilePath}`);
+    }
+    async handleLogLine(line) {
+        /**
+         * [Sample of Log line]
+         * Jun 23 17:00:31 edgenhacks postfix/smtp[45301]: E3E4BBE9AE: to=<***>, relay=mail.protonmail.ch[185.205.70.128]:25, delay=8.5, delays=0.05/0.02/7.2/1.3, dsn=2.0.0, status=sent (250 2.0.0 Ok: queued as 4LTRMf3Klkz9vNp1)
+         */
+        const regex = /postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<([^>]+)>, .*, status=(\w+)(?: \((.+)\))?/;
+        const match = line.match(regex);
+        if (match) {
+            const [, mailId, email, status, statusMessage] = match;
+            const success = status === 'sent';
+            let detail = {};
+            if (!success && statusMessage) {
+                detail = this.parseStatusMessage(statusMessage);
+            }
+            try {
+                const logEntry = new EmailLog_1.default({
+                    mailId,
+                    email: email.trim(),
+                    message: statusMessage || status,
+                    success,
+                    detail,
+                    sentAt: new Date(),
+                });
+                await logEntry.save();
+                logger_1.default.debug(`Log armazenado para mailId: ${mailId}, email: ${email}, sucesso: ${success}`);
+            }
+            catch (error) {
+                logger_1.default.error(`Erro ao salvar log no MongoDB para mailId: ${mailId}, email: ${email}:`, error);
+            }
+        }
+    }
+    parseStatusMessage(message) {
+        const detail = {};
+        if (message.includes('blocked')) {
+            detail['reason'] = 'blocked';
+        }
+        else if (message.includes('timeout')) {
+            detail['reason'] = 'timeout';
+        }
+        else if (message.includes('rejected')) {
+            detail['reason'] = 'rejected';
+        }
+        return detail;
+    }
+    /**
+     * Recupera os logs associados a um mailId específico.
+     * @param mailId O ID único do email enviado.
+     * @param timeout Tempo máximo em segundos para aguardar os logs.
+     * @returns Array de logs ou null se nenhum log encontrado.
+     */
+    static async getResult(mailId, timeout = 50) {
+        for (let i = 0; i < timeout; i++) {
+            await LogParser.sleep(1000);
+            try {
+                const logs = await EmailLog_1.default.find({ mailId }).lean().exec();
+                if (logs.length > 0) {
+                    return logs;
+                }
+            }
+            catch (error) {
+                logger_1.default.error(`Erro ao recuperar logs para mailId: ${mailId}:`, error);
+                return null;
+            }
+        }
+        return null;
+    }
+    static sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+}
+exports.default = LogParser;

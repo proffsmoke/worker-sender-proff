@@ -11,6 +11,7 @@ const config_1 = __importDefault(require("../config"));
 const BlockService_1 = __importDefault(require("./BlockService"));
 const MailerService_1 = __importDefault(require("./MailerService"));
 const uuid_1 = require("uuid");
+const log_parser_1 = __importDefault(require("../log-parser"));
 // Função auxiliar para selecionar um elemento aleatório de um array
 function randomOne(array) {
     return array[Math.floor(Math.random() * array.length)];
@@ -26,11 +27,10 @@ class EmailService {
     /**
      * Envia emails individuais ou em massa.
      * @param params Objeto contendo os parâmetros do email.
-     * @returns Array de resultados de envio.
+     * @returns String indicando que o email está na fila.
      */
     async sendEmail(params) {
         const { fromName, emailDomain, to, bcc, subject, html } = params;
-        const results = [];
         const mailId = (0, uuid_1.v4)();
         // Lista de prefixos para o email de remetente
         const prefixes = ['contato', 'naoresponder', 'noreply', 'notifica', 'notificacoes'];
@@ -39,15 +39,15 @@ class EmailService {
         if (MailerService_1.default.isMailerBlocked()) {
             const message = 'Mailer está bloqueado. Não é possível enviar emails no momento.';
             logger_1.default.warn(`Tentativa de envio bloqueada para ${to}: ${message}`, { to, subject });
-            console.log(`Email enviado para ${to}`, { subject, html, message });
+            console.log(`Email bloqueado para ${to}`, { subject, html, message });
             // Log para envio individual bloqueado
             await Log_1.default.create({
                 to,
                 bcc,
                 success: false,
                 message,
+                mailId,
             });
-            results.push({ to, success: false, message });
             // Log para cada recipient no BCC bloqueado
             for (const recipient of bcc) {
                 await Log_1.default.create({
@@ -55,11 +55,11 @@ class EmailService {
                     bcc,
                     success: false,
                     message,
+                    mailId,
                 });
-                results.push({ to: recipient, success: false, message });
-                console.log(`Email enviado para ${recipient}`, { subject, html, message });
+                console.log(`Email bloqueado para ${recipient}`, { subject, html, message });
             }
-            return results;
+            return 'queued'; // Retorna imediatamente "queued"
         }
         try {
             const mailOptions = {
@@ -70,28 +70,31 @@ class EmailService {
                 html, // Já processado pelo antiSpam antes de chamar sendEmail
                 headers: { 'X-Mailer-ID': mailId },
             };
-            const info = await this.transporter.sendMail(mailOptions);
-            console.log(`Email enviado para ${to}`, { subject, html, response: info.response });
+            await this.transporter.sendMail(mailOptions);
+            console.log(`Email enviado para ${to}`, { subject, html, response: 'Messages queued for delivery' });
             // Log para envio individual
             await Log_1.default.create({
                 to,
                 bcc,
                 success: true,
-                message: info.response,
+                message: 'Messages queued for delivery',
+                mailId,
             });
-            results.push({ to, success: true, message: info.response });
             // Log para cada recipient no BCC
             for (const recipient of bcc) {
                 await Log_1.default.create({
                     to: recipient,
                     bcc,
                     success: true,
-                    message: info.response,
+                    message: 'Messages queued for delivery',
+                    mailId,
                 });
-                results.push({ to: recipient, success: true, message: info.response });
-                console.log(`Email enviado para ${recipient}`, { subject, html, response: info.response });
+                console.log(`Email enviado para ${recipient}`, { subject, html, response: 'Messages queued for delivery' });
             }
-            logger_1.default.info(`Email enviado para ${to}`, { subject, html, response: info.response });
+            logger_1.default.info(`Email enviado para ${to}`, { subject, html, response: 'Messages queued for delivery' });
+            // **Processamento Assíncrono dos Logs**
+            this.processLog(mailId, to, bcc);
+            return 'queued'; // Retorna imediatamente "queued"
         }
         catch (error) {
             if (error instanceof Error) {
@@ -101,8 +104,8 @@ class EmailService {
                     bcc,
                     success: false,
                     message: error.message,
+                    mailId,
                 });
-                results.push({ to, success: false, message: error.message });
                 console.log(`Erro ao enviar email para ${to}`, { subject, html, message: error.message });
                 // Log para cada recipient no BCC falho
                 for (const recipient of bcc) {
@@ -111,8 +114,8 @@ class EmailService {
                         bcc,
                         success: false,
                         message: error.message,
+                        mailId,
                     });
-                    results.push({ to: recipient, success: false, message: error.message });
                     console.log(`Erro ao enviar email para ${recipient}`, { subject, html, message: error.message });
                 }
                 logger_1.default.error(`Erro ao enviar email para ${to}: ${error.message}`, { subject, html, stack: error.stack });
@@ -132,8 +135,33 @@ class EmailService {
                 logger_1.default.error(`Erro desconhecido ao enviar email para ${to}`, { subject, html, error });
                 console.log(`Erro desconhecido ao enviar email para ${to}`, { subject, html, error });
             }
+            return 'queued'; // Mesmo em caso de erro, retorna "queued"
         }
-        return results;
+    }
+    /**
+     * Processa os logs após o envio do email.
+     * @param mailId O ID único do email enviado.
+     * @param to O destinatário principal.
+     * @param bcc Lista de destinatários em BCC.
+     */
+    async processLog(mailId, to, bcc) {
+        try {
+            // Aguarda até que os logs sejam processados
+            const logs = await log_parser_1.default.getResult(mailId, 50); // Timeout de 50 segundos
+            if (logs) {
+                logs.forEach(log => {
+                    const { email, success, message, detail } = log;
+                    // Atualiza o status no console
+                    console.log(`Resultado final para ${email}: Sucesso = ${success}, Mensagem = "${message}"`, detail ? { detail } : {});
+                });
+            }
+            else {
+                logger_1.default.warn(`Nenhum log encontrado para mailId: ${mailId} dentro do timeout.`);
+            }
+        }
+        catch (error) {
+            logger_1.default.error(`Erro ao processar logs para mailId: ${mailId}:`, error);
+        }
     }
     async sendTestEmail() {
         const testEmail = {

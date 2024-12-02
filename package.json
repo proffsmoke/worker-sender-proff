@@ -25,6 +25,8 @@
     "@types/mongoose": "^5.11.97",
     "@types/node": "^22.10.1",
     "@types/nodemailer": "^6.4.17",
+    "@types/tail": "^2.2.3",
+    "tail": "^2.2.6",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.2"
   }
