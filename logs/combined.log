@@ -136,3 +136,9 @@
 2024-12-01T22:49:37.795Z [ERROR]: Erro ao verificar transportador SMTP: {"error":{"errno":-61,"code":"ESOCKET","syscall":"connect","address":"127.0.0.1","port":25,"command":"CONN"}}
 2024-12-01T22:49:37.801Z [INFO]: Conectado ao MongoDB 
 2024-12-01T22:49:49.301Z [WARN]: Tentativa de envio bloqueada para recipient@example.com: Mailer está bloqueado. Não é possível enviar emails no momento. {"to":"recipient@example.com","subject":"Teste de envio"}
+2024-12-02T00:03:15.192Z [INFO]: Servidor rodando no endereço 0.0.0.0:7777 
+2024-12-02T00:03:15.210Z [ERROR]: Erro ao verificar transportador SMTP: {"error":{"errno":-61,"code":"ESOCKET","syscall":"connect","address":"0.0.0.0","port":25,"command":"CONN"}}
+2024-12-02T00:03:15.212Z [WARN]: Nenhuma porta disponível para host 0.0.0.0 
+2024-12-02T00:03:15.212Z [WARN]: Mailer bloqueado com status: blocked_permanently 
+2024-12-02T00:03:15.213Z [WARN]: Nenhuma porta disponível. Mailer bloqueado permanentemente. 
+2024-12-02T00:03:15.219Z [INFO]: Conectado ao MongoDB 
