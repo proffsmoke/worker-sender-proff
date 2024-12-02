@@ -1,4 +1,5 @@
 "use strict";
+// src/utils/antiSpam.ts
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -37,7 +38,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = antiSpam;
-// src/utils/antiSpam.ts
 const cheerio = __importStar(require("cheerio"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));

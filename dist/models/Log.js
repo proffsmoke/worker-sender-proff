@@ -1,4 +1,5 @@
 "use strict";
+// src/models/Log.ts
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -33,7 +34,6 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-// src/models/Log.ts
 const mongoose_1 = __importStar(require("mongoose"));
 const LogSchema = new mongoose_1.Schema({
     to: { type: String, required: true },

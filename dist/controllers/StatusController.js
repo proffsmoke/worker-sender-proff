@@ -1,4 +1,5 @@
 "use strict";
+// src/controllers/StatusController.ts
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -34,7 +35,9 @@ class StatusController {
             });
         }
         catch (error) {
-            logger_1.default.error(`Erro ao obter status: ${error.message}`, { stack: error.stack });
+            if (error instanceof Error) {
+                logger_1.default.error(`Erro ao obter status: ${error.message}`, { stack: error.stack });
+            }
             res.status(500).json({ success: false, message: 'Erro ao obter status.' });
         }
     }
