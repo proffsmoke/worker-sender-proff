@@ -26,6 +26,7 @@ class EmailService {
     });
 
     this.logParser = new LogParser('/var/log/mail.log');
+    this.logParser.startMonitoring();
   }
 
   async sendEmail(params: SendEmailParams): Promise<any> {
@@ -35,15 +36,14 @@ class EmailService {
     const recipients = Array.isArray(to) ? [...to, ...bcc] : [to, ...bcc];
 
     try {
-      this.logParser.startMonitoring();
-
       const mailOptions = { from, to: Array.isArray(to) ? to.join(', ') : to, bcc, subject, html };
       const info = await this.transporter.sendMail(mailOptions);
 
       logger.info(`Email enviado: ${JSON.stringify(mailOptions)}`);
       logger.debug(`Resposta do servidor SMTP: ${info.response}`);
 
-      const queueIdMatch = info.response.match(/queued as (\S+)/i);
+      // Extrai o Queue ID da resposta SMTP, se disponível
+      const queueIdMatch = info.response.match(/id=([A-Z0-9-]+)/i);
       const queueId = queueIdMatch ? queueIdMatch[1] : null;
 
       if (!queueId) {
@@ -52,6 +52,7 @@ class EmailService {
 
       logger.info(`Queue ID capturado diretamente: ${queueId}`);
 
+      // Espera pelo status de cada destinatário
       const results = await Promise.all(
         recipients.map(async (recipient) => {
           const status = await this.logParser.waitForQueueId(queueId);
@@ -86,8 +87,6 @@ class EmailService {
     } catch (error) {
       logger.error(`Erro ao enviar e-mail: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
       throw error;
-    } finally {
-      this.logParser.stopMonitoring();
     }
   }
 }

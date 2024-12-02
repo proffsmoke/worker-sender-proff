@@ -16,23 +16,25 @@ class EmailService {
             tls: { rejectUnauthorized: false },
         });
         this.logParser = new log_parser_1.default('/var/log/mail.log');
+        this.logParser.startMonitoring();
     }
     async sendEmail(params) {
         const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
         const from = `"${fromName}" <no-reply@${emailDomain}>`;
         const recipients = Array.isArray(to) ? [...to, ...bcc] : [to, ...bcc];
         try {
-            this.logParser.startMonitoring();
             const mailOptions = { from, to: Array.isArray(to) ? to.join(', ') : to, bcc, subject, html };
             const info = await this.transporter.sendMail(mailOptions);
             logger_1.default.info(`Email enviado: ${JSON.stringify(mailOptions)}`);
             logger_1.default.debug(`Resposta do servidor SMTP: ${info.response}`);
-            const queueIdMatch = info.response.match(/queued as (\S+)/i);
+            // Extrai o Queue ID da resposta SMTP, se disponível
+            const queueIdMatch = info.response.match(/id=([A-Z0-9-]+)/i);
             const queueId = queueIdMatch ? queueIdMatch[1] : null;
             if (!queueId) {
                 throw new Error('Queue ID não encontrado na resposta SMTP.');
             }
             logger_1.default.info(`Queue ID capturado diretamente: ${queueId}`);
+            // Espera pelo status de cada destinatário
             const results = await Promise.all(recipients.map(async (recipient) => {
                 const status = await this.logParser.waitForQueueId(queueId);
                 const success = status === 'sent';
@@ -61,9 +63,6 @@ class EmailService {
         catch (error) {
             logger_1.default.error(`Erro ao enviar e-mail: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
             throw error;
-        }
-        finally {
-            this.logParser.stopMonitoring();
         }
     }
 }

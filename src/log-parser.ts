@@ -51,7 +51,7 @@ class LogParser {
           logger.warn(`Timeout ao capturar status para Queue ID: ${queueId}`);
           resolve('timeout');
         }
-      }, 10000); // 10 seconds
+      }, 10000); // 10 segundos
 
       this.resolveStatusMap.set(queueId, (status) => {
         clearTimeout(timeout);
@@ -61,16 +61,17 @@ class LogParser {
   }
 
   private handleLogLine(line: string) {
-    const regex = /(?:sendmail|sm-mta)\[\d+\]: ([A-Za-z0-9]+): .*stat=(\w+)/;
+    // Regex atualizado para Postfix SMTP logs
+    const regex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):.*status=(\w+)/i;
     const match = line.match(regex);
 
     if (match) {
       const [_, queueId, status] = match;
 
-      // Update status for the Queue ID
+      // Atualiza o status para o Queue ID
       this.queueIdStatuses[queueId] = status;
 
-      // Resolve the promise if waiting for this Queue ID
+      // Resolve as promessas esperando por este Queue ID
       if (this.resolveStatusMap.has(queueId)) {
         this.resolveStatusMap.get(queueId)?.(status);
         this.resolveStatusMap.delete(queueId);
