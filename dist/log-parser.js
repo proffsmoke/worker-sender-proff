@@ -8,7 +8,7 @@ const logger_1 = __importDefault(require("./utils/logger"));
 const fs_1 = __importDefault(require("fs"));
 class LogParser {
     constructor(logFilePath = '/var/log/mail.log') {
-        this.tail = null; // Inicialize como nulo para evitar erros.
+        this.tail = null;
         this.resolveQueueId = () => { };
         this.logFilePath = logFilePath;
         if (!fs_1.default.existsSync(this.logFilePath)) {
@@ -16,9 +16,6 @@ class LogParser {
             throw new Error(`Arquivo de log não encontrado: ${this.logFilePath}`);
         }
         this.tail = new tail_1.Tail(this.logFilePath, { useWatchFile: true });
-        this.queueIdPromise = new Promise((resolve) => {
-            this.resolveQueueId = resolve;
-        });
     }
     startMonitoring() {
         if (!this.tail) {
@@ -40,21 +37,25 @@ class LogParser {
             logger_1.default.warn('Nenhum monitoramento ativo para interromper.');
         }
     }
-    async waitForQueueId(uuid) {
-        const timeout = new Promise((_, reject) => {
-            setTimeout(() => {
-                reject(new Error(`Timeout ao capturar Queue ID para UUID: ${uuid}`));
-            }, 10000); // 10 segundos
+    async waitForQueueId(queueId) {
+        return new Promise((resolve) => {
+            const timeout = setTimeout(() => resolve(false), 10000); // Timeout de 10 segundos
+            this.resolveQueueId = (logQueueId) => {
+                if (logQueueId === queueId) {
+                    clearTimeout(timeout);
+                    resolve(true); // Resolve com sucesso
+                }
+            };
         });
-        return Promise.race([this.queueIdPromise, timeout]).finally(() => this.stopMonitoring());
     }
     handleLogLine(line) {
-        const regex = /(?:sendmail|sm-mta)\[\d+\]: ([A-Za-z0-9]+): .*uuid=([A-Za-z0-9-]+)/;
+        const regex = /(?:sendmail|sm-mta)\[\d+\]: ([A-Za-z0-9]+): .*stat=(\w+)/;
         const match = line.match(regex);
         if (match) {
-            const [_, queueId, logUuid] = match;
+            const [_, queueId, status] = match;
             if (this.resolveQueueId) {
                 this.resolveQueueId(queueId);
+                logger_1.default.info(`Status do Queue ID ${queueId}: ${status}`);
             }
         }
     }

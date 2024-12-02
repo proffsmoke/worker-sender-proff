@@ -4,8 +4,7 @@ import fs from 'fs';
 
 class LogParser {
   private logFilePath: string;
-  private tail: Tail | null = null; // Inicialize como nulo para evitar erros.
-  private queueIdPromise: Promise<string | null>;
+  private tail: Tail | null = null;
   private resolveQueueId: (queueId: string | null) => void = () => {};
 
   constructor(logFilePath: string = '/var/log/mail.log') {
@@ -17,9 +16,6 @@ class LogParser {
     }
 
     this.tail = new Tail(this.logFilePath, { useWatchFile: true });
-    this.queueIdPromise = new Promise((resolve) => {
-      this.resolveQueueId = resolve;
-    });
   }
 
   startMonitoring() {
@@ -45,25 +41,29 @@ class LogParser {
     }
   }
 
-  async waitForQueueId(uuid: string): Promise<string | null> {
-    const timeout = new Promise<string | null>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error(`Timeout ao capturar Queue ID para UUID: ${uuid}`));
-      }, 10000); // 10 segundos
-    });
+  async waitForQueueId(queueId: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve(false), 10000); // Timeout de 10 segundos
 
-    return Promise.race([this.queueIdPromise, timeout]).finally(() => this.stopMonitoring());
+      this.resolveQueueId = (logQueueId) => {
+        if (logQueueId === queueId) {
+          clearTimeout(timeout);
+          resolve(true); // Resolve com sucesso
+        }
+      };
+    });
   }
 
   private handleLogLine(line: string) {
-    const regex = /(?:sendmail|sm-mta)\[\d+\]: ([A-Za-z0-9]+): .*uuid=([A-Za-z0-9-]+)/;
+    const regex = /(?:sendmail|sm-mta)\[\d+\]: ([A-Za-z0-9]+): .*stat=(\w+)/;
     const match = line.match(regex);
 
     if (match) {
-      const [_, queueId, logUuid] = match;
+      const [_, queueId, status] = match;
 
       if (this.resolveQueueId) {
         this.resolveQueueId(queueId);
+        logger.info(`Status do Queue ID ${queueId}: ${status}`);
       }
     }
   }

@@ -6,7 +6,7 @@ import LogParser from '../log-parser';
 interface SendEmailParams {
   fromName: string;
   emailDomain: string;
-  to: string;
+  to: string | string[]; // Pode ser um ou mais destinatários
   bcc?: string[];
   subject: string;
   html: string;
@@ -28,16 +28,18 @@ class EmailService {
     this.logParser = new LogParser('/var/log/mail.log');
   }
 
-  async sendEmail(params: SendEmailParams): Promise<string> {
+  async sendEmail(params: SendEmailParams): Promise<any> {
     const { fromName, emailDomain, to, bcc, subject, html, uuid } = params;
     const from = `"${fromName}" <no-reply@${emailDomain}>`;
 
     try {
-      this.logParser.startMonitoring(); // Start monitoring logs before sending
+      // Start monitoring logs
+      this.logParser.startMonitoring();
 
       const mailOptions = { from, to, bcc, subject, html };
-      const info = await this.transporter.sendMail(mailOptions);
+      const recipients = Array.isArray(to) ? to : [to];
 
+      const info = await this.transporter.sendMail(mailOptions);
       logger.info(`Email enviado: ${JSON.stringify(mailOptions)}`);
       logger.debug(`Resposta do servidor SMTP: ${info.response}`);
 
@@ -51,28 +53,49 @@ class EmailService {
 
       logger.info(`Queue ID capturado diretamente: ${queueId}`);
 
-      // Relate Queue ID with UUID
-      const emailLog = new EmailLog({
+      // Wait for log monitoring to complete for the captured queue ID
+      await Promise.all(
+        recipients.map(async (recipient) => {
+          const status = await this.logParser.waitForQueueId(queueId);
+
+          // Save the log for each recipient
+          const emailLog = new EmailLog({
+            mailId: uuid,
+            sendmailQueueId: queueId,
+            email: recipient,
+            message: `Status atualizado: ${status ? 'sent' : 'failed'}`,
+            success: status,
+            detail: {
+              queueId,
+              rawResponse: info.response,
+              mailOptions,
+            },
+          });
+
+          await emailLog.save();
+          return {
+            recipient,
+            success: status,
+          };
+        })
+      );
+
+      logger.info(
+        `Resultado do envio: MailID: ${uuid}, QueueID: ${queueId}, Recipients: ${JSON.stringify(
+          recipients
+        )}`
+      );
+
+      return {
         mailId: uuid,
-        sendmailQueueId: queueId,
-        email: to,
-        message: 'E-mail enfileirado.',
-        success: true,
-        detail: {
-          queueId,
-          rawResponse: info.response,
-          mailOptions,
-        },
-      });
-
-      await emailLog.save();
-
-      return queueId;
+        queueId,
+        recipients: recipients.map((recipient) => ({ recipient, success: true })),
+      };
     } catch (error) {
       // logger.error(`Erro ao enviar e-mail: ${error.message}`, { stack: error.stack });
       throw error;
     } finally {
-      this.logParser.stopMonitoring(); // Ensure monitoring stops even on errors
+      this.logParser.stopMonitoring();
     }
   }
 }
