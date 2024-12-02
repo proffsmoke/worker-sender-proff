@@ -27,9 +27,9 @@ class EmailService {
 
     async sendEmail(params: SendEmailParams): Promise<string> {
         const { fromName, emailDomain, to, bcc, subject, html, uuid } = params;
-
+    
         const fromEmail = `"${fromName}" <no-reply@${emailDomain}>`;
-
+    
         try {
             const mailOptions = {
                 from: fromEmail,
@@ -37,18 +37,18 @@ class EmailService {
                 bcc,
                 subject,
                 html,
-                headers: { 'X-Mailer-ID': uuid },
+                headers: { 'X-Mailer-ID': uuid }, // Cabeçalho personalizado com UUID
             };
-
+    
             await this.transporter.sendMail(mailOptions);
-
+    
             logger.info(`Email enviado para ${to}`);
             this.processLog(uuid, to, bcc);
-
+    
             return 'queued';
         } catch (error) {
             logger.error(`Erro ao enviar email para ${to}:`, error);
-            return 'queued';
+            return 'failed';
         }
     }
 

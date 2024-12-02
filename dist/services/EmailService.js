@@ -25,7 +25,7 @@ class EmailService {
                 bcc,
                 subject,
                 html,
-                headers: { 'X-Mailer-ID': uuid },
+                headers: { 'X-Mailer-ID': uuid }, // Cabeçalho personalizado com UUID
             };
             await this.transporter.sendMail(mailOptions);
             logger_1.default.info(`Email enviado para ${to}`);
@@ -34,7 +34,7 @@ class EmailService {
         }
         catch (error) {
             logger_1.default.error(`Erro ao enviar email para ${to}:`, error);
-            return 'queued';
+            return 'failed';
         }
     }
     async processLog(uuid, to, bcc) {

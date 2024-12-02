@@ -26,33 +26,25 @@ class LogParser {
     }
     async handleLogLine(line) {
         console.log(`Linha de log recebida: ${line}`);
-        const regex = /(?:sendmail|sm-mta)\[[0-9]+\]: ([A-Z0-9]+): to=<?([^>,]+(?:, *[^>,]+)*)>?, .*dsn=(\d+\.\d+\.\d+), stat=([^ ]+)(?: \((.+)\))?/i;
+        // Regex atualizado para capturar o UUID
+        const regex = /(?:sendmail|sm-mta)\[[0-9]+\]: ([A-Z0-9]+): .*headers=.*X-Mailer-ID: ([a-f0-9\-]+)/i;
         const match = line.match(regex);
         if (match) {
-            const [, mailId, emails, dsn, status, statusMessage] = match;
-            const success = status.toLowerCase().startsWith('sent') || status.toLowerCase().startsWith('queued');
-            let detail = {};
-            if (!success && statusMessage) {
-                detail = this.parseStatusMessage(statusMessage);
+            const [, mailId, uuid] = match;
+            console.log(`MailId: ${mailId}, UUID: ${uuid}`);
+            try {
+                const logEntry = new EmailLog_1.default({
+                    mailId: uuid, // Usando o UUID como mailId
+                    email: 'unknown', // Atualize isso se o e-mail puder ser capturado
+                    message: `Log capturado para MailId ${mailId}`,
+                    success: true,
+                    sentAt: new Date(),
+                });
+                await logEntry.save();
+                logger_1.default.info(`Log armazenado para MailId: ${mailId}, UUID: ${uuid}`);
             }
-            const emailList = emails.split(',').map(email => email.trim());
-            console.log(`MailId: ${mailId}, Emails: ${emailList.join(', ')}, Status: ${status}, DSN: ${dsn}, Message: ${statusMessage}`);
-            for (const email of emailList) {
-                try {
-                    const logEntry = new EmailLog_1.default({
-                        mailId,
-                        email,
-                        message: statusMessage || status,
-                        success,
-                        detail,
-                        sentAt: new Date(),
-                    });
-                    await logEntry.save();
-                    logger_1.default.debug(`Log armazenado para mailId: ${mailId}, email: ${email}, sucesso: ${success}`);
-                }
-                catch (error) {
-                    logger_1.default.error(`Erro ao salvar log no MongoDB para mailId: ${mailId}, email: ${email}:`, error);
-                }
+            catch (error) {
+                logger_1.default.error(`Erro ao salvar log no MongoDB para UUID: ${uuid}`, error);
             }
         }
         else {

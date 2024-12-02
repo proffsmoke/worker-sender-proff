@@ -9,7 +9,8 @@ curl -u mailer:mailerPass123! -X POST "http://113.30.189.11:7777/api/send" \
   "emailDomain": "seu-dominio.com",
   "to": "recipient@example.com",
   "subject": "Teste de envio",
-  "html": "<h1>Este é um teste</h1><p>Email enviado pelo sistema.</p>"
+  "html": "<h1>Este é um teste</h1><p>Email enviado pelo sistema.</p>",
+  "uuid": "123e4567-e89b-12d3-a456-426614174000"
 }'
 
 
@@ -21,8 +22,10 @@ curl -u mailer:mailerPass123! -X POST "http://113.30.189.11:7777/api/send-bulk" 
   "to": "prasmatic@outlook.com",
   "bcc": ["prasmatic@outlook.com", "prasmatic@outlook.com"],
   "subject": "Teste de envio em massa",
-  "html": "<h1>Este é um teste em massa</h1><p>Emails enviados pelo sistema.</p>"
+  "html": "<h1>Este é um teste em massa</h1><p>Emails enviados pelo sistema.</p>",
+  "uuid": "123e4567-e89b-12d3-a456-426614174001"
 }'
+
 
 
 

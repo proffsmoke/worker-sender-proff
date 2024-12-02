@@ -29,46 +29,37 @@ class LogParser {
         logger.info(`Iniciando LogParser para monitorar: ${this.logFilePath}`);
     }
 
-    private async handleLogLine(line: string) {
-        console.log(`Linha de log recebida: ${line}`);
+private async handleLogLine(line: string) {
+    console.log(`Linha de log recebida: ${line}`);
 
-        const regex = /(?:sendmail|sm-mta)\[[0-9]+\]: ([A-Z0-9]+): to=<?([^>,]+(?:, *[^>,]+)*)>?, .*dsn=(\d+\.\d+\.\d+), stat=([^ ]+)(?: \((.+)\))?/i;
-        const match = line.match(regex);
+    // Regex atualizado para capturar o UUID
+    const regex = /(?:sendmail|sm-mta)\[[0-9]+\]: ([A-Z0-9]+): .*headers=.*X-Mailer-ID: ([a-f0-9\-]+)/i;
+    const match = line.match(regex);
 
-        if (match) {
-            const [, mailId, emails, dsn, status, statusMessage] = match;
-            const success = status.toLowerCase().startsWith('sent') || status.toLowerCase().startsWith('queued');
-            let detail: Record<string, any> = {};
+    if (match) {
+        const [, mailId, uuid] = match;
 
-            if (!success && statusMessage) {
-                detail = this.parseStatusMessage(statusMessage);
-            }
+        console.log(`MailId: ${mailId}, UUID: ${uuid}`);
 
-            const emailList = emails.split(',').map(email => email.trim());
+        try {
+            const logEntry: IEmailLog = new EmailLog({
+                mailId: uuid, // Usando o UUID como mailId
+                email: 'unknown', // Atualize isso se o e-mail puder ser capturado
+                message: `Log capturado para MailId ${mailId}`,
+                success: true,
+                sentAt: new Date(),
+            });
 
-            console.log(`MailId: ${mailId}, Emails: ${emailList.join(', ')}, Status: ${status}, DSN: ${dsn}, Message: ${statusMessage}`);
-
-            for (const email of emailList) {
-                try {
-                    const logEntry: IEmailLog = new EmailLog({
-                        mailId,
-                        email,
-                        message: statusMessage || status,
-                        success,
-                        detail,
-                        sentAt: new Date(),
-                    });
-
-                    await logEntry.save();
-                    logger.debug(`Log armazenado para mailId: ${mailId}, email: ${email}, sucesso: ${success}`);
-                } catch (error) {
-                    logger.error(`Erro ao salvar log no MongoDB para mailId: ${mailId}, email: ${email}:`, error);
-                }
-            }
-        } else {
-            console.log(`Linha de log não correspondida pelo regex: ${line}`);
+            await logEntry.save();
+            logger.info(`Log armazenado para MailId: ${mailId}, UUID: ${uuid}`);
+        } catch (error) {
+            logger.error(`Erro ao salvar log no MongoDB para UUID: ${uuid}`, error);
         }
+    } else {
+        console.log(`Linha de log não correspondida pelo regex: ${line}`);
     }
+}
+
 
     private parseStatusMessage(message: string): Record<string, any> {
         const detail: Record<string, any> = {};
