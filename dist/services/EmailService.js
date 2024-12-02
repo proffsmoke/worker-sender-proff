@@ -20,7 +20,6 @@ class EmailService {
     async sendEmail(params) {
         const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
         const from = `"${fromName}" <no-reply@${emailDomain}>`;
-        // Flatten all recipients into a single list
         const recipients = Array.isArray(to) ? [...to, ...bcc] : [to, ...bcc];
         try {
             this.logParser.startMonitoring();
@@ -28,7 +27,6 @@ class EmailService {
             const info = await this.transporter.sendMail(mailOptions);
             logger_1.default.info(`Email enviado: ${JSON.stringify(mailOptions)}`);
             logger_1.default.debug(`Resposta do servidor SMTP: ${info.response}`);
-            // Extract QueueID from SMTP response
             const queueIdMatch = info.response.match(/queued as (\S+)/i);
             const queueId = queueIdMatch ? queueIdMatch[1] : null;
             if (!queueId) {
@@ -37,8 +35,8 @@ class EmailService {
             logger_1.default.info(`Queue ID capturado diretamente: ${queueId}`);
             const results = await Promise.all(recipients.map(async (recipient) => {
                 try {
-                    const logStatus = await this.logParser.waitForQueueId(queueId);
-                    const success = typeof logStatus === 'string' && logStatus === 'sent';
+                    const status = await this.logParser.waitForQueueId(queueId);
+                    const success = status === 'sent';
                     const emailLog = new EmailLog_1.default({
                         mailId: uuid,
                         sendmailQueueId: queueId,

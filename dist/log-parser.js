@@ -38,12 +38,15 @@ class LogParser {
         }
     }
     async waitForQueueId(queueId) {
-        return new Promise((resolve) => {
-            const timeout = setTimeout(() => resolve(false), 10000); // Timeout de 10 segundos
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                logger_1.default.warn(`Timeout ao capturar status para Queue ID: ${queueId}`);
+                resolve('timeout');
+            }, 10000);
             this.resolveQueueId = (logQueueId) => {
                 if (logQueueId === queueId) {
                     clearTimeout(timeout);
-                    resolve(true); // Resolve com sucesso
+                    resolve('sent');
                 }
             };
         });

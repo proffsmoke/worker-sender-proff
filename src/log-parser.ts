@@ -41,14 +41,17 @@ class LogParser {
     }
   }
 
-  async waitForQueueId(queueId: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => resolve(false), 10000); // Timeout de 10 segundos
+  async waitForQueueId(queueId: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        logger.warn(`Timeout ao capturar status para Queue ID: ${queueId}`);
+        resolve('timeout');
+      }, 10000);
 
       this.resolveQueueId = (logQueueId) => {
         if (logQueueId === queueId) {
           clearTimeout(timeout);
-          resolve(true); // Resolve com sucesso
+          resolve('sent');
         }
       };
     });
@@ -60,7 +63,6 @@ class LogParser {
 
     if (match) {
       const [_, queueId, status] = match;
-
       if (this.resolveQueueId) {
         this.resolveQueueId(queueId);
         logger.info(`Status do Queue ID ${queueId}: ${status}`);

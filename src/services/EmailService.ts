@@ -32,7 +32,6 @@ class EmailService {
     const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
     const from = `"${fromName}" <no-reply@${emailDomain}>`;
 
-    // Flatten all recipients into a single list
     const recipients = Array.isArray(to) ? [...to, ...bcc] : [to, ...bcc];
 
     try {
@@ -44,7 +43,6 @@ class EmailService {
       logger.info(`Email enviado: ${JSON.stringify(mailOptions)}`);
       logger.debug(`Resposta do servidor SMTP: ${info.response}`);
 
-      // Extract QueueID from SMTP response
       const queueIdMatch = info.response.match(/queued as (\S+)/i);
       const queueId = queueIdMatch ? queueIdMatch[1] : null;
 
@@ -57,8 +55,8 @@ class EmailService {
       const results = await Promise.all(
         recipients.map(async (recipient) => {
           try {
-            const logStatus = await this.logParser.waitForQueueId(queueId);
-            const success = typeof logStatus === 'string' && logStatus === 'sent';
+            const status = await this.logParser.waitForQueueId(queueId);
+            const success = status === 'sent';
 
             const emailLog = new EmailLog({
               mailId: uuid,
