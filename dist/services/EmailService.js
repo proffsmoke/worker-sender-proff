@@ -14,8 +14,8 @@ const uuid_1 = require("uuid");
 class EmailService {
     constructor() {
         this.transporter = nodemailer_1.default.createTransport({
-            host: '0.0.0.0',
-            port: 25,
+            host: '0.0.0.', // Alterado para localhost
+            port: 25, // Alterado para 25
             secure: false,
             auth: {
                 user: config_1.default.auth.login,
@@ -32,11 +32,10 @@ class EmailService {
     }
     async sendEmail(to, bcc, subject, html) {
         const results = [];
-        const mailId = (0, uuid_1.v4)(); // Gerar um mailId internamente para logs
+        const mailId = (0, uuid_1.v4)();
         if (MailerService_1.default.isMailerBlocked()) {
             const message = 'Mailer está bloqueado. Não é possível enviar emails no momento.';
             logger_1.default.warn(`Tentativa de envio bloqueada para ${to}: ${message}`, { to, subject });
-            // Log de falha para destinatário principal
             await Log_1.default.create({
                 to,
                 bcc,
@@ -44,7 +43,6 @@ class EmailService {
                 message,
             });
             results.push({ to, success: false, message });
-            // Log de falha para cada BCC
             for (const recipient of bcc) {
                 await Log_1.default.create({
                     to: recipient,
@@ -66,7 +64,6 @@ class EmailService {
                 headers: { 'X-Mailer-ID': mailId },
             };
             const info = await this.transporter.sendMail(mailOptions);
-            // Log de sucesso para destinatário principal
             await Log_1.default.create({
                 to,
                 bcc,
@@ -74,7 +71,6 @@ class EmailService {
                 message: info.response,
             });
             results.push({ to, success: true, message: info.response });
-            // Log de sucesso para cada BCC
             for (const recipient of bcc) {
                 await Log_1.default.create({
                     to: recipient,
@@ -87,7 +83,6 @@ class EmailService {
             logger_1.default.info(`Email enviado para ${to}`, { subject, html, response: info.response });
         }
         catch (error) {
-            // Log de falha para destinatário principal
             await Log_1.default.create({
                 to,
                 bcc,
@@ -95,7 +90,6 @@ class EmailService {
                 message: error.message,
             });
             results.push({ to, success: false, message: error.message });
-            // Log de falha para cada BCC
             for (const recipient of bcc) {
                 await Log_1.default.create({
                     to: recipient,
@@ -106,7 +100,6 @@ class EmailService {
                 results.push({ to: recipient, success: false, message: error.message });
             }
             logger_1.default.error(`Erro ao enviar email para ${to}: ${error.message}`, { subject, html, stack: error.stack });
-            // Gerenciamento de status do mailer baseado no erro
             const isPermanent = BlockService_1.default.isPermanentError(error.message);
             const isTemporary = BlockService_1.default.isTemporaryError(error.message);
             if (isPermanent && !MailerService_1.default.isMailerPermanentlyBlocked()) {

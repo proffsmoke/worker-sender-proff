@@ -22,5 +22,9 @@ const config = {
             ? parseInt(process.env.MAILER_TEMPORARY_BLOCK_DURATION, 10)
             : 300000, // 5 minutos em ms
     },
+    smtp: {
+        host: 'smtp.gmail.com',
+        port: 25,
+    },
 };
 exports.default = config;

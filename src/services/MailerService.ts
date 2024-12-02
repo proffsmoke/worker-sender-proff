@@ -1,3 +1,4 @@
+// src/services/MailerService.ts
 import PortCheckService from './PortCheckService';
 import logger from '../utils/logger';
 import config from '../config';
@@ -6,7 +7,7 @@ class MailerService {
   private isBlocked: boolean = false;
   private isBlockedPermanently: boolean = false;
   private createdAt: Date;
-  private version: string = '4.3.26-1'; // Atualize conforme necessário
+  private version: string = '4.3.26-1';
   private intervalId: NodeJS.Timeout | null = null;
 
   constructor() {
@@ -28,9 +29,9 @@ class MailerService {
       return;
     }
 
-    const openPort = await PortCheckService.verifyPort('0.0.0.0', [25, 587, 465]); // Verifica múltiplas portas
+    const openPort = await PortCheckService.verifyPort('smtp.gmail.com', [25]); // Alterado para smtp.gmail.com e porta 25
     if (!openPort && !this.isBlocked) {
-      this.blockMailer('blocked_permanently'); // Bloqueio permanente
+      this.blockMailer('blocked_permanently');
       logger.warn('Nenhuma porta disponível. Mailer bloqueado permanentemente.');
     } else if (openPort) {
       logger.info(`Porta ${openPort} aberta. Mailer funcionando normalmente.`);
@@ -85,7 +86,7 @@ class MailerService {
     if (this.isBlocked && !this.isBlockedPermanently) {
       this.isBlocked = false;
       logger.info('Mailer desbloqueado.');
-      this.initialize(); // Recomeça as verificações periódicas
+      this.initialize();
     }
   }
 }

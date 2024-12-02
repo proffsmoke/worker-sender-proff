@@ -12,8 +12,8 @@ class EmailService {
 
   constructor() {
     this.transporter = nodemailer.createTransport({
-      host: '0.0.0.0',
-      port: 25,
+      host: '0.0.0.', // Alterado para localhost
+      port: 25, // Alterado para 25
       secure: false,
       auth: {
         user: config.auth.login,
@@ -37,13 +37,12 @@ class EmailService {
     html: string
   ): Promise<{ to: string; success: boolean; message: string }[]> {
     const results: { to: string; success: boolean; message: string }[] = [];
-    const mailId = uuidv4(); // Gerar um mailId internamente para logs
+    const mailId = uuidv4();
 
     if (MailerService.isMailerBlocked()) {
       const message = 'Mailer está bloqueado. Não é possível enviar emails no momento.';
       logger.warn(`Tentativa de envio bloqueada para ${to}: ${message}`, { to, subject });
 
-      // Log de falha para destinatário principal
       await Log.create({
         to,
         bcc,
@@ -52,7 +51,6 @@ class EmailService {
       });
       results.push({ to, success: false, message });
 
-      // Log de falha para cada BCC
       for (const recipient of bcc) {
         await Log.create({
           to: recipient,
@@ -78,7 +76,6 @@ class EmailService {
 
       const info = await this.transporter.sendMail(mailOptions);
 
-      // Log de sucesso para destinatário principal
       await Log.create({
         to,
         bcc,
@@ -87,7 +84,6 @@ class EmailService {
       });
       results.push({ to, success: true, message: info.response });
 
-      // Log de sucesso para cada BCC
       for (const recipient of bcc) {
         await Log.create({
           to: recipient,
@@ -100,7 +96,6 @@ class EmailService {
 
       logger.info(`Email enviado para ${to}`, { subject, html, response: info.response });
     } catch (error: any) {
-      // Log de falha para destinatário principal
       await Log.create({
         to,
         bcc,
@@ -109,7 +104,6 @@ class EmailService {
       });
       results.push({ to, success: false, message: error.message });
 
-      // Log de falha para cada BCC
       for (const recipient of bcc) {
         await Log.create({
           to: recipient,
@@ -122,7 +116,6 @@ class EmailService {
 
       logger.error(`Erro ao enviar email para ${to}: ${error.message}`, { subject, html, stack: error.stack });
       
-      // Gerenciamento de status do mailer baseado no erro
       const isPermanent = BlockService.isPermanentError(error.message);
       const isTemporary = BlockService.isTemporaryError(error.message);
 
