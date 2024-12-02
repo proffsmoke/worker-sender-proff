@@ -5,7 +5,8 @@ import fs from 'fs';
 class LogParser {
   private logFilePath: string;
   private tail: Tail | null = null;
-  private resolveQueueId: (queueId: string | null) => void = () => {};
+  private queueIdStatuses: Record<string, string> = {};
+  private resolveStatusMap: Map<string, (status: string) => void> = new Map();
 
   constructor(logFilePath: string = '/var/log/mail.log') {
     this.logFilePath = logFilePath;
@@ -41,19 +42,21 @@ class LogParser {
     }
   }
 
-  async waitForQueueId(queueId: string): Promise<string> {
+  waitForQueueId(queueId: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        logger.warn(`Timeout ao capturar status para Queue ID: ${queueId}`);
-        resolve('timeout');
-      }, 10000);
-
-      this.resolveQueueId = (logQueueId) => {
-        if (logQueueId === queueId) {
-          clearTimeout(timeout);
-          resolve('sent');
+        if (this.queueIdStatuses[queueId]) {
+          resolve(this.queueIdStatuses[queueId]);
+        } else {
+          logger.warn(`Timeout ao capturar status para Queue ID: ${queueId}`);
+          resolve('timeout');
         }
-      };
+      }, 10000); // 10 seconds
+
+      this.resolveStatusMap.set(queueId, (status) => {
+        clearTimeout(timeout);
+        resolve(status);
+      });
     });
   }
 
@@ -63,10 +66,17 @@ class LogParser {
 
     if (match) {
       const [_, queueId, status] = match;
-      if (this.resolveQueueId) {
-        this.resolveQueueId(queueId);
-        logger.info(`Status do Queue ID ${queueId}: ${status}`);
+
+      // Update status for the Queue ID
+      this.queueIdStatuses[queueId] = status;
+
+      // Resolve the promise if waiting for this Queue ID
+      if (this.resolveStatusMap.has(queueId)) {
+        this.resolveStatusMap.get(queueId)?.(status);
+        this.resolveStatusMap.delete(queueId);
       }
+
+      logger.info(`Status do Queue ID ${queueId}: ${status}`);
     }
   }
 }

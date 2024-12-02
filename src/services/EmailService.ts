@@ -54,30 +54,25 @@ class EmailService {
 
       const results = await Promise.all(
         recipients.map(async (recipient) => {
-          try {
-            const status = await this.logParser.waitForQueueId(queueId);
-            const success = status === 'sent';
+          const status = await this.logParser.waitForQueueId(queueId);
+          const success = status === 'sent';
 
-            const emailLog = new EmailLog({
-              mailId: uuid,
-              sendmailQueueId: queueId,
-              email: recipient,
-              message: `Status: ${success ? 'Enviado' : 'Falha'}`,
-              success,
-              detail: {
-                queueId,
-                rawResponse: info.response,
-                mailOptions,
-              },
-            });
+          const emailLog = new EmailLog({
+            mailId: uuid,
+            sendmailQueueId: queueId,
+            email: recipient,
+            message: `Status: ${success ? 'Enviado' : 'Falha'}`,
+            success,
+            detail: {
+              queueId,
+              rawResponse: info.response,
+              mailOptions,
+            },
+          });
 
-            await emailLog.save();
+          await emailLog.save();
 
-            return { recipient, success };
-          } catch (error) {
-            logger.error(`Erro ao processar destinatário ${recipient}: ${error}`);
-            return { recipient, success: false };
-          }
+          return { recipient, success };
         })
       );
 
@@ -89,11 +84,7 @@ class EmailService {
         recipients: results,
       };
     } catch (error) {
-      if (error instanceof Error) {
-        logger.error(`Erro ao enviar e-mail: ${error.message}`, { stack: error.stack });
-      } else {
-        logger.error(`Erro desconhecido ao enviar e-mail: ${JSON.stringify(error)}`);
-      }
+      logger.error(`Erro ao enviar e-mail: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
       throw error;
     } finally {
       this.logParser.stopMonitoring();

@@ -34,28 +34,22 @@ class EmailService {
             }
             logger_1.default.info(`Queue ID capturado diretamente: ${queueId}`);
             const results = await Promise.all(recipients.map(async (recipient) => {
-                try {
-                    const status = await this.logParser.waitForQueueId(queueId);
-                    const success = status === 'sent';
-                    const emailLog = new EmailLog_1.default({
-                        mailId: uuid,
-                        sendmailQueueId: queueId,
-                        email: recipient,
-                        message: `Status: ${success ? 'Enviado' : 'Falha'}`,
-                        success,
-                        detail: {
-                            queueId,
-                            rawResponse: info.response,
-                            mailOptions,
-                        },
-                    });
-                    await emailLog.save();
-                    return { recipient, success };
-                }
-                catch (error) {
-                    logger_1.default.error(`Erro ao processar destinatário ${recipient}: ${error}`);
-                    return { recipient, success: false };
-                }
+                const status = await this.logParser.waitForQueueId(queueId);
+                const success = status === 'sent';
+                const emailLog = new EmailLog_1.default({
+                    mailId: uuid,
+                    sendmailQueueId: queueId,
+                    email: recipient,
+                    message: `Status: ${success ? 'Enviado' : 'Falha'}`,
+                    success,
+                    detail: {
+                        queueId,
+                        rawResponse: info.response,
+                        mailOptions,
+                    },
+                });
+                await emailLog.save();
+                return { recipient, success };
             }));
             logger_1.default.info(`Resultado do envio: MailID: ${uuid}, QueueID: ${queueId}, Recipients: ${JSON.stringify(results)}`);
             return {
@@ -65,12 +59,7 @@ class EmailService {
             };
         }
         catch (error) {
-            if (error instanceof Error) {
-                logger_1.default.error(`Erro ao enviar e-mail: ${error.message}`, { stack: error.stack });
-            }
-            else {
-                logger_1.default.error(`Erro desconhecido ao enviar e-mail: ${JSON.stringify(error)}`);
-            }
+            logger_1.default.error(`Erro ao enviar e-mail: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
             throw error;
         }
         finally {

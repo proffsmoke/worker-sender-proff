@@ -9,7 +9,8 @@ const fs_1 = __importDefault(require("fs"));
 class LogParser {
     constructor(logFilePath = '/var/log/mail.log') {
         this.tail = null;
-        this.resolveQueueId = () => { };
+        this.queueIdStatuses = {};
+        this.resolveStatusMap = new Map();
         this.logFilePath = logFilePath;
         if (!fs_1.default.existsSync(this.logFilePath)) {
             logger_1.default.error(`Arquivo de log não encontrado no caminho: ${this.logFilePath}`);
@@ -37,18 +38,21 @@ class LogParser {
             logger_1.default.warn('Nenhum monitoramento ativo para interromper.');
         }
     }
-    async waitForQueueId(queueId) {
+    waitForQueueId(queueId) {
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
-                logger_1.default.warn(`Timeout ao capturar status para Queue ID: ${queueId}`);
-                resolve('timeout');
-            }, 10000);
-            this.resolveQueueId = (logQueueId) => {
-                if (logQueueId === queueId) {
-                    clearTimeout(timeout);
-                    resolve('sent');
+                if (this.queueIdStatuses[queueId]) {
+                    resolve(this.queueIdStatuses[queueId]);
                 }
-            };
+                else {
+                    logger_1.default.warn(`Timeout ao capturar status para Queue ID: ${queueId}`);
+                    resolve('timeout');
+                }
+            }, 10000); // 10 seconds
+            this.resolveStatusMap.set(queueId, (status) => {
+                clearTimeout(timeout);
+                resolve(status);
+            });
         });
     }
     handleLogLine(line) {
@@ -56,10 +60,14 @@ class LogParser {
         const match = line.match(regex);
         if (match) {
             const [_, queueId, status] = match;
-            if (this.resolveQueueId) {
-                this.resolveQueueId(queueId);
-                logger_1.default.info(`Status do Queue ID ${queueId}: ${status}`);
+            // Update status for the Queue ID
+            this.queueIdStatuses[queueId] = status;
+            // Resolve the promise if waiting for this Queue ID
+            if (this.resolveStatusMap.has(queueId)) {
+                this.resolveStatusMap.get(queueId)?.(status);
+                this.resolveStatusMap.delete(queueId);
             }
+            logger_1.default.info(`Status do Queue ID ${queueId}: ${status}`);
         }
     }
 }
