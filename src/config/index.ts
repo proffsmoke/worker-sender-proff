@@ -20,7 +20,7 @@ const config = {
       : 300000, // 5 minutos em ms
   },
   smtp: { // Adicionado
-    host: '0.0.0.0',
+    host: '127.0.0.1',
     port: 25,
   },
 };

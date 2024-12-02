@@ -12,7 +12,7 @@ class EmailService {
 
   constructor() {
     this.transporter = nodemailer.createTransport({
-      host: '0.0.0.0', // Alterado para localhost
+      host: '127.0.0.1', // Alterado para localhost
       port: 25, // Alterado para 25
       secure: false,
       auth: {

@@ -16,3 +16,4 @@
 2024-12-02T00:10:57.233Z [ERROR]: Erro ao verificar transportador SMTP: {"error":{"errno":-3008,"code":"EDNS","syscall":"getaddrinfo","hostname":"0.0.0.","command":"CONN"}}
 2024-12-02T00:12:53.451Z [ERROR]: Erro ao verificar transportador SMTP: {"error":{"errno":-61,"code":"ESOCKET","syscall":"connect","address":"0.0.0.0","port":25,"command":"CONN"}}
 2024-12-02T00:19:56.501Z [ERROR]: Erro ao verificar transportador SMTP: {"error":{"errno":-61,"code":"ESOCKET","syscall":"connect","address":"0.0.0.0","port":25,"command":"CONN"}}
+2024-12-02T00:23:04.816Z [ERROR]: Erro ao verificar transportador SMTP: {"error":{"errno":-61,"code":"ESOCKET","syscall":"connect","address":"127.0.0.1","port":25,"command":"CONN"}}
