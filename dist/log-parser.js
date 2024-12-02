@@ -24,13 +24,18 @@ class LogParser {
         logger_1.default.info(`Monitorando o arquivo de log: ${this.logFilePath}`);
     }
     async handleLogLine(line) {
-        // Regex atualizada para capturar Queue ID e status
+        // Regex para capturar Queue ID e status
         const regex = /(?:sendmail|sm-mta)\[\d+\]: ([A-Za-z0-9]+): .*stat=(\w+)/;
         const match = line.match(regex);
         if (match) {
             const [_, queueId, status] = match;
             try {
-                const emailLog = await EmailLog_1.default.findOne({ 'detail.queueId': queueId });
+                const emailLog = await EmailLog_1.default.findOne({
+                    $or: [
+                        { 'detail.queueId': queueId },
+                        { mailId: queueId }, // Fallback para UUID
+                    ],
+                });
                 if (emailLog) {
                     emailLog.success = status === 'Sent';
                     emailLog.message = `Status atualizado: ${status}`;
@@ -42,7 +47,7 @@ class LogParser {
                 }
             }
             catch (error) {
-                logger_1.default.error(`Erro ao atualizar o log para Queue ID ${queueId}:`, error);
+                logger_1.default.error(`Erro ao atualizar log para Queue ID ${queueId}:`, error);
             }
         }
     }

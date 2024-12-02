@@ -12,6 +12,7 @@ class EmailService {
         this.transporter = nodemailer_1.default.createTransport({
             sendmail: true,
             path: '/usr/sbin/sendmail',
+            args: ['-v'], // Ativa o modo verbose do Sendmail
             newline: 'unix',
         });
     }
@@ -26,41 +27,46 @@ class EmailService {
                 subject,
                 html,
             };
+            // Enviar o e-mail e capturar a resposta completa
             const info = await this.transporter.sendMail(mailOptions);
-            // Logar saída completa do Sendmail para análise
-            const sendmailOutput = info.response;
-            logger_1.default.info(`Saída completa do Sendmail: ${sendmailOutput}`);
-            // Regex atualizada para capturar possíveis variações do Queue ID
-            const queueIdMatch = sendmailOutput.match(/(?:Message accepted for delivery|Queued mail for delivery).*?([A-Za-z0-9]+)/);
+            logger_1.default.info(`Headers enviados: ${JSON.stringify(mailOptions)}`);
+            logger_1.default.info(`Saída completa do Sendmail: ${info.response}`);
+            // Regex para capturar possíveis Queue IDs ou fallback
+            const queueIdMatch = info.response.match(/(?:Message accepted for delivery|Queued mail for delivery).*?([A-Za-z0-9]+)/);
             const queueId = queueIdMatch ? queueIdMatch[1] : null;
             if (!queueId) {
-                // Logar erro detalhado com a saída completa
-                logger_1.default.error(`Erro ao capturar Queue ID. Saída do Sendmail: ${sendmailOutput}`);
-                // Armazenar log para diagnóstico
+                logger_1.default.warn(`Queue ID não capturado. Salvando saída completa para análise posterior.`);
+                // Salvar fallback com rawResponse para análise posterior
                 const emailLog = new EmailLog_1.default({
                     mailId: uuid,
                     email: to,
-                    message: `Erro ao capturar Queue ID: ${sendmailOutput}`,
-                    success: false,
-                    detail: { rawResponse: sendmailOutput },
+                    message: `Erro ao capturar Queue ID: ${info.response}`,
+                    success: null,
+                    detail: {
+                        rawResponse: info.response,
+                        mailOptions,
+                    },
                 });
                 await emailLog.save();
                 throw new Error('Não foi possível capturar o Queue ID.');
             }
             logger_1.default.info(`Queue ID capturado: ${queueId}`);
-            // Salvar o UUID e Queue ID no MongoDB
+            // Salvar no MongoDB
             const emailLog = new EmailLog_1.default({
                 mailId: uuid,
                 email: to,
                 message: 'E-mail enfileirado.',
                 success: null,
-                detail: { queueId, rawResponse: sendmailOutput },
+                detail: {
+                    queueId,
+                    rawResponse: info.response,
+                },
             });
             await emailLog.save();
             return queueId;
         }
         catch (error) {
-            logger_1.default.error('Erro ao enviar o e-mail:', error);
+            logger_1.default.error(`Erro ao enviar e-mail: ${error}`);
             throw error;
         }
     }
