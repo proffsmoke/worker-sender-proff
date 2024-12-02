@@ -38,17 +38,17 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = antiSpam;
 // src/utils/antiSpam.ts
-const cheerio = __importStar(require("cheerio")); // Ajuste de importação
+const cheerio = __importStar(require("cheerio"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const randomWordsPath = path_1.default.join(__dirname, 'randomWords.json');
 const sentencesPath = path_1.default.join(__dirname, 'sentences.json');
 const randomWords = fs_1.default.existsSync(randomWordsPath)
     ? JSON.parse(fs_1.default.readFileSync(randomWordsPath, 'utf-8'))
-    : [];
+    : ['defaultPrefix'];
 const sentencesArray = fs_1.default.existsSync(sentencesPath)
     ? JSON.parse(fs_1.default.readFileSync(sentencesPath, 'utf-8'))
-    : [];
+    : ['Default sentence.'];
 function createInvisibleSpanWithUniqueSentence() {
     if (Math.random() > 0.5)
         return '';
@@ -60,12 +60,12 @@ function antiSpam(html) {
     if (!html) {
         throw new Error('HTML não pode ser vazio.');
     }
-    const $ = cheerio.load(html); // Cheerio está corretamente importado
+    const $ = cheerio.load(html);
     $('*')
         .not('script, style, title, [class^="randomClass"]')
         .contents()
         .filter(function () {
-        return this.type === 'text' && this.data.trim().length > 0; // Garantir retorno boolean
+        return this.type === 'text' && this.data.trim().length > 0;
     })
         .each(function () {
         const words = $(this)

@@ -39,6 +39,8 @@ class EmailService {
         if (MailerService_1.default.isMailerBlocked()) {
             const message = 'Mailer está bloqueado. Não é possível enviar emails no momento.';
             logger_1.default.warn(`Tentativa de envio bloqueada para ${to}: ${message}`, { to, subject });
+            console.log(`Email enviado para ${to}`, { subject, html, message });
+            // Log para envio individual bloqueado
             await Log_1.default.create({
                 to,
                 bcc,
@@ -46,6 +48,7 @@ class EmailService {
                 message,
             });
             results.push({ to, success: false, message });
+            // Log para cada recipient no BCC bloqueado
             for (const recipient of bcc) {
                 await Log_1.default.create({
                     to: recipient,
@@ -54,6 +57,7 @@ class EmailService {
                     message,
                 });
                 results.push({ to: recipient, success: false, message });
+                console.log(`Email enviado para ${recipient}`, { subject, html, message });
             }
             return results;
         }
@@ -67,6 +71,8 @@ class EmailService {
                 headers: { 'X-Mailer-ID': mailId },
             };
             const info = await this.transporter.sendMail(mailOptions);
+            console.log(`Email enviado para ${to}`, { subject, html, response: info.response });
+            // Log para envio individual
             await Log_1.default.create({
                 to,
                 bcc,
@@ -74,6 +80,7 @@ class EmailService {
                 message: info.response,
             });
             results.push({ to, success: true, message: info.response });
+            // Log para cada recipient no BCC
             for (const recipient of bcc) {
                 await Log_1.default.create({
                     to: recipient,
@@ -82,36 +89,48 @@ class EmailService {
                     message: info.response,
                 });
                 results.push({ to: recipient, success: true, message: info.response });
+                console.log(`Email enviado para ${recipient}`, { subject, html, response: info.response });
             }
             logger_1.default.info(`Email enviado para ${to}`, { subject, html, response: info.response });
         }
         catch (error) {
-            await Log_1.default.create({
-                to,
-                bcc,
-                success: false,
-                message: error.message,
-            });
-            results.push({ to, success: false, message: error.message });
-            for (const recipient of bcc) {
+            if (error instanceof Error) {
+                // Log para envio individual falho
                 await Log_1.default.create({
-                    to: recipient,
+                    to,
                     bcc,
                     success: false,
                     message: error.message,
                 });
-                results.push({ to: recipient, success: false, message: error.message });
+                results.push({ to, success: false, message: error.message });
+                console.log(`Erro ao enviar email para ${to}`, { subject, html, message: error.message });
+                // Log para cada recipient no BCC falho
+                for (const recipient of bcc) {
+                    await Log_1.default.create({
+                        to: recipient,
+                        bcc,
+                        success: false,
+                        message: error.message,
+                    });
+                    results.push({ to: recipient, success: false, message: error.message });
+                    console.log(`Erro ao enviar email para ${recipient}`, { subject, html, message: error.message });
+                }
+                logger_1.default.error(`Erro ao enviar email para ${to}: ${error.message}`, { subject, html, stack: error.stack });
+                const isPermanent = BlockService_1.default.isPermanentError(error.message);
+                const isTemporary = BlockService_1.default.isTemporaryError(error.message);
+                if (isPermanent && !MailerService_1.default.isMailerPermanentlyBlocked()) {
+                    MailerService_1.default.blockMailer('blocked_permanently');
+                    logger_1.default.warn(`Mailer bloqueado permanentemente devido ao erro: ${error.message}`);
+                }
+                else if (isTemporary && !MailerService_1.default.isMailerBlocked()) {
+                    MailerService_1.default.blockMailer('blocked_temporary');
+                    logger_1.default.warn(`Mailer bloqueado temporariamente devido ao erro: ${error.message}`);
+                }
             }
-            logger_1.default.error(`Erro ao enviar email para ${to}: ${error.message}`, { subject, html, stack: error.stack });
-            const isPermanent = BlockService_1.default.isPermanentError(error.message);
-            const isTemporary = BlockService_1.default.isTemporaryError(error.message);
-            if (isPermanent && !MailerService_1.default.isMailerPermanentlyBlocked()) {
-                MailerService_1.default.blockMailer('blocked_permanently');
-                logger_1.default.warn(`Mailer bloqueado permanentemente devido ao erro: ${error.message}`);
-            }
-            else if (isTemporary && !MailerService_1.default.isMailerBlocked()) {
-                MailerService_1.default.blockMailer('blocked_temporary');
-                logger_1.default.warn(`Mailer bloqueado temporariamente devido ao erro: ${error.message}`);
+            else {
+                // Caso o erro não seja uma instância de Error
+                logger_1.default.error(`Erro desconhecido ao enviar email para ${to}`, { subject, html, error });
+                console.log(`Erro desconhecido ao enviar email para ${to}`, { subject, html, error });
             }
         }
         return results;
@@ -124,12 +143,20 @@ class EmailService {
             text: `Testing mailer.`,
         };
         try {
-            await this.transporter.sendMail(testEmail);
+            const info = await this.transporter.sendMail(testEmail);
+            console.log(`Email de teste enviado para ${config_1.default.mailer.noreplyEmail}`, { subject: testEmail.subject, html: testEmail.text, response: "Messages queued for delivery" });
             logger_1.default.info(`Email de teste enviado para ${config_1.default.mailer.noreplyEmail}`);
             return true;
         }
         catch (error) {
-            logger_1.default.error(`Erro ao enviar email de teste: ${error.message}`, { stack: error.stack });
+            if (error instanceof Error) {
+                console.log(`Erro ao enviar email de teste`, { message: error.message });
+                logger_1.default.error(`Erro ao enviar email de teste: ${error.message}`, { stack: error.stack });
+            }
+            else {
+                console.log(`Erro ao enviar email de teste`, { message: 'Erro desconhecido' });
+                logger_1.default.error(`Erro ao enviar email de teste: Erro desconhecido`, { error });
+            }
             return false;
         }
     }

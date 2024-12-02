@@ -26,10 +26,13 @@ class EmailController {
                 subject,
                 html: processedHtml,
             });
+            console.log('Resultado de envio normal:', results);
             res.json({ success: true, results });
         }
         catch (error) {
-            logger_1.default.error(`Erro ao enviar email normal para ${to}: ${error.message}`, { subject, html, stack: error.stack });
+            if (error instanceof Error) {
+                logger_1.default.error(`Erro ao enviar email normal para ${to}: ${error.message}`, { subject, html, stack: error.stack });
+            }
             res.status(500).json({ success: false, message: 'Erro ao enviar email.' });
         }
     }
@@ -51,10 +54,13 @@ class EmailController {
                 subject,
                 html: processedHtml,
             });
+            console.log('Resultado de envio em massa:', results);
             res.json({ success: true, results });
         }
         catch (error) {
-            logger_1.default.error(`Erro ao enviar email em massa para ${to} e BCC: ${error.message}`, { bcc, subject, html, stack: error.stack });
+            if (error instanceof Error) {
+                logger_1.default.error(`Erro ao enviar email em massa para ${to} e BCC: ${error.message}`, { bcc, subject, html, stack: error.stack });
+            }
             res.status(500).json({ success: false, message: 'Erro ao enviar emails em massa.' });
         }
     }
