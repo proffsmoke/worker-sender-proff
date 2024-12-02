@@ -10,10 +10,10 @@ const log_parser_1 = __importDefault(require("../log-parser"));
 class EmailService {
     constructor() {
         this.transporter = nodemailer_1.default.createTransport({
-            host: '127.0.0.1', // Substitua pelo endereço do servidor SMTP
-            port: 25, // Porta do servidor SMTP
-            secure: false, // True para 465, False para outras portas
-            tls: { rejectUnauthorized: false }, // Aceitar certificado autoassinado
+            host: '127.0.0.1',
+            port: 25,
+            secure: false,
+            tls: { rejectUnauthorized: false },
         });
         this.logParser = new log_parser_1.default('/var/log/mail.log');
     }
@@ -21,33 +21,25 @@ class EmailService {
         const { fromName, emailDomain, to, bcc, subject, html, uuid } = params;
         const from = `"${fromName}" <no-reply@${emailDomain}>`;
         try {
-            // Monitorar logs antes de enviar o e-mail
-            this.logParser.startMonitoring();
-            const mailOptions = {
-                from,
-                to,
-                bcc,
-                subject,
-                html,
-            };
+            this.logParser.startMonitoring(); // Start monitoring logs before sending
+            const mailOptions = { from, to, bcc, subject, html };
             const info = await this.transporter.sendMail(mailOptions);
             logger_1.default.info(`Email enviado: ${JSON.stringify(mailOptions)}`);
             logger_1.default.debug(`Resposta do servidor SMTP: ${info.response}`);
-            // Captura do Queue ID a partir da resposta SMTP
+            // Extract Queue ID from SMTP response
             const queueIdMatch = info.response.match(/queued as (\S+)/i);
             const queueId = queueIdMatch ? queueIdMatch[1] : null;
-            if (queueId) {
-                logger_1.default.info(`Queue ID capturado diretamente: ${queueId}`);
-                await this.logParser.waitForQueueId(uuid); // Confirmação adicional via LogParser
+            if (!queueId) {
+                throw new Error('Queue ID não encontrado na resposta SMTP.');
             }
-            else {
-                logger_1.default.warn('Queue ID não capturado na resposta SMTP.');
-            }
+            logger_1.default.info(`Queue ID capturado diretamente: ${queueId}`);
+            // Relate Queue ID with UUID
             const emailLog = new EmailLog_1.default({
                 mailId: uuid,
+                sendmailQueueId: queueId,
                 email: to,
-                message: queueId ? 'E-mail enfileirado.' : 'Erro ao capturar Queue ID.',
-                success: !!queueId,
+                message: 'E-mail enfileirado.',
+                success: true,
                 detail: {
                     queueId,
                     rawResponse: info.response,
@@ -55,9 +47,6 @@ class EmailService {
                 },
             });
             await emailLog.save();
-            if (!queueId) {
-                throw new Error('Queue ID não encontrado.');
-            }
             return queueId;
         }
         catch (error) {
@@ -65,7 +54,7 @@ class EmailService {
             throw error;
         }
         finally {
-            this.logParser.stopMonitoring();
+            this.logParser.stopMonitoring(); // Ensure monitoring stops even on errors
         }
     }
 }

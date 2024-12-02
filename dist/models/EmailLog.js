@@ -1,5 +1,4 @@
 "use strict";
-// src/models/EmailLog.ts
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -40,7 +39,7 @@ const EmailLogSchema = new mongoose_1.Schema({
     sendmailQueueId: { type: String, index: true },
     email: { type: String, required: true, index: true },
     message: { type: String, required: true },
-    success: { type: Boolean, default: null }, // Valor padrão como null
+    success: { type: Boolean, default: null },
     detail: { type: mongoose_1.Schema.Types.Mixed, default: {} },
     sentAt: { type: Date, default: Date.now, index: true },
 }, { timestamps: true });
