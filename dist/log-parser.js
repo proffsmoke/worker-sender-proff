@@ -12,6 +12,7 @@ class LogParser extends events_1.default {
     constructor(logFilePath = '/var/log/mail.log') {
         super();
         this.tail = null;
+        this.queueIdToMessageId = new Map();
         this.logFilePath = logFilePath;
         if (!fs_1.default.existsSync(this.logFilePath)) {
             logger_1.default.error(`Log file not found at path: ${this.logFilePath}`);
@@ -40,10 +41,22 @@ class LogParser extends events_1.default {
         }
     }
     handleLogLine(line) {
-        const regex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+).*<([^>]+)>/i;
-        const match = line.match(regex);
+        const cleanupRegex = /postfix\/cleanup\[\d+\]:\s+([A-Z0-9]+):\s+message-id=<([^>]+)>/i;
+        const smtpRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+)/i;
+        let match = line.match(cleanupRegex);
         if (match) {
-            const [_, queueId, recipient, dsn, status, messageId] = match;
+            const [_, queueId, messageId] = match;
+            this.queueIdToMessageId.set(queueId, messageId);
+            logger_1.default.debug(`Mapped Queue ID=${queueId} to Message-ID=${messageId}`);
+            return;
+        }
+        match = line.match(smtpRegex);
+        if (match) {
+            const [_, queueId, recipient, dsn, status] = match;
+            const messageId = this.queueIdToMessageId.get(queueId) || '';
+            if (!messageId) {
+                logger_1.default.warn(`No Message-ID found for Queue ID=${queueId}`);
+            }
             const logEntry = {
                 queueId,
                 recipient,
