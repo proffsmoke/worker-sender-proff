@@ -24,7 +24,7 @@ class EmailService {
     handleLogEntry(logEntry) {
         for (const [messageId, sendData] of this.pendingSends.entries()) {
             if (logEntry.messageId === messageId) {
-                const success = logEntry.status.toLowerCase() === 'sent';
+                const success = logEntry.dsn.startsWith('2');
                 sendData.results.push({
                     recipient: logEntry.recipient,
                     success,

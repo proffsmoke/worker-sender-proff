@@ -40,10 +40,10 @@ class EmailService {
     this.logParser.on('log', this.handleLogEntry.bind(this));
   }
 
-  private handleLogEntry(logEntry: { queueId: string; recipient: string; status: string; messageId: string }) {
+  private handleLogEntry(logEntry: { queueId: string; recipient: string; status: string; messageId: string; dsn: string }) {
     for (const [messageId, sendData] of this.pendingSends.entries()) {
       if (logEntry.messageId === messageId) {
-        const success = logEntry.status.toLowerCase() === 'sent';
+        const success = logEntry.dsn.startsWith('2');
 
         sendData.results.push({
           recipient: logEntry.recipient,

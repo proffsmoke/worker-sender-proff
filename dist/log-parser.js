@@ -40,17 +40,18 @@ class LogParser extends events_1.default {
         }
     }
     handleLogLine(line) {
-        const regex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*status=([a-z]+).*<([^>]+)>/i;
+        const regex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+).*<([^>]+)>/i;
         const match = line.match(regex);
         if (match) {
-            const [_, queueId, recipient, status, messageId] = match;
+            const [_, queueId, recipient, dsn, status, messageId] = match;
             const logEntry = {
                 queueId,
                 recipient,
                 status,
                 messageId,
+                dsn,
             };
-            logger_1.default.info(`LogParser captured: Queue ID=${queueId}, Recipient=${recipient}, Status=${status}, Message-ID=${messageId}`);
+            logger_1.default.info(`LogParser captured: Queue ID=${queueId}, Recipient=${recipient}, Status=${status}, Message-ID=${messageId}, DSN=${dsn}`);
             this.emit('log', logEntry);
         }
     }

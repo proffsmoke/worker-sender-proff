@@ -9,6 +9,7 @@ interface LogEntry {
   recipient: string;
   status: string;
   messageId: string;
+  dsn: string;
 }
 
 class LogParser extends EventEmitter {
@@ -51,20 +52,21 @@ class LogParser extends EventEmitter {
   }
 
   private handleLogLine(line: string) {
-    const regex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*status=([a-z]+).*<([^>]+)>/i;
+    const regex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+).*<([^>]+)>/i;
     const match = line.match(regex);
 
     if (match) {
-      const [_, queueId, recipient, status, messageId] = match as RegExpMatchArray;
+      const [_, queueId, recipient, dsn, status, messageId] = match as RegExpMatchArray;
 
       const logEntry: LogEntry = {
         queueId,
         recipient,
         status,
         messageId,
+        dsn,
       };
 
-      logger.info(`LogParser captured: Queue ID=${queueId}, Recipient=${recipient}, Status=${status}, Message-ID=${messageId}`);
+      logger.info(`LogParser captured: Queue ID=${queueId}, Recipient=${recipient}, Status=${status}, Message-ID=${messageId}, DSN=${dsn}`);
 
       this.emit('log', logEntry);
     }
