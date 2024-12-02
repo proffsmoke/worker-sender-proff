@@ -24,51 +24,52 @@ class EmailService {
       newline: 'unix',
     });
   }
-
-  async sendEmail(params: SendEmailParams): Promise<string> {
+async sendEmail(params: SendEmailParams): Promise<string> {
     const { fromName, emailDomain, to, bcc, subject, html, uuid } = params;
 
     const fromEmail = `"${fromName}" <no-reply@${emailDomain}>`;
 
     try {
-      const mailOptions = {
-        from: fromEmail,
-        to,
-        bcc,
-        subject,
-        html,
-        headers: { 'X-Mailer-ID': uuid },
-      };
+        const mailOptions = {
+            from: fromEmail,
+            to,
+            bcc,
+            subject,
+            html,
+            // headers: { 'X-Mailer-ID': uuid },
+        };
 
-      const info = await this.transporter.sendMail(mailOptions);
+        const info = await this.transporter.sendMail(mailOptions);
 
-      // Extrair o Queue ID do Sendmail
-      const sendmailOutput = info.response as string;
-      const queueIdMatch = sendmailOutput.match(/Queued! id=([A-Za-z0-9]+)/);
-      const queueId = queueIdMatch ? queueIdMatch[1] : '';
+        // Ajustar regex para capturar o Queue ID correto
+        const sendmailOutput = info.response as string;
+        const queueIdMatch = sendmailOutput.match(/Message accepted for delivery.*\b([A-Za-z0-9]+)\b/);
+        const queueId = queueIdMatch ? queueIdMatch[1] : '';
 
-      if (!queueId) {
-        throw new Error('Não foi possível capturar o Queue ID.');
-      }
+        if (!queueId) {
+            logger.error(`Erro ao capturar Queue ID. Saída do Sendmail: ${sendmailOutput}`);
+            throw new Error('Não foi possível capturar o Queue ID.');
+        }
 
-      logger.info(`E-mail enviado. Queue ID: ${queueId}`);
+        logger.info(`E-mail enviado. Queue ID: ${queueId}`);
 
-      // Salvar o UUID e Queue ID no MongoDB
-      const emailLog = new EmailLog({
-        mailId: uuid,
-        email: to,
-        message: 'E-mail enfileirado.',
-        success: null,
-        detail: { queueId },
-      });
+        // Salvar o UUID e Queue ID no MongoDB
+        const emailLog = new EmailLog({
+            mailId: uuid,
+            email: to,
+            message: 'E-mail enfileirado.',
+            success: null,
+            detail: { queueId },
+        });
 
-      await emailLog.save();
-      return queueId;
+        await emailLog.save();
+        return queueId;
     } catch (error) {
-      logger.error('Erro ao enviar o e-mail:', error);
-      throw error;
+        logger.error('Erro ao enviar o e-mail:', error);
+        throw error;
     }
-  }
+}
+
 }
 
 export default new EmailService();

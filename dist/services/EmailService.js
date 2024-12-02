@@ -25,14 +25,15 @@ class EmailService {
                 bcc,
                 subject,
                 html,
-                headers: { 'X-Mailer-ID': uuid },
+                // headers: { 'X-Mailer-ID': uuid },
             };
             const info = await this.transporter.sendMail(mailOptions);
-            // Extrair o Queue ID do Sendmail
+            // Ajustar regex para capturar o Queue ID correto
             const sendmailOutput = info.response;
-            const queueIdMatch = sendmailOutput.match(/Queued! id=([A-Za-z0-9]+)/);
+            const queueIdMatch = sendmailOutput.match(/Message accepted for delivery.*\b([A-Za-z0-9]+)\b/);
             const queueId = queueIdMatch ? queueIdMatch[1] : '';
             if (!queueId) {
+                logger_1.default.error(`Erro ao capturar Queue ID. Saída do Sendmail: ${sendmailOutput}`);
                 throw new Error('Não foi possível capturar o Queue ID.');
             }
             logger_1.default.info(`E-mail enviado. Queue ID: ${queueId}`);
