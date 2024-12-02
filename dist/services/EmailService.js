@@ -9,6 +9,7 @@ const log_parser_1 = __importDefault(require("../log-parser"));
 class EmailService {
     constructor() {
         this.pendingSends = new Map();
+        this.DEFAULT_TIMEOUT_MS = 20000; // Increased to 20 seconds
         this.transporter = nodemailer_1.default.createTransport({
             host: '127.0.0.1',
             port: 25,
@@ -17,37 +18,37 @@ class EmailService {
         });
         this.logParser = new log_parser_1.default('/var/log/mail.log');
         this.logParser.startMonitoring();
-        // Escutar os eventos de log
+        // Listen to log events
         this.logParser.on('log', this.handleLogEntry.bind(this));
     }
     handleLogEntry(logEntry) {
-        // Verificar se há algum envio pendente com este Message-ID
-        for (const [messageId, sendData] of this.pendingSends.entries()) {
-            if (logEntry.messageId === messageId) {
-                const success = logEntry.status.toLowerCase() === 'sent';
-                // Atualizar o resultado para o destinatário
-                sendData.results.push({
-                    recipient: logEntry.recipient,
-                    success,
-                });
-                logger_1.default.info(`Atualizado status para ${logEntry.recipient}: ${success ? 'Enviado' : 'Falha'}`);
-                // Verificar se todos os destinatários foram processados
-                if (sendData.results.length === sendData.recipients.length) {
-                    // Resolver a promessa com os resultados
-                    sendData.resolve(sendData.results);
-                    // Remover o envio pendente
-                    this.pendingSends.delete(messageId);
-                }
+        // Check for pending sends with this Message-ID
+        if (this.pendingSends.has(logEntry.messageId)) {
+            const sendData = this.pendingSends.get(logEntry.messageId);
+            const success = logEntry.status.toLowerCase() === 'sent';
+            // Update the result for the recipient
+            sendData.results.push({
+                recipient: logEntry.recipient,
+                success,
+            });
+            logger_1.default.info(`Updated status for ${logEntry.recipient}: ${success ? 'Sent' : 'Failed'}`);
+            // Check if all recipients have been processed
+            if (sendData.results.length === sendData.recipients.length) {
+                // Resolve the promise with the results
+                sendData.resolve(sendData.results);
+                // Remove the pending send
+                this.pendingSends.delete(logEntry.messageId);
             }
         }
     }
-    async sendEmail(params) {
+    async sendEmail(params, timeoutMs) {
         const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
         const from = `"${fromName}" <no-reply@${emailDomain}>`;
-        // Combinar 'to' e 'bcc' em uma lista completa de destinatários
+        // Combine 'to' and 'bcc' into a complete list of recipients
         const recipients = Array.isArray(to) ? [...to, ...bcc] : [to, ...bcc];
-        // Gerar um Message-ID único usando o UUID
+        // Generate a unique Message-ID using UUID
         const messageId = `${uuid}@${emailDomain}`;
+        logger_1.default.info(`Starting email send: MailID=${uuid}, Message-ID=${messageId}, Recipients=${recipients.join(', ')}`);
         try {
             const mailOptions = {
                 from,
@@ -60,11 +61,11 @@ class EmailService {
                 },
             };
             const info = await this.transporter.sendMail(mailOptions);
-            logger_1.default.info(`Email enviado: ${JSON.stringify(mailOptions)}`);
-            logger_1.default.debug(`Resposta do servidor SMTP: ${info.response}`);
-            // Preparar a promessa para aguardar os resultados dos destinatários
+            logger_1.default.info(`Email sent: ${JSON.stringify(mailOptions)}`);
+            logger_1.default.debug(`SMTP server response: ${info.response}`);
+            // Prepare the promise to wait for recipient statuses
             const sendPromise = new Promise((resolve, reject) => {
-                // Adicionar ao mapa de envios pendentes
+                // Add to the pending sends map
                 this.pendingSends.set(messageId, {
                     uuid,
                     recipients,
@@ -72,27 +73,28 @@ class EmailService {
                     resolve,
                     reject,
                 });
-                // Definir um timeout para evitar espera indefinida
+                // Set a timeout to avoid indefinite waiting
                 setTimeout(() => {
                     if (this.pendingSends.has(messageId)) {
                         const sendData = this.pendingSends.get(messageId);
                         sendData.reject(new Error('Timeout ao capturar status para todos os destinatários.'));
                         this.pendingSends.delete(messageId);
+                        logger_1.default.warn(`Timeout reached for MailID=${uuid}, Message-ID=${messageId}.`);
                     }
-                }, 10000); // 10 segundos
+                }, timeoutMs || this.DEFAULT_TIMEOUT_MS);
             });
             const results = await sendPromise;
-            // Verificar se todos os envios foram bem-sucedidos
+            // Check if all sends were successful
             const allSuccess = results.every((r) => r.success);
-            logger_1.default.info(`Resultado do envio: MailID: ${uuid}, Message-ID: ${messageId}, Destinatários: ${JSON.stringify(results)}`);
+            logger_1.default.info(`Email send result: MailID=${uuid}, Message-ID=${messageId}, Recipients=${JSON.stringify(results)}`);
             return {
                 mailId: uuid,
-                queueId: '', // Pode ser omitido ou ajustado conforme necessário
+                queueId: '', // Adjust as necessary
                 recipients: results,
             };
         }
         catch (error) {
-            logger_1.default.error(`Erro ao enviar e-mail: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
+            logger_1.default.error(`Error sending email: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
             throw error;
         }
     }

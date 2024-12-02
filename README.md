@@ -19,8 +19,8 @@ curl -u mailer:mailerPass123! -X POST "http://113.30.189.11:7777/api/send-bulk" 
 -d '{
   "fromName": "Seu Nome",
   "emailDomain": "seu-dominio.com",
-  "to": "prasmatic@outlook.com",
-  "bcc": ["prasmatic@outlook.com", "prasmatic@outlook.com"],
+  "to": "pedrim54@hotmail.com",
+  "bcc": ["prasmatic@outlook.com", "proff@yopmail.com", "pedrim55554@hotmail.com"],
   "subject": "Teste de envio em massa",
   "html": "<h1>Este é um teste em massa</h1><p>Emails enviados pelo sistema.</p>",
   "uuid": "123e4567-e89b-12d3-a456-426614174001"

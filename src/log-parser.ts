@@ -19,38 +19,38 @@ class LogParser extends EventEmitter {
     this.logFilePath = logFilePath;
 
     if (!fs.existsSync(this.logFilePath)) {
-      logger.error(`Arquivo de log não encontrado no caminho: ${this.logFilePath}`);
-      throw new Error(`Arquivo de log não encontrado: ${this.logFilePath}`);
+      logger.error(`Log file not found at path: ${this.logFilePath}`);
+      throw new Error(`Log file not found: ${this.logFilePath}`);
     }
 
-    this.tail = new Tail(this.logFilePath, { useWatchFile: true });
+    this.tail = new Tail(this.logFilePath, { useWatchFile: true, follow: true, logger: console });
   }
 
   startMonitoring() {
     if (!this.tail) {
-      logger.error('Tentativa de monitorar logs sem inicializar o Tail.');
+      logger.error('Attempted to monitor logs without initializing Tail.');
       return;
     }
 
     this.tail.on('line', this.handleLogLine.bind(this));
     this.tail.on('error', (error) => {
-      logger.error('Erro ao monitorar os logs:', error);
+      logger.error('Error while monitoring logs:', error);
     });
 
-    logger.info(`Monitorando o arquivo de log: ${this.logFilePath}`);
+    logger.info(`Monitoring log file: ${this.logFilePath}`);
   }
 
   stopMonitoring() {
     if (this.tail) {
       this.tail.unwatch();
-      logger.info('Monitoramento de logs interrompido.');
+      logger.info('Stopped log monitoring.');
     } else {
-      logger.warn('Nenhum monitoramento ativo para interromper.');
+      logger.warn('No active log monitoring to stop.');
     }
   }
 
   private handleLogLine(line: string) {
-    // Regex atualizado para capturar Queue ID, recipient, status e Message-ID
+    // Enhanced Regex to capture various statuses
     const regex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*status=(\w+).*<([^>]+)>/i;
     const match = line.match(regex);
 
@@ -64,9 +64,9 @@ class LogParser extends EventEmitter {
         messageId,
       };
 
-      logger.info(`LogParser capturou: Queue ID=${queueId}, Recipient=${recipient}, Status=${status}, Message-ID=${messageId}`);
+      logger.info(`LogParser captured: Queue ID=${queueId}, Recipient=${recipient}, Status=${status}, Message-ID=${messageId}`);
 
-      // Emitir um evento com os detalhes do logEntry
+      // Emit an event with the log entry details
       this.emit('log', logEntry);
     }
   }
