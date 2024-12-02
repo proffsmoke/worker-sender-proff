@@ -27,32 +27,36 @@ class LogParser {
     }
     async handleLogLine(line) {
         /**
-         * [Sample of Log line]
-         * Jun 23 17:00:31 edgenhacks postfix/smtp[45301]: E3E4BBE9AE: to=<***>, relay=mail.protonmail.ch[185.205.70.128]:25, delay=8.5, delays=0.05/0.02/7.2/1.3, dsn=2.0.0, status=sent (250 2.0.0 Ok: queued as 4LTRMf3Klkz9vNp1)
+         * Exemplos de linhas de log:
+         * sendmail[34063]: 4B20po7G034063: to=recipient@example.com, ctladdr=naoresponder@seu-dominio.com (0/0), delay=00:00:00, xdelay=00:00:00, mailer=relay, pri=31004, relay=[127.0.0.1] [127.0.0.1], dsn=2.0.0, stat=Sent (4B20pogp034064 Message accepted for delivery)
+         * sm-mta[35942]: 4B24QxX9035940: to=<prasmatic@outlook.comm>, delay=00:00:00, xdelay=00:00:00, mailer=esmtp, pri=31235, relay=outlook.com., dsn=5.1.2, stat=Host unknown (Name server: outlook.comm: host not found)
          */
-        const regex = /postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<([^>]+)>, .*, status=(\w+)(?: \((.+)\))?/;
+        const regex = /(?:sendmail|sm-mta)\[[0-9]+\]: ([A-Z0-9]+): to=<([^>]+)>, .*dsn=(\d+\.\d+\.\d+), stat=([^ ]+)(?: \((.+)\))?/;
         const match = line.match(regex);
         if (match) {
-            const [, mailId, email, status, statusMessage] = match;
-            const success = status.startsWith('sent');
+            const [, mailId, emails, dsn, status, statusMessage] = match;
+            const success = status.toLowerCase().startsWith('sent');
             let detail = {};
             if (!success && statusMessage) {
                 detail = this.parseStatusMessage(statusMessage);
             }
-            try {
-                const logEntry = new EmailLog_1.default({
-                    mailId,
-                    email: email.trim(),
-                    message: statusMessage || status,
-                    success,
-                    detail,
-                    sentAt: new Date(),
-                });
-                await logEntry.save();
-                logger_1.default.debug(`Log armazenado para mailId: ${mailId}, email: ${email}, sucesso: ${success}`);
-            }
-            catch (error) {
-                logger_1.default.error(`Erro ao salvar log no MongoDB para mailId: ${mailId}, email: ${email}:`, error);
+            const emailList = emails.split(',').map(email => email.trim());
+            for (const email of emailList) {
+                try {
+                    const logEntry = new EmailLog_1.default({
+                        mailId,
+                        email,
+                        message: statusMessage || status,
+                        success,
+                        detail,
+                        sentAt: new Date(),
+                    });
+                    await logEntry.save();
+                    logger_1.default.debug(`Log armazenado para mailId: ${mailId}, email: ${email}, sucesso: ${success}`);
+                }
+                catch (error) {
+                    logger_1.default.error(`Erro ao salvar log no MongoDB para mailId: ${mailId}, email: ${email}:`, error);
+                }
             }
         }
     }
