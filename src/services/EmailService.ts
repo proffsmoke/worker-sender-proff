@@ -3,7 +3,13 @@ import EmailLog from '../models/EmailLog';
 import logger from '../utils/logger';
 import config from '../config';
 import LogParser from '../log-parser';
-import fetch from 'node-fetch';
+let fetch: (url: string | Request | URL, init?: RequestInit) => Promise<Response>;
+
+(async () => {
+    const nodeFetch = await import('node-fetch');
+    fetch = nodeFetch.default as unknown as (url: string | Request | URL, init?: RequestInit) => Promise<Response>;
+})();
+
 
 interface SendEmailParams {
     fromName: string;
