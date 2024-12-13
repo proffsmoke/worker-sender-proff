@@ -1,4 +1,4 @@
-// EmailService.js
+// src/services/EmailService.ts
 import nodemailer from 'nodemailer';
 import EmailLog from '../models/EmailLog';
 import logger from '../utils/logger';
@@ -18,12 +18,28 @@ interface SendEmailParams {
 interface RecipientStatus {
   recipient: string;
   success: boolean;
+  error?: string;
+}
+
+interface SendEmailResult {
+  mailId: string;
+  queueId: string;
+  recipients: RecipientStatus[];
 }
 
 class EmailService {
   private transporter: nodemailer.Transporter;
   private logParser: LogParser;
-  private pendingSends: Map<string, { uuid: string; recipients: string[]; results: RecipientStatus[]; resolve: Function; reject: Function }> = new Map();
+  private pendingSends: Map<
+    string,
+    {
+      uuid: string;
+      recipients: string[];
+      results: RecipientStatus[];
+      resolve: Function;
+      reject: Function;
+    }
+  > = new Map();
 
   constructor() {
     this.transporter = nodemailer.createTransport({
@@ -40,7 +56,13 @@ class EmailService {
     this.logParser.on('log', this.handleLogEntry.bind(this));
   }
 
-  private handleLogEntry(logEntry: { queueId: string; recipient: string; status: string; messageId: string; dsn: string }) {
+  private handleLogEntry(logEntry: {
+    queueId: string;
+    recipient: string;
+    status: string;
+    messageId: string;
+    dsn: string;
+  }) {
     for (const [messageId, sendData] of this.pendingSends.entries()) {
       if (logEntry.messageId === messageId) {
         const success = logEntry.dsn.startsWith('2');
@@ -50,7 +72,11 @@ class EmailService {
           success,
         });
 
-        logger.info(`Updated status for ${logEntry.recipient}: ${success ? 'Sent' : 'Failed'}`);
+        logger.info(
+          `Updated status for ${logEntry.recipient}: ${
+            success ? 'Sent' : 'Failed'
+          }`
+        );
 
         if (sendData.results.length === sendData.recipients.length) {
           sendData.resolve(sendData.results);
@@ -60,7 +86,7 @@ class EmailService {
     }
   }
 
-  async sendEmail(params: SendEmailParams): Promise<{ mailId: string; queueId: string; recipients: RecipientStatus[] }> {
+  async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
     const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
     const from = `"${fromName}" <no-reply@${emailDomain}>`;
 
@@ -97,26 +123,63 @@ class EmailService {
         setTimeout(() => {
           if (this.pendingSends.has(messageId)) {
             const sendData = this.pendingSends.get(messageId)!;
-            sendData.reject(new Error('Timeout ao capturar status para todos os destinatários.'));
+            sendData.reject(
+              new Error('Timeout ao capturar status para todos os destinatários.')
+            );
             this.pendingSends.delete(messageId);
           }
-        }, 20000); // 20 seconds
+        }, 20000); // 20 segundos
       });
 
       const results = await sendPromise;
 
       const allSuccess = results.every((r) => r.success);
 
-      logger.info(`Send results: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(results)}`);
+      logger.info(
+        `Send results: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(
+          results
+        )}`
+      );
 
       return {
         mailId: uuid,
-        queueId: '', // Adjust as needed
+        queueId: '', // Ajustar conforme necessário
         recipients: results,
       };
-    } catch (error) {
-      logger.error(`Error sending email: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
-      throw error;
+    } catch (error: any) {
+      logger.error(
+        `Error sending email: ${error.message}`,
+        error
+      );
+
+      let recipientsStatus: RecipientStatus[] = [];
+
+      // Verifica se o erro contém informações sobre destinatários rejeitados
+      if (error.rejected && Array.isArray(error.rejected)) {
+        const rejectedSet = new Set(error.rejected);
+        const acceptedSet = new Set(error.accepted || []);
+
+        recipientsStatus = recipients.map((recipient) => ({
+          recipient,
+          success: acceptedSet.has(recipient),
+          error: rejectedSet.has(recipient)
+            ? 'Rejeitado pelo servidor SMTP.'
+            : undefined,
+        }));
+      } else {
+        // Se não houver informações específicas, marca todos como falhados
+        recipientsStatus = recipients.map((recipient) => ({
+          recipient,
+          success: false,
+          error: 'Falha desconhecida ao enviar email.',
+        }));
+      }
+
+      return {
+        mailId: uuid,
+        queueId: '',
+        recipients: recipientsStatus,
+      };
     }
   }
 }

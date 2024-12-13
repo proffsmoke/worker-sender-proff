@@ -2,7 +2,7 @@ curl -u mailer:mailerPass123! "http://localhost:7777/api/status"
 
 {"version":"4.3.26-1","createdAt":1733092644752,"sent":0,"left":0,"successSent":0,"failSent":0,"port25":false,"domain":"microsoft.com","status":"blocked_temporary","logs":[]}%                                                                 
 
-curl -u mailer:mailerPass123! -X POST "http://113.30.189.11:7777/api/send" \
+curl -u mailer:mailerPass123! -X POST "http://199.19.75.47:7777/api/send" \
 -H "Content-Type: application/json" \
 -d '{
   "fromName": "Seu Nome",
@@ -14,7 +14,7 @@ curl -u mailer:mailerPass123! -X POST "http://113.30.189.11:7777/api/send" \
 }'
 
 
-curl -u mailer:mailerPass123! -X POST "http://113.30.189.11:7777/api/send-bulk" \
+curl -u mailer:mailerPass123! -X POST "http://199.19.75.47:7777/api/send-bulk" \
 -H "Content-Type: application/json" \
 -d '{
   "fromName": "Seu Nome",
