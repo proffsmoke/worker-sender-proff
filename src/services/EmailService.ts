@@ -128,7 +128,7 @@ class EmailService {
             );
             this.pendingSends.delete(messageId);
           }
-        }, 20000); // 20 segundos
+        }, 60000); // 20 segundos
       });
 
       const results = await sendPromise;
