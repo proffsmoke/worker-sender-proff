@@ -1,7 +1,7 @@
 // src/services/EmailService.ts
 
 import nodemailer from 'nodemailer';
-import EmailLog, { IEmailLog } from '../models/EmailLog'; // Import da interface
+import EmailLog, { IEmailLog } from '../models/EmailLog';
 import logger from '../utils/logger';
 import LogParser from '../log-parser';
 import { v4 as uuidv4 } from 'uuid';

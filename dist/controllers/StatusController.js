@@ -5,7 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const MailerService_1 = __importDefault(require("../services/MailerService"));
-const EmailLog_1 = __importDefault(require("../models/EmailLog")); // Import correto do modelo EmailLog
+const EmailLog_1 = __importDefault(require("../models/EmailLog"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const config_1 = __importDefault(require("../config"));
 class StatusController {
@@ -16,11 +16,43 @@ class StatusController {
             const domain = config_1.default.mailer.noreplyEmail.split('@')[1] || 'unknown.com';
             const port25 = MailerService_1.default.isPort25Open();
             const status = MailerService_1.default.getStatus(); // 'health' | 'blocked_permanently' | 'blocked_temporary'
-            // Atualizar as contagens para utilizar EmailLog
-            const sent = await EmailLog_1.default.countDocuments({});
-            const successSent = await EmailLog_1.default.countDocuments({ success: true });
-            const failSent = await EmailLog_1.default.countDocuments({ success: false });
-            const left = 0; // Se houver uma fila, ajuste este valor
+            // Pipeline de agregação atualizado para contar todos os destinatários
+            const aggregationResult = await EmailLog_1.default.aggregate([
+                { $match: {} }, // Seleciona todos os documentos
+                {
+                    $project: {
+                        recipients: {
+                            $concatArrays: [
+                                [{ recipient: "$email", success: "$success" }], // Inclui o destinatário principal
+                                {
+                                    $map: {
+                                        input: { $objectToArray: "$detail" },
+                                        as: "detailItem",
+                                        in: { recipient: "$$detailItem.k", success: "$$detailItem.v.success" }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                { $unwind: "$recipients" }, // Desmembra o array de destinatários
+                {
+                    $group: {
+                        _id: null,
+                        sent: { $sum: 1 }, // Total de destinatários enviados
+                        successSent: { $sum: { $cond: ["$recipients.success", 1, 0] } }, // Total de sucessos
+                        failSent: { $sum: { $cond: ["$recipients.success", 0, 1] } } // Total de falhas
+                    }
+                }
+            ]);
+            let sent = 0;
+            let successSent = 0;
+            let failSent = 0;
+            if (aggregationResult.length > 0) {
+                sent = aggregationResult[0].sent;
+                successSent = aggregationResult[0].successSent;
+                failSent = aggregationResult[0].failSent;
+            }
             // Buscar os últimos 100 EmailLogs para exibição no status
             const emailLogs = await EmailLog_1.default.find()
                 .sort({ sentAt: -1 })
@@ -34,7 +66,7 @@ class StatusController {
                 version,
                 createdAt,
                 sent,
-                left,
+                left: 0, // Se houver uma fila, ajuste este valor
                 successSent,
                 failSent,
                 port25,

@@ -2,7 +2,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import MailerService from '../services/MailerService';
-import EmailLog from '../models/EmailLog'; // Import correto do modelo EmailLog
+import EmailLog from '../models/EmailLog';
 import logger from '../utils/logger';
 import config from '../config';
 
@@ -15,18 +15,34 @@ class StatusController {
             const port25 = MailerService.isPort25Open();
             const status = MailerService.getStatus(); // 'health' | 'blocked_permanently' | 'blocked_temporary'
 
-            // Agregação para contar individualmente os sucessos e falhas
+            // Pipeline de agregação atualizado para contar todos os destinatários
             const aggregationResult = await EmailLog.aggregate([
                 { $match: {} }, // Seleciona todos os documentos
-                { $project: { detail: 1 } }, // Projeta apenas o campo detail
-                { $project: { detail: { $objectToArray: "$detail" } } }, // Transforma detail em um array
-                { $unwind: "$detail" }, // Desmembra o array de detail
-                { $group: {
-                    _id: null,
-                    sent: { $sum: 1 },
-                    successSent: { $sum: { $cond: [ "$detail.v.success", 1, 0 ] } },
-                    failSent: { $sum: { $cond: [ "$detail.v.success", 0, 1 ] } }
-                }}
+                {
+                    $project: {
+                        recipients: {
+                            $concatArrays: [
+                                [ { recipient: "$email", success: "$success" } ], // Inclui o destinatário principal
+                                {
+                                    $map: {
+                                        input: { $objectToArray: "$detail" },
+                                        as: "detailItem",
+                                        in: { recipient: "$$detailItem.k", success: "$$detailItem.v.success" }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                { $unwind: "$recipients" }, // Desmembra o array de destinatários
+                {
+                    $group: {
+                        _id: null,
+                        sent: { $sum: 1 }, // Total de destinatários enviados
+                        successSent: { $sum: { $cond: [ "$recipients.success", 1, 0 ] } }, // Total de sucessos
+                        failSent: { $sum: { $cond: [ "$recipients.success", 0, 1 ] } } // Total de falhas
+                    }
+                }
             ]);
 
             let sent = 0;
