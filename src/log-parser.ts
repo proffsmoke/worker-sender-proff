@@ -1,4 +1,5 @@
-// LogParser.js
+// src/log-parser.ts
+
 import { Tail } from 'tail';
 import logger from './utils/logger';
 import fs from 'fs';
@@ -53,6 +54,8 @@ class LogParser extends EventEmitter {
   }
 
   private handleLogLine(line: string) {
+    logger.debug(`Processing log line: ${line}`); // Novo log
+
     const cleanupRegex = /postfix\/cleanup\[\d+\]:\s+([A-Z0-9]+):\s+message-id=<([^>]+)>/i;
     const smtpRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+)/i;
 
@@ -80,7 +83,7 @@ class LogParser extends EventEmitter {
         dsn,
       };
 
-      logger.info(`LogParser captured: Queue ID=${queueId}, Recipient=${recipient}, Status=${status}, Message-ID=${messageId}, DSN=${dsn}`);
+      logger.debug(`LogParser captured: ${JSON.stringify(logEntry)}`); // Novo log
 
       this.emit('log', logEntry);
     }

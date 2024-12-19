@@ -5,7 +5,7 @@ import EmailLog, { IEmailLog } from '../models/EmailLog';
 import logger from '../utils/logger';
 import LogParser from '../log-parser';
 import { v4 as uuidv4 } from 'uuid';
-import config from '../config'; // Importado conforme correção anterior
+import config from '../config'; // Certifique-se de importar o config
 
 interface SendEmailParams {
   fromName: string;
@@ -155,9 +155,7 @@ class EmailService {
         bcc,
         subject,
         html,
-        headers: {
-          'Message-ID': `<${messageId}>`,
-        },
+        messageId: `<${messageId}>`, // Use a propriedade 'messageId' diretamente
       };
 
       const info = await this.transporter.sendMail(mailOptions);
