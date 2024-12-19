@@ -8,7 +8,7 @@ export interface IEmailLog extends Document {
   email: string;
   message: string;
   success: boolean | null;
-  detail?: Record<string, any>;
+  detail: Record<string, any>; // Removido o '?'
   sentAt: Date;
 }
 
@@ -19,7 +19,7 @@ const EmailLogSchema: Schema = new Schema(
     email: { type: String, required: true, index: true },
     message: { type: String, required: true },
     success: { type: Boolean, default: null },
-    detail: { type: Schema.Types.Mixed, default: {} },
+    detail: { type: Schema.Types.Mixed, default: {} }, // Garante que detail nunca seja undefined
     sentAt: { type: Date, default: Date.now, index: true },
   },
   {

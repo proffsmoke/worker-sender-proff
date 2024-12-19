@@ -21,16 +21,25 @@ class StatusController {
                 { $match: {} }, // Seleciona todos os documentos
                 {
                     $project: {
+                        toRecipient: "$email",
+                        bccRecipients: {
+                            $map: {
+                                input: { $objectToArray: "$detail" },
+                                as: "detailItem",
+                                in: {
+                                    recipient: "$$detailItem.k",
+                                    success: "$$detailItem.v.success"
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    $project: {
                         recipients: {
                             $concatArrays: [
-                                [{ recipient: "$email", success: "$success" }], // Inclui o destinatário principal
-                                {
-                                    $map: {
-                                        input: { $objectToArray: "$detail" },
-                                        as: "detailItem",
-                                        in: { recipient: "$$detailItem.k", success: "$$detailItem.v.success" }
-                                    }
-                                }
+                                [{ recipient: "$toRecipient", success: "$success" }],
+                                "$bccRecipients"
                             ]
                         }
                     }

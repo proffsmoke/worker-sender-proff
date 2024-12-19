@@ -41,7 +41,7 @@ const EmailLogSchema = new mongoose_1.Schema({
     email: { type: String, required: true, index: true },
     message: { type: String, required: true },
     success: { type: Boolean, default: null },
-    detail: { type: mongoose_1.Schema.Types.Mixed, default: {} },
+    detail: { type: mongoose_1.Schema.Types.Mixed, default: {} }, // Garante que detail nunca seja undefined
     sentAt: { type: Date, default: Date.now, index: true },
 }, {
     timestamps: true,
