@@ -5,7 +5,7 @@ import EmailLog, { IEmailLog } from '../models/EmailLog';
 import logger from '../utils/logger';
 import LogParser from '../log-parser';
 import { v4 as uuidv4 } from 'uuid';
-import config from '../config'; // Certifique-se de importar o config
+import config from '../config';
 
 interface SendEmailParams {
   fromName: string;
@@ -66,16 +66,21 @@ class EmailService {
     messageId: string;
     dsn: string;
   }) {
+    logger.debug(`Processing Log Entry: ${JSON.stringify(logEntry)}`); // Novo log
+
     const sendData = this.pendingSends.get(logEntry.messageId);
     if (!sendData) {
-      // Não há envio pendente para este messageId
+      logger.warn(`No pending send found for Message-ID: ${logEntry.messageId}`);
       return;
     }
 
     const success = logEntry.dsn.startsWith('2');
 
-    // Verificar se o destinatário está nos 'to' ou 'bcc'
-    let isToRecipient = sendData.toRecipients.includes(logEntry.recipient);
+    // Normalizar o endereço de email para minúsculas
+    const recipient = logEntry.recipient.toLowerCase();
+    let isToRecipient = sendData.toRecipients.includes(recipient);
+
+    logger.debug(`Is to recipient: ${isToRecipient} for recipient: ${recipient}`);
 
     if (isToRecipient) {
       // Atualizar o campo 'success' do EmailLog
@@ -94,10 +99,16 @@ class EmailService {
           `Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${(err as Error).message}`
         );
       }
+
+      // Adicionar o destinatário 'to' ao array de resultados
+      sendData.results.push({
+        recipient: recipient,
+        success: success
+      });
     } else {
       // Atualizar o 'detail' do EmailLog
       sendData.results.push({
-        recipient: logEntry.recipient,
+        recipient: recipient,
         success,
       });
 
@@ -107,14 +118,14 @@ class EmailService {
         if (emailLog) {
           // Atualizar o status com base no destinatário em 'bcc'
           const recipientStatus = {
-            recipient: logEntry.recipient,
+            recipient: recipient,
             success,
             dsn: logEntry.dsn,
             status: logEntry.status,
           };
           emailLog.detail = {
             ...emailLog.detail,
-            [logEntry.recipient]: recipientStatus,
+            [recipient]: recipientStatus,
           };
           await emailLog.save();
           logger.debug(`EmailLog 'detail' atualizado para mailId=${sendData.uuid}`);
@@ -132,9 +143,12 @@ class EmailService {
     const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
     const processedRecipients = sendData.results.length + (success && isToRecipient ? 1 : 0);
 
+    logger.debug(`Total Recipients: ${totalRecipients}, Processed Recipients: ${processedRecipients}`);
+
     if (processedRecipients >= totalRecipients) {
       sendData.resolve(sendData.results);
       this.pendingSends.delete(logEntry.messageId);
+      logger.debug(`All recipients processed for mailId=${sendData.uuid}`);
     }
   }
 
@@ -142,11 +156,13 @@ class EmailService {
     const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
     const from = `"${fromName}" <no-reply@${emailDomain}>`;
 
-    const toRecipients: string[] = Array.isArray(to) ? to : [to];
-    const bccRecipients: string[] = Array.isArray(bcc) ? bcc : [bcc].filter(Boolean);
+    // Normalizar os endereços de email para minúsculas
+    const toRecipients: string[] = Array.isArray(to) ? to.map(r => r.toLowerCase()) : [to.toLowerCase()];
+    const bccRecipients: string[] = bcc.map(r => r.toLowerCase());
     const allRecipients: string[] = [...toRecipients, ...bccRecipients];
 
     const messageId = `${uuid}@${emailDomain}`;
+    logger.debug(`Setting Message-ID: <${messageId}> for mailId=${uuid}`); // Novo log
 
     try {
       const mailOptions = {
@@ -194,13 +210,14 @@ class EmailService {
               new Error('Timeout ao capturar status para todos os destinatários.')
             );
             this.pendingSends.delete(messageId);
+            logger.warn(`Timeout: Failed to capture status for mailId=${uuid}`);
           }
         }, 60000); // 60 segundos
       });
 
       const results = await sendPromise;
 
-      const allSuccess = results.every((r) => r.success) && true; // Inclui o 'to' success
+      const allSuccess = results.every((r) => r.success) && emailLog.success;
 
       logger.info(
         `Send results: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(
@@ -220,37 +237,23 @@ class EmailService {
 
       // Verifica se o erro contém informações sobre destinatários rejeitados
       if (error.rejected && Array.isArray(error.rejected)) {
-        const rejectedSet = new Set(error.rejected);
-        const acceptedSet = new Set(error.accepted || []);
+        const rejectedSet = new Set(error.rejected.map((r: string) => r.toLowerCase()));
+        const acceptedSet = new Set((error.accepted || []).map((r: string) => r.toLowerCase()));
 
-        recipientsStatus = Array.isArray(to)
-          ? [...to, ...bcc].map((recipient) => ({
-              recipient,
-              success: acceptedSet.has(recipient),
-              error: rejectedSet.has(recipient)
-                ? 'Rejeitado pelo servidor SMTP.'
-                : undefined,
-            }))
-          : [to, ...bcc].map((recipient) => ({
-              recipient,
-              success: acceptedSet.has(recipient),
-              error: rejectedSet.has(recipient)
-                ? 'Rejeitado pelo servidor SMTP.'
-                : undefined,
-            }));
+        recipientsStatus = [...toRecipients, ...bccRecipients].map((recipient) => ({
+          recipient,
+          success: acceptedSet.has(recipient),
+          error: rejectedSet.has(recipient)
+            ? 'Rejeitado pelo servidor SMTP.'
+            : undefined,
+        }));
       } else {
         // Se não houver informações específicas, marca todos como falhados
-        recipientsStatus = Array.isArray(to)
-          ? [...to, ...bcc].map((recipient) => ({
-              recipient,
-              success: false,
-              error: 'Falha desconhecida ao enviar email.',
-            }))
-          : [to, ...bcc].map((recipient) => ({
-              recipient,
-              success: false,
-              error: 'Falha desconhecida ao enviar email.',
-            }));
+        recipientsStatus = [...toRecipients, ...bccRecipients].map((recipient) => ({
+          recipient,
+          success: false,
+          error: 'Falha desconhecida ao enviar email.',
+        }));
       }
 
       // Registrar o erro no EmailLog

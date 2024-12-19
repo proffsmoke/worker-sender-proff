@@ -21,13 +21,13 @@ class StatusController {
                 { $match: {} }, // Seleciona todos os documentos
                 {
                     $project: {
-                        toRecipient: "$email",
+                        toRecipient: { $toLower: "$email" }, // Garantir lowercase
                         bccRecipients: {
                             $map: {
                                 input: { $objectToArray: "$detail" },
                                 as: "detailItem",
                                 in: {
-                                    recipient: "$$detailItem.k",
+                                    recipient: { $toLower: "$$detailItem.k" },
                                     success: "$$detailItem.v.success"
                                 }
                             }

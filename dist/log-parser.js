@@ -1,9 +1,9 @@
 "use strict";
+// src/log-parser.ts
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-// LogParser.js
 const tail_1 = require("tail");
 const logger_1 = __importDefault(require("./utils/logger"));
 const fs_1 = __importDefault(require("fs"));
@@ -41,6 +41,7 @@ class LogParser extends events_1.default {
         }
     }
     handleLogLine(line) {
+        logger_1.default.debug(`Processing log line: ${line}`); // Novo log
         const cleanupRegex = /postfix\/cleanup\[\d+\]:\s+([A-Z0-9]+):\s+message-id=<([^>]+)>/i;
         const smtpRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+)/i;
         let match = line.match(cleanupRegex);
@@ -64,7 +65,7 @@ class LogParser extends events_1.default {
                 messageId,
                 dsn,
             };
-            logger_1.default.info(`LogParser captured: Queue ID=${queueId}, Recipient=${recipient}, Status=${status}, Message-ID=${messageId}, DSN=${dsn}`);
+            logger_1.default.debug(`LogParser captured: ${JSON.stringify(logEntry)}`); // Novo log
             this.emit('log', logEntry);
         }
     }
