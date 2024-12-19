@@ -42,7 +42,9 @@ class LogParser extends events_1.default {
     }
     handleLogLine(line) {
         logger_1.default.debug(`Processing log line: ${line}`); // Novo log
+        // Regex para capturar a linha de cleanup que contém o Message-ID
         const cleanupRegex = /postfix\/cleanup\[\d+\]:\s+([A-Z0-9]+):\s+message-id=<([^>]+)>/i;
+        // Regex para capturar a linha de smtp que contém o destinatário, status e dsn
         const smtpRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+)/i;
         let match = line.match(cleanupRegex);
         if (match) {
