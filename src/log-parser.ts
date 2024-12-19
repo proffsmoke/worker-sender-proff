@@ -58,8 +58,8 @@ class LogParser extends EventEmitter {
 
     // Regex para capturar a linha de cleanup que contém o Message-ID
     const cleanupRegex = /postfix\/cleanup\[\d+\]:\s+([A-Z0-9]+):\s+message-id=<([^>]+)>/i;
-    // Regex para capturar a linha de smtp que contém o destinatário, status e dsn
-    const smtpRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+)/i;
+    // Regex para capturar a linha de smtp que contém o destinatário, status, dsn e Message-ID
+    const smtpRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+).*<([^>]+)>/i;
 
     let match = line.match(cleanupRegex);
     if (match) {
@@ -71,9 +71,16 @@ class LogParser extends EventEmitter {
 
     match = line.match(smtpRegex);
     if (match) {
-      const [_, queueId, recipient, dsn, status] = match;
-      const messageId = this.queueIdToMessageId.get(queueId) || '';
-      if (!messageId) {
+      const [_, queueId, recipient, dsn, status, messageId] = match;
+      // Verifica se a linha de smtp contém um Message-ID
+      if (messageId) {
+        this.queueIdToMessageId.set(queueId, messageId);
+        logger.debug(`Mapped Queue ID=${queueId} to Message-ID=${messageId}`);
+      }
+
+      const mappedMessageId = this.queueIdToMessageId.get(queueId) || '';
+
+      if (!mappedMessageId) {
         logger.warn(`No Message-ID found for Queue ID=${queueId}`);
       }
 
@@ -81,7 +88,7 @@ class LogParser extends EventEmitter {
         queueId,
         recipient,
         status,
-        messageId,
+        messageId: mappedMessageId,
         dsn,
       };
 
