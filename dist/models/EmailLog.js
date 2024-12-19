@@ -43,5 +43,8 @@ const EmailLogSchema = new mongoose_1.Schema({
     success: { type: Boolean, default: null },
     detail: { type: mongoose_1.Schema.Types.Mixed, default: {} },
     sentAt: { type: Date, default: Date.now, index: true },
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    collection: 'emailLogs', // Especifica explicitamente o nome da coleção
+});
 exports.default = mongoose_1.default.model('EmailLog', EmailLogSchema);

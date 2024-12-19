@@ -2,7 +2,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import MailerService from '../services/MailerService';
-import EmailLog from '../models/EmailLog'; // Import adicionado
+import EmailLog from '../models/EmailLog'; // Import correto do modelo EmailLog
 import logger from '../utils/logger';
 import config from '../config';
 
@@ -26,6 +26,11 @@ class StatusController {
                 .sort({ sentAt: -1 })
                 .limit(100)
                 .lean();
+
+            // Adicionar logs para depuração
+            logger.debug(`Total emails enviados (sent): ${sent}`);
+            logger.debug(`Emails enviados com sucesso (successSent): ${successSent}`);
+            logger.debug(`Emails falhados (failSent): ${failSent}`);
 
             res.json({
                 version,

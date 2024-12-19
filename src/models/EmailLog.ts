@@ -22,7 +22,10 @@ const EmailLogSchema: Schema = new Schema(
     detail: { type: Schema.Types.Mixed, default: {} },
     sentAt: { type: Date, default: Date.now, index: true },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    collection: 'emailLogs', // Especifica explicitamente o nome da coleção
+  }
 );
 
 export default mongoose.model<IEmailLog>('EmailLog', EmailLogSchema);
