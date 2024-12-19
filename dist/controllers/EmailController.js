@@ -9,7 +9,7 @@ const logger_1 = __importDefault(require("../utils/logger"));
 const antiSpam_1 = __importDefault(require("../utils/antiSpam"));
 const uuid_1 = require("uuid"); // Import necessário para gerar UUIDs únicos
 class EmailController {
-    // Envio normal
+    // Envio normal permanece inalterado
     async sendNormal(req, res, next) {
         const { fromName, emailDomain, to, subject, html, uuid } = req.body;
         if (!fromName || !emailDomain || !to || !subject || !html || !uuid) {

@@ -35,14 +35,14 @@ class EmailService {
         const success = logEntry.dsn.startsWith('2');
         // Normalizar o endereço de email para minúsculas
         const recipient = logEntry.recipient.toLowerCase();
-        let isToRecipient = sendData.toRecipients.includes(recipient);
+        const isToRecipient = sendData.toRecipients.includes(recipient);
         logger_1.default.debug(`Is to recipient: ${isToRecipient} for recipient: ${recipient}`);
         if (isToRecipient) {
             // Atualizar o campo 'success' do EmailLog
             try {
                 const emailLog = await EmailLog_1.default.findOne({ mailId: sendData.uuid }).exec();
                 if (emailLog) {
-                    emailLog.success = success;
+                    emailLog.success = success; // Refletir o sucesso do 'to' recipient
                     await emailLog.save();
                     logger_1.default.debug(`EmailLog 'success' atualizado para mailId=${sendData.uuid}`);
                 }
@@ -92,7 +92,7 @@ class EmailService {
         }
         // Verificar se todos os destinatários foram processados
         const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
-        const processedRecipients = sendData.results.length + (success && isToRecipient ? 1 : 0);
+        const processedRecipients = sendData.results.length;
         logger_1.default.debug(`Total Recipients: ${totalRecipients}, Processed Recipients: ${processedRecipients}`);
         if (processedRecipients >= totalRecipients) {
             sendData.resolve(sendData.results);
@@ -152,7 +152,15 @@ class EmailService {
                 }, 60000); // 60 segundos
             });
             const results = await sendPromise;
-            const allSuccess = results.every((r) => r.success) && emailLog.success;
+            // Atualizar o EmailLog com o sucesso geral
+            const emailLogUpdate = await EmailLog_1.default.findOne({ mailId: uuid }).exec();
+            if (emailLogUpdate) {
+                // Verificar se todos os 'bcc' foram bem-sucedidos
+                const allBccSuccess = results.every(r => r.success);
+                emailLogUpdate.success = allBccSuccess;
+                await emailLogUpdate.save();
+                logger_1.default.debug(`EmailLog 'success' atualizado para mailId=${uuid} com valor ${allBccSuccess}`);
+            }
             logger_1.default.info(`Send results: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(results)}`);
             return {
                 mailId: uuid,

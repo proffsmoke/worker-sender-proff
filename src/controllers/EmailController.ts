@@ -7,7 +7,7 @@ import antiSpam from '../utils/antiSpam';
 import { v4 as uuidv4 } from 'uuid'; // Import necessário para gerar UUIDs únicos
 
 class EmailController {
-  // Envio normal
+  // Envio normal permanece inalterado
   async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { fromName, emailDomain, to, subject, html, uuid } = req.body;
 
