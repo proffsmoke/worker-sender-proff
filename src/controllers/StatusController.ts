@@ -1,7 +1,6 @@
 // src/controllers/StatusController.ts
 
 import { Request, Response, NextFunction } from 'express';
-import MailerService from '../services/MailerService';
 import EmailLog from '../models/EmailLog';
 import logger from '../utils/logger';
 import config from '../config';
@@ -10,10 +9,10 @@ class StatusController {
     async getStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const version = '4.3.26-1'; // Atualize conforme necessário ou carregue de package.json
-            const createdAt = MailerService.getCreatedAt().getTime();
+            const createdAt = new Date().getTime();
             const domain = config.mailer.noreplyEmail.split('@')[1] || 'unknown.com';
-            const port25 = MailerService.isPort25Open();
-            const status = MailerService.getStatus(); // 'health' | 'blocked_permanently' | 'blocked_temporary'
+            const port25 = true; // Ajuste conforme sua lógica
+            const status = "health"; // Ajuste conforme sua lógica
 
             // Pipeline de agregação atualizado para separar testes e envios em massa
             const aggregationResult = await EmailLog.aggregate([

@@ -1,7 +1,7 @@
 // src/services/EmailService.ts
 
 import nodemailer from 'nodemailer';
-import EmailLog, { IEmailLog } from '../models/EmailLog';
+import EmailLog from '../models/EmailLog';
 import logger from '../utils/logger';
 import LogParser from '../log-parser';
 import { v4 as uuidv4 } from 'uuid';
@@ -66,11 +66,14 @@ class EmailService {
     messageId: string;
     dsn: string;
   }) {
-    logger.debug(`Processing Log Entry: ${JSON.stringify(logEntry)}`); // Novo log
+    logger.debug(`Processing Log Entry: ${JSON.stringify(logEntry)}`);
 
-    const sendData = this.pendingSends.get(logEntry.messageId);
+    // Remover os < e > do messageId
+    const cleanMessageId = logEntry.messageId.replace(/[<>]/g, '');
+
+    const sendData = this.pendingSends.get(cleanMessageId);
     if (!sendData) {
-      logger.warn(`No pending send found for Message-ID: ${logEntry.messageId}`);
+      logger.warn(`No pending send found for Message-ID: ${cleanMessageId}`);
       return;
     }
 
@@ -147,7 +150,7 @@ class EmailService {
 
     if (processedRecipients >= totalRecipients) {
       sendData.resolve(sendData.results);
-      this.pendingSends.delete(logEntry.messageId);
+      this.pendingSends.delete(cleanMessageId);
       logger.debug(`All recipients processed for mailId=${sendData.uuid}`);
     }
   }
@@ -162,7 +165,7 @@ class EmailService {
     const allRecipients: string[] = [...toRecipients, ...bccRecipients];
 
     const messageId = `${uuid}@${emailDomain}`;
-    logger.debug(`Setting Message-ID: <${messageId}> for mailId=${uuid}`); // Novo log
+    logger.debug(`Setting Message-ID: <${messageId}> for mailId=${uuid}`);
 
     try {
       const mailOptions = {

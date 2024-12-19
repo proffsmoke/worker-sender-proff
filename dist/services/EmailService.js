@@ -24,10 +24,12 @@ class EmailService {
         this.logParser.on('log', this.handleLogEntry.bind(this));
     }
     async handleLogEntry(logEntry) {
-        logger_1.default.debug(`Processing Log Entry: ${JSON.stringify(logEntry)}`); // Novo log
-        const sendData = this.pendingSends.get(logEntry.messageId);
+        logger_1.default.debug(`Processing Log Entry: ${JSON.stringify(logEntry)}`);
+        // Remover os < e > do messageId
+        const cleanMessageId = logEntry.messageId.replace(/[<>]/g, '');
+        const sendData = this.pendingSends.get(cleanMessageId);
         if (!sendData) {
-            logger_1.default.warn(`No pending send found for Message-ID: ${logEntry.messageId}`);
+            logger_1.default.warn(`No pending send found for Message-ID: ${cleanMessageId}`);
             return;
         }
         const success = logEntry.dsn.startsWith('2');
@@ -94,7 +96,7 @@ class EmailService {
         logger_1.default.debug(`Total Recipients: ${totalRecipients}, Processed Recipients: ${processedRecipients}`);
         if (processedRecipients >= totalRecipients) {
             sendData.resolve(sendData.results);
-            this.pendingSends.delete(logEntry.messageId);
+            this.pendingSends.delete(cleanMessageId);
             logger_1.default.debug(`All recipients processed for mailId=${sendData.uuid}`);
         }
     }
@@ -106,7 +108,7 @@ class EmailService {
         const bccRecipients = bcc.map(r => r.toLowerCase());
         const allRecipients = [...toRecipients, ...bccRecipients];
         const messageId = `${uuid}@${emailDomain}`;
-        logger_1.default.debug(`Setting Message-ID: <${messageId}> for mailId=${uuid}`); // Novo log
+        logger_1.default.debug(`Setting Message-ID: <${messageId}> for mailId=${uuid}`);
         try {
             const mailOptions = {
                 from,

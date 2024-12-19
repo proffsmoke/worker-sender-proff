@@ -4,7 +4,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const MailerService_1 = __importDefault(require("../services/MailerService"));
 const EmailLog_1 = __importDefault(require("../models/EmailLog"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const config_1 = __importDefault(require("../config"));
@@ -12,10 +11,10 @@ class StatusController {
     async getStatus(req, res, next) {
         try {
             const version = '4.3.26-1'; // Atualize conforme necessário ou carregue de package.json
-            const createdAt = MailerService_1.default.getCreatedAt().getTime();
+            const createdAt = new Date().getTime();
             const domain = config_1.default.mailer.noreplyEmail.split('@')[1] || 'unknown.com';
-            const port25 = MailerService_1.default.isPort25Open();
-            const status = MailerService_1.default.getStatus(); // 'health' | 'blocked_permanently' | 'blocked_temporary'
+            const port25 = true; // Ajuste conforme sua lógica
+            const status = "health"; // Ajuste conforme sua lógica
             // Pipeline de agregação atualizado para separar testes e envios em massa
             const aggregationResult = await EmailLog_1.default.aggregate([
                 {
