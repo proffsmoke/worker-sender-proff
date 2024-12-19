@@ -21,7 +21,7 @@ class StatusController {
                     $project: {
                         type: {
                             $cond: [
-                                { $eq: [{ $size: { $objectToArray: "$detail" } }, 0] },
+                                { $eq: [{ $size: { $objectToArray: { $ifNull: ["$detail", {}] } } }, 0] },
                                 "test",
                                 "mass"
                             ]
