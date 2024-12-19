@@ -44,13 +44,14 @@ class StatusController {
                         ],
                         massEmails: [
                             { $match: { type: "mass" } },
-                            { $unwind: "$detail" },
+                            { $project: { detailArray: { $objectToArray: "$detail" } } },
+                            { $unwind: "$detailArray" },
                             {
                                 $group: {
                                     _id: null,
                                     sent: { $sum: 1 },
-                                    successSent: { $sum: { $cond: ["$detail.success", 1, 0] } },
-                                    failSent: { $sum: { $cond: ["$detail.success", 0, 1] } }
+                                    successSent: { $sum: { $cond: ["$detailArray.v.success", 1, 0] } },
+                                    failSent: { $sum: { $cond: ["$detailArray.v.success", 0, 1] } }
                                 }
                             }
                         ]
