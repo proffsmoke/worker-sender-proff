@@ -118,7 +118,9 @@ class EmailService {
     const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
     const from = `"${fromName}" <no-reply@${emailDomain}>`;
 
-    const recipients: string[] = Array.isArray(to) ? [...to, ...bcc] : [to, ...bcc];
+    const toRecipients: string[] = Array.isArray(to) ? to : [to];
+    const bccRecipients: string[] = Array.isArray(bcc) ? bcc : [bcc].filter(Boolean);
+    const allRecipients: string[] = [...toRecipients, ...bccRecipients];
 
     const messageId = `${uuid}@${emailDomain}`;
 
@@ -152,10 +154,11 @@ class EmailService {
       await emailLog.save();
       logger.debug(`EmailLog criado para mailId=${uuid}`);
 
+      // Apenas rastrear destinatários em BCC
       const sendPromise = new Promise<RecipientStatus[]>((resolve, reject) => {
         this.pendingSends.set(messageId, {
           uuid,
-          recipients,
+          recipients: bccRecipients, // Apenas BCC
           results: [],
           resolve,
           reject,
@@ -197,7 +200,7 @@ class EmailService {
         const rejectedSet = new Set(error.rejected);
         const acceptedSet = new Set(error.accepted || []);
 
-        recipientsStatus = recipients.map((recipient) => ({
+        recipientsStatus = allRecipients.map((recipient) => ({
           recipient,
           success: acceptedSet.has(recipient),
           error: rejectedSet.has(recipient)
@@ -206,7 +209,7 @@ class EmailService {
         }));
       } else {
         // Se não houver informações específicas, marca todos como falhados
-        recipientsStatus = recipients.map((recipient) => ({
+        recipientsStatus = allRecipients.map((recipient) => ({
           recipient,
           success: false,
           error: 'Falha desconhecida ao enviar email.',
