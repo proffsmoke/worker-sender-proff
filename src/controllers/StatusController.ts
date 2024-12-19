@@ -15,11 +15,29 @@ class StatusController {
             const port25 = MailerService.isPort25Open();
             const status = MailerService.getStatus(); // 'health' | 'blocked_permanently' | 'blocked_temporary'
 
-            // Atualizar as contagens para utilizar EmailLog
-            const sent = await EmailLog.countDocuments({});
-            const successSent = await EmailLog.countDocuments({ success: true });
-            const failSent = await EmailLog.countDocuments({ success: false });
-            const left = 0; // Se houver uma fila, ajuste este valor
+            // Agregação para contar individualmente os sucessos e falhas
+            const aggregationResult = await EmailLog.aggregate([
+                { $match: {} }, // Seleciona todos os documentos
+                { $project: { detail: 1 } }, // Projeta apenas o campo detail
+                { $project: { detail: { $objectToArray: "$detail" } } }, // Transforma detail em um array
+                { $unwind: "$detail" }, // Desmembra o array de detail
+                { $group: {
+                    _id: null,
+                    sent: { $sum: 1 },
+                    successSent: { $sum: { $cond: [ "$detail.v.success", 1, 0 ] } },
+                    failSent: { $sum: { $cond: [ "$detail.v.success", 0, 1 ] } }
+                }}
+            ]);
+
+            let sent = 0;
+            let successSent = 0;
+            let failSent = 0;
+
+            if (aggregationResult.length > 0) {
+                sent = aggregationResult[0].sent;
+                successSent = aggregationResult[0].successSent;
+                failSent = aggregationResult[0].failSent;
+            }
 
             // Buscar os últimos 100 EmailLogs para exibição no status
             const emailLogs = await EmailLog.find()
@@ -36,7 +54,7 @@ class StatusController {
                 version,
                 createdAt,
                 sent,
-                left,
+                left: 0, // Se houver uma fila, ajuste este valor
                 successSent,
                 failSent,
                 port25,
