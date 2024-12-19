@@ -1,4 +1,5 @@
 "use strict";
+// src/controllers/EmailController.ts
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -28,7 +29,12 @@ class EmailController {
                 html: processedHtml,
                 uuid,
             });
-            res.json({ success: true, status: result });
+            // Determina o sucesso geral baseado nos destinatários
+            const overallSuccess = result.recipients.some((r) => r.success);
+            res.json({
+                success: overallSuccess,
+                status: result,
+            });
         }
         catch (error) {
             logger_1.default.error(`Erro ao enviar email normal:`, error);
@@ -64,7 +70,12 @@ class EmailController {
                 html: processedHtml,
                 uuid,
             });
-            res.json({ success: true, status: result });
+            // Determina o sucesso geral baseado nos destinatários
+            const overallSuccess = result.recipients.some((r) => r.success);
+            res.json({
+                success: overallSuccess,
+                status: result,
+            });
         }
         catch (error) {
             logger_1.default.error(`Erro ao enviar emails em massa:`, error);

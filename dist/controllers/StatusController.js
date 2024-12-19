@@ -6,6 +6,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const MailerService_1 = __importDefault(require("../services/MailerService"));
 const Log_1 = __importDefault(require("../models/Log"));
+const EmailLog_1 = __importDefault(require("../models/EmailLog")); // Import adicionado
 const logger_1 = __importDefault(require("../utils/logger"));
 const config_1 = __importDefault(require("../config"));
 class StatusController {
@@ -21,6 +22,11 @@ class StatusController {
             const failSent = await Log_1.default.countDocuments({ success: false });
             const left = 0; // Se houver uma fila, ajuste este valor
             const logs = await Log_1.default.find().sort({ sentAt: -1 }).limit(500).lean();
+            // Buscar os últimos 100 EmailLogs para exibição no status
+            const emailLogs = await EmailLog_1.default.find()
+                .sort({ sentAt: -1 })
+                .limit(100)
+                .lean();
             res.json({
                 version,
                 createdAt,
@@ -32,6 +38,7 @@ class StatusController {
                 domain,
                 status,
                 logs,
+                emailLogs, // Adicionado
             });
         }
         catch (error) {

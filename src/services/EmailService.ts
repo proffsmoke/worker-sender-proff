@@ -1,6 +1,7 @@
 // src/services/EmailService.ts
+
 import nodemailer from 'nodemailer';
-import EmailLog from '../models/EmailLog';
+import EmailLog, { IEmailLog } from '../models/EmailLog'; // Import da interface
 import logger from '../utils/logger';
 import LogParser from '../log-parser';
 import { v4 as uuidv4 } from 'uuid';
@@ -36,8 +37,8 @@ class EmailService {
       uuid: string;
       recipients: string[];
       results: RecipientStatus[];
-      resolve: Function;
-      reject: Function;
+      resolve: (value: RecipientStatus[]) => void;
+      reject: (reason?: any) => void;
     }
   > = new Map();
 
@@ -56,33 +57,60 @@ class EmailService {
     this.logParser.on('log', this.handleLogEntry.bind(this));
   }
 
-  private handleLogEntry(logEntry: {
+  private async handleLogEntry(logEntry: {
     queueId: string;
     recipient: string;
     status: string;
     messageId: string;
     dsn: string;
   }) {
-    for (const [messageId, sendData] of this.pendingSends.entries()) {
-      if (logEntry.messageId === messageId) {
-        const success = logEntry.dsn.startsWith('2');
+    const sendData = this.pendingSends.get(logEntry.messageId);
+    if (!sendData) {
+      // Não há envio pendente para este messageId
+      return;
+    }
 
-        sendData.results.push({
+    const success = logEntry.dsn.startsWith('2');
+
+    sendData.results.push({
+      recipient: logEntry.recipient,
+      success,
+    });
+
+    logger.info(
+      `Updated status for ${logEntry.recipient}: ${success ? 'Sent' : 'Failed'}`
+    );
+
+    try {
+      const emailLog = await EmailLog.findOne({ mailId: sendData.uuid }).exec();
+
+      if (emailLog) {
+        // Atualizar o status com base no destinatário
+        const recipientStatus = {
           recipient: logEntry.recipient,
           success,
-        });
-
-        logger.info(
-          `Updated status for ${logEntry.recipient}: ${
-            success ? 'Sent' : 'Failed'
-          }`
-        );
-
-        if (sendData.results.length === sendData.recipients.length) {
-          sendData.resolve(sendData.results);
-          this.pendingSends.delete(messageId);
-        }
+          dsn: logEntry.dsn,
+          status: logEntry.status,
+        };
+        emailLog.success = emailLog.success === null ? success : emailLog.success && success;
+        emailLog.detail = {
+          ...emailLog.detail,
+          [logEntry.recipient]: recipientStatus,
+        };
+        await emailLog.save();
+        logger.debug(`EmailLog atualizado para mailId=${sendData.uuid}`);
+      } else {
+        logger.warn(`EmailLog não encontrado para mailId=${sendData.uuid}`);
       }
+    } catch (err) {
+      logger.error(
+        `Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${(err as Error).message}`
+      );
+    }
+
+    if (sendData.results.length === sendData.recipients.length) {
+      sendData.resolve(sendData.results);
+      this.pendingSends.delete(logEntry.messageId);
     }
   }
 
@@ -111,6 +139,19 @@ class EmailService {
       logger.info(`Email sent: ${JSON.stringify(mailOptions)}`);
       logger.debug(`SMTP server response: ${info.response}`);
 
+      // Criar um registro inicial no EmailLog com sucesso = null
+      const emailLog = new EmailLog({
+        mailId: uuid,
+        sendmailQueueId: '', // Pode ser ajustado se necessário
+        email: Array.isArray(to) ? to.join(', ') : to,
+        message: subject,
+        success: null,
+        sentAt: new Date(),
+      });
+
+      await emailLog.save();
+      logger.debug(`EmailLog criado para mailId=${uuid}`);
+
       const sendPromise = new Promise<RecipientStatus[]>((resolve, reject) => {
         this.pendingSends.set(messageId, {
           uuid,
@@ -128,7 +169,7 @@ class EmailService {
             );
             this.pendingSends.delete(messageId);
           }
-        }, 60000); // 20 segundos
+        }, 60000); // 60 segundos
       });
 
       const results = await sendPromise;
@@ -147,10 +188,7 @@ class EmailService {
         recipients: results,
       };
     } catch (error: any) {
-      logger.error(
-        `Error sending email: ${error.message}`,
-        error
-      );
+      logger.error(`Error sending email: ${error.message}`, error);
 
       let recipientsStatus: RecipientStatus[] = [];
 
@@ -173,6 +211,29 @@ class EmailService {
           success: false,
           error: 'Falha desconhecida ao enviar email.',
         }));
+      }
+
+      // Registrar o erro no EmailLog
+      try {
+        const emailLog = new EmailLog({
+          mailId: uuid,
+          sendmailQueueId: '', // Pode ser ajustado se necessário
+          email: Array.isArray(to) ? to.join(', ') : to,
+          message: subject,
+          success: recipientsStatus.some((r) => r.success),
+          detail: recipientsStatus.reduce((acc, curr) => {
+            acc[curr.recipient] = { success: curr.success, error: curr.error };
+            return acc;
+          }, {} as Record<string, any>),
+          sentAt: new Date(),
+        });
+
+        await emailLog.save();
+        logger.debug(`EmailLog criado com erro para mailId=${uuid}`);
+      } catch (saveErr) {
+        logger.error(
+          `Erro ao registrar EmailLog para mailId=${uuid}: ${(saveErr as Error).message}`
+        );
       }
 
       return {

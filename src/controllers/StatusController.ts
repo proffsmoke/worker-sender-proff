@@ -3,6 +3,7 @@
 import { Request, Response, NextFunction } from 'express';
 import MailerService from '../services/MailerService';
 import Log from '../models/Log';
+import EmailLog from '../models/EmailLog'; // Import adicionado
 import logger from '../utils/logger';
 import config from '../config';
 
@@ -22,6 +23,12 @@ class StatusController {
 
             const logs = await Log.find().sort({ sentAt: -1 }).limit(500).lean();
 
+            // Buscar os últimos 100 EmailLogs para exibição no status
+            const emailLogs = await EmailLog.find()
+                .sort({ sentAt: -1 })
+                .limit(100)
+                .lean();
+
             res.json({
                 version,
                 createdAt,
@@ -33,6 +40,7 @@ class StatusController {
                 domain,
                 status,
                 logs,
+                emailLogs, // Adicionado
             });
         } catch (error: unknown) {
             if (error instanceof Error) {
