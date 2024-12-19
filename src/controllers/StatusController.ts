@@ -2,7 +2,6 @@
 
 import { Request, Response, NextFunction } from 'express';
 import MailerService from '../services/MailerService';
-import Log from '../models/Log';
 import EmailLog from '../models/EmailLog'; // Import adicionado
 import logger from '../utils/logger';
 import config from '../config';
@@ -16,12 +15,11 @@ class StatusController {
             const port25 = MailerService.isPort25Open();
             const status = MailerService.getStatus(); // 'health' | 'blocked_permanently' | 'blocked_temporary'
 
-            const sent = await Log.countDocuments({});
-            const successSent = await Log.countDocuments({ success: true });
-            const failSent = await Log.countDocuments({ success: false });
+            // Atualizar as contagens para utilizar EmailLog
+            const sent = await EmailLog.countDocuments({});
+            const successSent = await EmailLog.countDocuments({ success: true });
+            const failSent = await EmailLog.countDocuments({ success: false });
             const left = 0; // Se houver uma fila, ajuste este valor
-
-            const logs = await Log.find().sort({ sentAt: -1 }).limit(500).lean();
 
             // Buscar os últimos 100 EmailLogs para exibição no status
             const emailLogs = await EmailLog.find()
@@ -39,7 +37,6 @@ class StatusController {
                 port25,
                 domain,
                 status,
-                logs,
                 emailLogs, // Adicionado
             });
         } catch (error: unknown) {
