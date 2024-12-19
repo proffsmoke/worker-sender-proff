@@ -154,11 +154,11 @@ class EmailService {
       await emailLog.save();
       logger.debug(`EmailLog criado para mailId=${uuid}`);
 
-      // Apenas rastrear destinatários em BCC
+      // Rastrear todos os destinatários (to + bcc)
       const sendPromise = new Promise<RecipientStatus[]>((resolve, reject) => {
         this.pendingSends.set(messageId, {
           uuid,
-          recipients: bccRecipients, // Apenas BCC
+          recipients: allRecipients, // Todos os destinatários: to + bcc
           results: [],
           resolve,
           reject,
