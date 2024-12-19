@@ -1,4 +1,5 @@
 // src/config/index.ts
+
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -25,7 +26,7 @@ const config = {
   },
   server: {
     logResultEndpoint: process.env.LOG_RESULT_ENDPOINT || 'https://mainserver.com/logs',
-},
+  },
 };
 
 export default config;

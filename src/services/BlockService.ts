@@ -1,4 +1,5 @@
 // src/services/BlockService.ts
+
 const blockedErrors = {
   permanent: [
     'blacklisted',
@@ -13,7 +14,7 @@ const blockedErrors = {
     'SPFBL BLOCKED',
     'banned sending IP',
     'on our block list',
-    '550 5.7.1',
+    '550 5.7',
     '554 Refused',
     'access denied',
     'blocked by policy',

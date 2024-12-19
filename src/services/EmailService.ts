@@ -6,6 +6,8 @@ import logger from '../utils/logger';
 import LogParser from '../log-parser';
 import { v4 as uuidv4 } from 'uuid';
 import config from '../config';
+import BlockService from './BlockService'; // Import adicionado
+import MailerService from './MailerService'; // Import adicionado
 
 interface SendEmailParams {
   fromName: string;
@@ -243,6 +245,13 @@ class EmailService {
       };
     } catch (error: any) {
       logger.error(`Error sending email: ${error.message}`, error);
+
+      // Verifica se a mensagem de erro corresponde a um bloqueio permanente ou temporário
+      if (BlockService.isPermanentError(error.message)) {
+        MailerService.blockMailer('blocked_permanently');
+      } else if (BlockService.isTemporaryError(error.message)) {
+        MailerService.blockMailer('blocked_temporary');
+      }
 
       let recipientsStatus: RecipientStatus[] = [];
 

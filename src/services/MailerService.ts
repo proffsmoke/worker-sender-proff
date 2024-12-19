@@ -12,6 +12,7 @@ class MailerService {
   private createdAt: Date;
   private version: string = '4.3.26-1';
   private intervalId: NodeJS.Timeout | null = null;
+  private retryTimeoutId: NodeJS.Timeout | null = null; // Novo atributo para gerenciar retries
 
   constructor() {
     this.createdAt = new Date();
@@ -41,6 +42,10 @@ class MailerService {
       logger.warn('Nenhuma porta disponível. Mailer bloqueado permanentemente.');
     } else if (openPort) {
       logger.info(`Porta ${openPort} aberta. Mailer funcionando normalmente.`);
+      // Se estava temporariamente bloqueado, desbloquear
+      if (this.isBlocked && !this.isBlockedPermanently) {
+        this.unblockMailer();
+      }
     }
   }
 
@@ -85,6 +90,72 @@ class MailerService {
         clearInterval(this.intervalId);
         this.intervalId = null;
       }
+
+      if (status === 'blocked_temporary') {
+        // Agendar a tentativa de desbloqueio após 5 minutos
+        this.retryTimeoutId = setTimeout(() => {
+          this.retryUnblock();
+        }, config.mailer.temporaryBlockDuration);
+        logger.info('Tentativa de desbloqueio agendada para bloqueio temporário em 5 minutos.');
+      }
+    }
+  }
+
+  async retryUnblock() {
+    if (this.isBlockedPermanently) {
+      logger.info('Mailer está permanentemente bloqueado. Tentativa de reativação não será realizada.');
+      return;
+    }
+
+    logger.info('Tentando reativar o Mailer após bloqueio temporário.');
+
+    try {
+      // Enviar um email de teste para verificar se pode ser reativado
+      await this.sendRetryTestEmail();
+    } catch (error: any) {
+      logger.error(`Falha na tentativa de reativação do Mailer: ${error.message}`);
+      // Manter o bloqueio temporário e tentar novamente após o mesmo intervalo
+      this.retryTimeoutId = setTimeout(() => {
+        this.retryUnblock();
+      }, config.mailer.temporaryBlockDuration);
+      logger.info('Nova tentativa de reativação agendada para bloqueio temporário.');
+    }
+  }
+
+  private async sendRetryTestEmail() {
+    const testUuid = uuidv4();
+    const testEmailParams = {
+      fromName: 'Mailer Retry Test',
+      emailDomain: config.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
+      to: config.mailer.noreplyEmail,
+      bcc: [],
+      subject: 'Tentativa de Reativação do Mailer',
+      html: '<p>Este é um email de teste para verificar se o Mailer pode ser reativado após bloqueio temporário.</p>',
+      uuid: testUuid,
+    };
+
+    try {
+      const result = await EmailService.sendEmail(testEmailParams);
+      logger.info(`Email de teste de reativação enviado com mailId=${result.mailId}`, { result });
+
+      // Verificar se o email de teste foi enviado com sucesso
+      const allSuccess = result.recipients.every((r) => r.success);
+      if (allSuccess) {
+        logger.info('Email de teste de reativação enviado com sucesso. Mailer será desbloqueado.');
+        this.unblockMailer();
+      } else {
+        logger.warn('Falha ao enviar email de teste de reativação. Mailer permanecerá bloqueado temporariamente.');
+        // Manter o bloqueio temporário e agendar nova tentativa
+        this.retryTimeoutId = setTimeout(() => {
+          this.retryUnblock();
+        }, config.mailer.temporaryBlockDuration);
+      }
+    } catch (error: any) {
+      logger.error(`Erro ao enviar email de teste de reativação: ${error.message}`);
+      // Manter o bloqueio temporário e agendar nova tentativa
+      this.retryTimeoutId = setTimeout(() => {
+        this.retryUnblock();
+      }, config.mailer.temporaryBlockDuration);
     }
   }
 
