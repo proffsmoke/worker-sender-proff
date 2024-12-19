@@ -16,41 +16,68 @@ class StatusController {
             const domain = config_1.default.mailer.noreplyEmail.split('@')[1] || 'unknown.com';
             const port25 = MailerService_1.default.isPort25Open();
             const status = MailerService_1.default.getStatus(); // 'health' | 'blocked_permanently' | 'blocked_temporary'
-            // Pipeline de agregação atualizado para contar todos os destinatários
+            // Pipeline de agregação atualizado para separar testes e envios em massa
             const aggregationResult = await EmailLog_1.default.aggregate([
-                { $match: {} }, // Seleciona todos os documentos
                 {
                     $project: {
-                        toRecipient: { $toLower: "$email" }, // Garantir lowercase
-                        bccRecipients: {
-                            $map: {
-                                input: { $objectToArray: "$detail" },
-                                as: "detailItem",
-                                in: {
-                                    recipient: { $toLower: "$$detailItem.k" },
-                                    success: "$$detailItem.v.success"
+                        type: {
+                            $cond: [
+                                { $eq: [{ $size: { $objectToArray: "$detail" } }, 0] },
+                                "test",
+                                "mass"
+                            ]
+                        },
+                        success: 1,
+                        detail: 1
+                    }
+                },
+                {
+                    $facet: {
+                        testEmails: [
+                            { $match: { type: "test" } },
+                            {
+                                $group: {
+                                    _id: null,
+                                    sent: { $sum: 1 },
+                                    successSent: { $sum: { $cond: ["$success", 1, 0] } },
+                                    failSent: { $sum: { $cond: ["$success", 0, 1] } }
                                 }
                             }
-                        }
+                        ],
+                        massEmails: [
+                            { $match: { type: "mass" } },
+                            { $unwind: "$detail" },
+                            {
+                                $group: {
+                                    _id: null,
+                                    sent: { $sum: 1 },
+                                    successSent: { $sum: { $cond: ["$detail.success", 1, 0] } },
+                                    failSent: { $sum: { $cond: ["$detail.success", 0, 1] } }
+                                }
+                            }
+                        ]
                     }
                 },
                 {
                     $project: {
-                        recipients: {
-                            $concatArrays: [
-                                [{ recipient: "$toRecipient", success: "$success" }],
-                                "$bccRecipients"
+                        sent: {
+                            $add: [
+                                { $ifNull: [{ $arrayElemAt: ["$testEmails.sent", 0] }, 0] },
+                                { $ifNull: [{ $arrayElemAt: ["$massEmails.sent", 0] }, 0] }
+                            ]
+                        },
+                        successSent: {
+                            $add: [
+                                { $ifNull: [{ $arrayElemAt: ["$testEmails.successSent", 0] }, 0] },
+                                { $ifNull: [{ $arrayElemAt: ["$massEmails.successSent", 0] }, 0] }
+                            ]
+                        },
+                        failSent: {
+                            $add: [
+                                { $ifNull: [{ $arrayElemAt: ["$testEmails.failSent", 0] }, 0] },
+                                { $ifNull: [{ $arrayElemAt: ["$massEmails.failSent", 0] }, 0] }
                             ]
                         }
-                    }
-                },
-                { $unwind: "$recipients" }, // Desmembra o array de destinatários
-                {
-                    $group: {
-                        _id: null,
-                        sent: { $sum: 1 }, // Total de destinatários enviados
-                        successSent: { $sum: { $cond: ["$recipients.success", 1, 0] } }, // Total de sucessos
-                        failSent: { $sum: { $cond: ["$recipients.success", 0, 1] } } // Total de falhas
                     }
                 }
             ]);
