@@ -27,19 +27,19 @@ class BlockManagerService {
     }
 
     if (this.blockService.isPermanentError(message)) {
-      this.applyBlock('permanent');
+      this.applyBlock('permanent', message); // Passa a mensagem como razão
       logger.info(`Bloqueio permanente aplicado devido à linha de log: "${message}"`);
     } else if (this.blockService.isTemporaryError(message)) {
-      this.applyBlock('temporary');
+      this.applyBlock('temporary', message); // Passa a mensagem como razão
       logger.info(`Bloqueio temporário aplicado devido à linha de log: "${message}"`);
     }
   }
 
-  private applyBlock(type: 'permanent' | 'temporary') {
+  private applyBlock(type: 'permanent' | 'temporary', reason: string) { // Adiciona o parâmetro reason
     if (type === 'permanent') {
-      this.mailerService.blockMailer('blocked_permanently');
+      this.mailerService.blockMailer('blocked_permanently', reason);
     } else {
-      this.mailerService.blockMailer('blocked_temporary');
+      this.mailerService.blockMailer('blocked_temporary', reason);
       // Agendar a remoção do bloqueio temporário após a duração configurada
       setTimeout(() => {
         this.checkAndUnblock();

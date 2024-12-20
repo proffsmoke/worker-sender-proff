@@ -3,11 +3,11 @@ import logger from '../utils/logger';
 import config from '../config';
 import EmailService from './EmailService';
 import { v4 as uuidv4 } from 'uuid';
-import BlockManagerService from './BlockManagerService'; // Import adicionado
 
 class MailerService {
   private isBlocked: boolean = false;
   private isBlockedPermanently: boolean = false;
+  private blockReason: string | null = null; // Novo campo para armazenar a razão do bloqueio
   private createdAt: Date;
   private version: string = '4.3.26-1';
   private intervalId: NodeJS.Timeout | null = null;
@@ -36,10 +36,11 @@ class MailerService {
 
     const openPort = await PortCheckService.verifyPort('smtp.gmail.com', [25]);
     if (!openPort && !this.isBlocked) {
-      this.blockMailer('blocked_permanently');
+      this.blockMailer('blocked_permanently', 'Nenhuma porta disponível para conexão SMTP.');
       logger.warn('Nenhuma porta disponível. Mailer bloqueado permanentemente.');
     } else if (openPort) {
       logger.info(`Porta ${openPort} aberta. Mailer funcionando normalmente.`);
+      this.unblockMailer(); // Garantir que o Mailer esteja desbloqueado se a porta estiver aberta
     }
   }
 
@@ -73,13 +74,15 @@ class MailerService {
     return this.version;
   }
 
-  blockMailer(status: 'blocked_permanently' | 'blocked_temporary'): void {
+  // Modificação do método blockMailer para aceitar a razão do bloqueio
+  blockMailer(status: 'blocked_permanently' | 'blocked_temporary', reason: string): void {
     if (!this.isBlocked) {
       this.isBlocked = true;
+      this.blockReason = reason; // Armazena a razão do bloqueio
       if (status === 'blocked_permanently') {
         this.isBlockedPermanently = true;
       }
-      logger.warn(`Mailer bloqueado com status: ${status}`);
+      logger.warn(`Mailer bloqueado com status: ${status}. Razão: ${reason}`);
       if (this.intervalId) {
         clearInterval(this.intervalId);
         this.intervalId = null;
@@ -90,9 +93,14 @@ class MailerService {
   unblockMailer(): void {
     if (this.isBlocked && !this.isBlockedPermanently) {
       this.isBlocked = false;
+      this.blockReason = null; // Limpa a razão do bloqueio
       logger.info('Mailer desbloqueado.');
       this.initialize();
     }
+  }
+
+  getBlockReason(): string | null {
+    return this.blockReason; // Método getter para obter a razão do bloqueio
   }
 
   async sendInitialTestEmail(): Promise<{ success: boolean }> { // Alterado para retornar um objeto com sucesso
@@ -121,13 +129,13 @@ class MailerService {
       } else {
         logger.warn('Falha ao enviar email de teste. Verifique os logs para mais detalhes.');
         // Bloquear o Mailer temporariamente
-        this.blockMailer('blocked_temporary');
+        this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
         return { success: false };
       }
     } catch (error: any) {
       logger.error(`Erro ao enviar email de teste: ${error.message}`, error);
       // Bloquear o Mailer temporariamente
-      this.blockMailer('blocked_temporary');
+      this.blockMailer('blocked_temporary', `Erro ao enviar email de teste: ${error.message}`);
       return { success: false };
     }
   }

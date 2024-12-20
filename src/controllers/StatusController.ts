@@ -10,8 +10,9 @@ class StatusController {
             const version = '4.3.26-1'; // Atualize conforme necessário ou carregue de package.json
             const createdAt = new Date().getTime();
             const domain = config.mailer.noreplyEmail.split('@')[1] || 'unknown.com';
-            const port25 = true; // Ajuste conforme sua lógica
+            const port25 = MailerService.isPort25Open(); // Ajustado para refletir o status real
             const status = MailerService.getStatus(); // Obtém o status do MailerService
+            const blockReason = MailerService.getBlockReason(); // Obtém a razão do bloqueio, se houver
 
             // Pipeline de agregação atualizado para separar testes e envios em massa
             const aggregationResult = await EmailLog.aggregate([
@@ -101,7 +102,8 @@ class StatusController {
             logger.debug(`Emails enviados com sucesso (successSent): ${successSent}`);
             logger.debug(`Emails falhados (failSent): ${failSent}`);
 
-            res.json({
+            // Preparar a resposta JSON
+            const response: any = {
                 version,
                 createdAt,
                 sent,
@@ -112,7 +114,14 @@ class StatusController {
                 domain,
                 status,
                 emailLogs, // Adicionado
-            });
+            };
+
+            // Incluir a razão do bloqueio, se o Mailer estiver bloqueado
+            if (status === 'blocked_permanently' || status === 'blocked_temporary') {
+                response.blockReason = blockReason;
+            }
+
+            res.json(response);
         } catch (error: unknown) {
             if (error instanceof Error) {
                 logger.error(`Erro ao obter status: ${error.message}`, { stack: error.stack });
