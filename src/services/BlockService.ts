@@ -1,4 +1,3 @@
-// src/services/BlockService.ts
 const blockedErrors = {
   permanent: [
     'blacklisted',

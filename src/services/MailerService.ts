@@ -1,10 +1,9 @@
-// src/services/MailerService.ts
-
 import PortCheckService from './PortCheckService';
 import logger from '../utils/logger';
 import config from '../config';
-import EmailService from './EmailService'; // Import adicionado
-import { v4 as uuidv4 } from 'uuid'; // Import para gerar UUID
+import EmailService from './EmailService';
+import { v4 as uuidv4 } from 'uuid';
+import BlockManagerService from './BlockManagerService'; // Import adicionado
 
 class MailerService {
   private isBlocked: boolean = false;
@@ -35,7 +34,7 @@ class MailerService {
       return;
     }
 
-    const openPort = await PortCheckService.verifyPort('smtp.gmail.com', [25]); // Alterado para smtp.gmail.com e porta 25
+    const openPort = await PortCheckService.verifyPort('smtp.gmail.com', [25]);
     if (!openPort && !this.isBlocked) {
       this.blockMailer('blocked_permanently');
       logger.warn('Nenhuma porta disponível. Mailer bloqueado permanentemente.');
@@ -96,7 +95,7 @@ class MailerService {
     }
   }
 
-  private async sendInitialTestEmail() {
+  async sendInitialTestEmail(): Promise<{ success: boolean }> { // Alterado para retornar um objeto com sucesso
     const testUuid = uuidv4();
     const testEmailParams = {
       fromName: 'Mailer Test',
@@ -118,15 +117,18 @@ class MailerService {
         logger.info('Email de teste enviado com sucesso. Status do Mailer: health');
         // Garantir que o status não esteja bloqueado
         this.unblockMailer();
+        return { success: true };
       } else {
         logger.warn('Falha ao enviar email de teste. Verifique os logs para mais detalhes.');
-        // Opcional: bloquear o Mailer se o email de teste falhar
+        // Bloquear o Mailer temporariamente
         this.blockMailer('blocked_temporary');
+        return { success: false };
       }
     } catch (error: any) {
       logger.error(`Erro ao enviar email de teste: ${error.message}`, error);
-      // Opcional: bloquear o Mailer se ocorrer um erro ao enviar o email de teste
+      // Bloquear o Mailer temporariamente
       this.blockMailer('blocked_temporary');
+      return { success: false };
     }
   }
 }

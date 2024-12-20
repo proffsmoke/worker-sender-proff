@@ -1,11 +1,10 @@
-// src/services/EmailService.ts
-
 import nodemailer from 'nodemailer';
 import EmailLog from '../models/EmailLog';
 import logger from '../utils/logger';
 import LogParser from '../log-parser';
 import { v4 as uuidv4 } from 'uuid';
 import config from '../config';
+import MailerService from './MailerService'; // Import adicionado
 
 interface SendEmailParams {
   fromName: string;
@@ -65,6 +64,7 @@ class EmailService {
     status: string;
     messageId: string;
     dsn: string;
+    message: string;
   }) {
     logger.debug(`Processing Log Entry: ${JSON.stringify(logEntry)}`);
 
