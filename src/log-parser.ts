@@ -1,5 +1,3 @@
-// src/log-parser.ts
-
 import { Tail } from 'tail';
 import logger from './utils/logger';
 import fs from 'fs';
@@ -11,6 +9,7 @@ interface LogEntry {
   status: string;
   messageId: string;
   dsn: string;
+  message: string; // Adicionado para garantir que 'message' esteja sempre presente
 }
 
 class LogParser extends EventEmitter {
@@ -83,9 +82,10 @@ class LogParser extends EventEmitter {
         status,
         messageId,
         dsn,
+        message: line, // Armazena a linha completa para análise de bloqueio
       };
 
-      logger.debug(`LogParser captured: ${JSON.stringify(logEntry)}`); // Novo log
+      logger.debug(`LogParser captured: ${JSON.stringify(logEntry)}`);
 
       this.emit('log', logEntry);
     }

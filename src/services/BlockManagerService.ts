@@ -1,5 +1,3 @@
-// src/services/BlockManagerService.ts
-
 import LogParser from '../log-parser';
 import BlockService from './BlockService';
 import MailerService from './MailerService';
@@ -22,6 +20,11 @@ class BlockManagerService {
 
   private handleLogEntry(logEntry: any) {
     const { message } = logEntry;
+
+    if (typeof message !== 'string') {
+      logger.warn('Log entry missing or invalid message:', logEntry);
+      return;
+    }
 
     if (this.blockService.isPermanentError(message)) {
       this.applyBlock('permanent');

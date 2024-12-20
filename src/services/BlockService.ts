@@ -38,11 +38,13 @@ const blockedErrors = {
 };
 
 class BlockService {
-  isPermanentError(message: string): boolean {
+  isPermanentError(message?: string): boolean {
+    if (typeof message !== 'string') return false;
     return blockedErrors.permanent.some((err) => message.includes(err));
   }
 
-  isTemporaryError(message: string): boolean {
+  isTemporaryError(message?: string): boolean {
+    if (typeof message !== 'string') return false;
     return blockedErrors.temporary.some((err) => message.includes(err));
   }
 }
