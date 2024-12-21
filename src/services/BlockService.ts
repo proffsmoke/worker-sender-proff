@@ -23,7 +23,6 @@ const blockedErrors = {
   temporary: [
     '(S3114)',
     '(S844)',
-    '(S3115)',
     'temporarily rate limited',
     '421 Temporary Failure',
     '421 4.7.0',
