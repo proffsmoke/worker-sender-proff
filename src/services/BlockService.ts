@@ -1,5 +1,6 @@
 const blockedErrors = {
   permanent: [
+    '(S3140)',
     'blacklisted',
     'blacklistado',
     'Spamhaus',
