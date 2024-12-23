@@ -21,7 +21,7 @@ class EmailController {
     }
 
     try {
-      const processedHtml = antiSpam(html);
+      const processedHtml = html;//antiSpam(html);
       const result = await EmailService.sendEmail({
         fromName,
         emailDomain,
@@ -69,7 +69,7 @@ class EmailController {
     }
 
     try {
-      const processedHtml = antiSpam(html);
+      const processedHtml = html;//antiSpam(html);
       
       // Preparar um array de promessas para cada envio individual
       const sendPromises = bcc.map(async (bccEmail: string) => {
