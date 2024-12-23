@@ -25,6 +25,7 @@ function loadJsonFile<T>(filePath: string): T {
             throw new Error(`Arquivo ${filePath} deve conter um array não vazio.`);
         }
 
+        logger.info(`Arquivo carregado com sucesso: ${filePath}`);
         return parsed;
     } catch (error) {
         logger.error(`Erro ao carregar ${filePath}: ${(error as Error).message}`);
@@ -33,8 +34,22 @@ function loadJsonFile<T>(filePath: string): T {
 }
 
 // Carrega os dados dos arquivos JSON
-const randomWords: string[] = loadJsonFile<string[]>(randomWordsPath);
-const sentencesArray: string[] = loadJsonFile<string[]>(sentencesPath);
+let randomWords: string[] = [];
+let sentencesArray: string[] = [];
+
+try {
+    randomWords = loadJsonFile<string[]>(randomWordsPath);
+} catch (error) {
+    logger.error(`Usando classes padrão devido ao erro: ${(error as Error).message}`);
+    randomWords = ["defaultPrefix"]; // Classe padrão
+}
+
+try {
+    sentencesArray = loadJsonFile<string[]>(sentencesPath);
+} catch (error) {
+    logger.error(`Usando frases padrão devido ao erro: ${(error as Error).message}`);
+    sentencesArray = ["Default sentence."]; // Frase padrão
+}
 
 /**
  * Cria um span invisível com uma frase única e uma classe aleatória.
@@ -62,11 +77,11 @@ export default function antiSpam(html: string): string {
 
     const $ = cheerio.load(html);
 
+    // Construir seletor dinâmico para classes aleatórias
+    const randomClassesSelector = randomWords.map(word => `[class^="${word}"]`).join(', ');
+
     $('*')
-        .not(
-            'script, style, title, ' +
-            randomWords.map(word => `[class^="${word}"]`).join(', ')
-        )
+        .not(`script, style, title, ${randomClassesSelector}`)
         .contents()
         .filter(function () {
             return this.type === 'text' && this.data.trim().length > 0;
