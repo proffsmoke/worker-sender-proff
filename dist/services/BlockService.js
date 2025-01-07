@@ -1,8 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-// src/services/BlockService.ts
 const blockedErrors = {
     permanent: [
+        '(S3140)',
         'blacklisted',
         'blacklistado',
         'Spamhaus',
@@ -26,11 +26,10 @@ const blockedErrors = {
     temporary: [
         '(S3114)',
         '(S844)',
-        '(S3115)',
         'temporarily rate limited',
         '421 Temporary Failure',
         '421 4.7.0',
-        'try again later',
+        // 'try again later',
         'unfortunately, messages from',
         'can not connect to any SMTP server',
         'Too many complaints',
@@ -41,9 +40,13 @@ const blockedErrors = {
 };
 class BlockService {
     isPermanentError(message) {
+        if (typeof message !== 'string')
+            return false;
         return blockedErrors.permanent.some((err) => message.includes(err));
     }
     isTemporaryError(message) {
+        if (typeof message !== 'string')
+            return false;
         return blockedErrors.temporary.some((err) => message.includes(err));
     }
 }

@@ -1,5 +1,4 @@
 "use strict";
-// src/log-parser.ts
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -66,8 +65,9 @@ class LogParser extends events_1.default {
                 status,
                 messageId,
                 dsn,
+                message: line, // Armazena a linha completa para análise de bloqueio
             };
-            logger_1.default.debug(`LogParser captured: ${JSON.stringify(logEntry)}`); // Novo log
+            logger_1.default.debug(`LogParser captured: ${JSON.stringify(logEntry)}`);
             this.emit('log', logEntry);
         }
     }

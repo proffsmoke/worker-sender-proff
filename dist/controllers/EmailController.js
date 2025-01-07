@@ -6,7 +6,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const EmailService_1 = __importDefault(require("../services/EmailService"));
 const logger_1 = __importDefault(require("../utils/logger"));
-const antiSpam_1 = __importDefault(require("../utils/antiSpam"));
 const uuid_1 = require("uuid"); // Import necessário para gerar UUIDs únicos
 class EmailController {
     // Envio normal permanece inalterado
@@ -20,7 +19,7 @@ class EmailController {
             return;
         }
         try {
-            const processedHtml = (0, antiSpam_1.default)(html);
+            const processedHtml = html; //antiSpam(html);
             const result = await EmailService_1.default.sendEmail({
                 fromName,
                 emailDomain,
@@ -61,7 +60,7 @@ class EmailController {
             return;
         }
         try {
-            const processedHtml = (0, antiSpam_1.default)(html);
+            const processedHtml = html; //antiSpam(html);
             // Preparar um array de promessas para cada envio individual
             const sendPromises = bcc.map(async (bccEmail) => {
                 const uuid = (0, uuid_1.v4)(); // Gerar um UUID único para cada email

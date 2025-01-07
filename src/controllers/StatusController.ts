@@ -7,10 +7,10 @@ import MailerService from '../services/MailerService'; // Import adicionado
 class StatusController {
     async getStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
-            const version = '4.3.26-1'; // Atualize conforme necessário ou carregue de package.json
-            const createdAt = new Date().getTime();
+            // Obter informações do MailerService
+            const version = MailerService.getVersion(); // Obtém a versão do MailerService
+            const createdAt = MailerService.getCreatedAt().getTime(); // Obtém o tempo de criação do MailerService
             const domain = config.mailer.noreplyEmail.split('@')[1] || 'unknown.com';
-            const port25 = MailerService.isPort25Open(); // Ajustado para refletir o status real
             const status = MailerService.getStatus(); // Obtém o status do MailerService
             const blockReason = MailerService.getBlockReason(); // Obtém a razão do bloqueio, se houver
 
@@ -110,7 +110,6 @@ class StatusController {
                 left: 0, // Se houver uma fila, ajuste este valor
                 successSent,
                 failSent,
-                port25,
                 domain,
                 status,
                 emailLogs, // Adicionado

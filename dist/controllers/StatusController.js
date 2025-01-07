@@ -1,5 +1,4 @@
 "use strict";
-// src/controllers/StatusController.ts
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -7,14 +6,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const EmailLog_1 = __importDefault(require("../models/EmailLog"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const config_1 = __importDefault(require("../config"));
+const MailerService_1 = __importDefault(require("../services/MailerService")); // Import adicionado
 class StatusController {
     async getStatus(req, res, next) {
         try {
-            const version = '4.3.26-1'; // Atualize conforme necessário ou carregue de package.json
-            const createdAt = new Date().getTime();
+            // Obter informações do MailerService
+            const version = MailerService_1.default.getVersion(); // Obtém a versão do MailerService
+            const createdAt = MailerService_1.default.getCreatedAt().getTime(); // Obtém o tempo de criação do MailerService
             const domain = config_1.default.mailer.noreplyEmail.split('@')[1] || 'unknown.com';
-            const port25 = true; // Ajuste conforme sua lógica
-            const status = "health"; // Ajuste conforme sua lógica
+            const status = MailerService_1.default.getStatus(); // Obtém o status do MailerService
+            const blockReason = MailerService_1.default.getBlockReason(); // Obtém a razão do bloqueio, se houver
             // Pipeline de agregação atualizado para separar testes e envios em massa
             const aggregationResult = await EmailLog_1.default.aggregate([
                 {
@@ -98,18 +99,23 @@ class StatusController {
             logger_1.default.debug(`Total emails enviados (sent): ${sent}`);
             logger_1.default.debug(`Emails enviados com sucesso (successSent): ${successSent}`);
             logger_1.default.debug(`Emails falhados (failSent): ${failSent}`);
-            res.json({
+            // Preparar a resposta JSON
+            const response = {
                 version,
                 createdAt,
                 sent,
                 left: 0, // Se houver uma fila, ajuste este valor
                 successSent,
                 failSent,
-                port25,
                 domain,
                 status,
                 emailLogs, // Adicionado
-            });
+            };
+            // Incluir a razão do bloqueio, se o Mailer estiver bloqueado
+            if (status === 'blocked_permanently' || status === 'blocked_temporary') {
+                response.blockReason = blockReason;
+            }
+            res.json(response);
         }
         catch (error) {
             if (error instanceof Error) {
