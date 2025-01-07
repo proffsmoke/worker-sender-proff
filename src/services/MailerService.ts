@@ -36,8 +36,9 @@ class MailerService {
 
     const openPort = await PortCheckService.verifyPort('smtp.gmail.com', [25]);
     if (!openPort && !this.isBlocked) {
-      this.blockMailer('blocked_permanently', 'Nenhuma porta disponível para conexão SMTP.');
-      logger.warn('Nenhuma porta disponível. Mailer bloqueado permanentemente.');
+      //comentando pra n bloquear por port
+      // this.blockMailer('blocked_permanently', 'Nenhuma porta disponível para conexão SMTP.');
+      // logger.warn('Nenhuma porta disponível. Mailer bloqueado permanentemente.');
     } else if (openPort) {
       logger.info(`Porta ${openPort} aberta. Mailer funcionando normalmente.`);
       this.unblockMailer(); // Garantir que o Mailer esteja desbloqueado se a porta estiver aberta
