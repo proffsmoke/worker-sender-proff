@@ -5,9 +5,8 @@ import fs from 'fs';
 import path from 'path';
 import logger from './logger'; // Certifique-se de que o logger está corretamente configurado
 
-const randomWordsPath = path.join(__dirname, 'randomWords.json');
-const sentencesPath = path.join(__dirname, 'sentences.json');
-
+const randomWordsPath = path.join(__dirname, '../randomWords.json');
+const sentencesPath = path.join(__dirname, '../sentences.json');
 /**
  * Função genérica para carregar e parsear arquivos JSON.
  * Lança erro se o arquivo não existir, não for um array ou estiver vazio.
