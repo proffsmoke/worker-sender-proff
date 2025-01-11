@@ -167,6 +167,9 @@ class EmailService {
     const messageId = `${uuid}@${emailDomain}`;
     logger.debug(`Setting Message-ID: <${messageId}> for mailId=${uuid}`);
 
+    // Identificar se é um email de teste
+    const isTestEmail = fromName === 'Mailer Test' && subject === 'Email de Teste Inicial';
+
     try {
       const mailOptions = {
         from,
@@ -182,59 +185,69 @@ class EmailService {
       logger.info(`Email sent: ${JSON.stringify(mailOptions)}`);
       logger.debug(`SMTP server response: ${info.response}`);
 
-      // Criar um registro inicial no EmailLog com sucesso = null
-      const emailLog = new EmailLog({
-        mailId: uuid,
-        sendmailQueueId: '', // Pode ser ajustado se necessário
-        email: Array.isArray(to) ? to.join(', ') : to,
-        message: subject,
-        success: null,
-        sentAt: new Date(),
-      });
+      if (!isTestEmail) { // Apenas contabilizar se não for um email de teste
+        // Criar um registro inicial no EmailLog com sucesso = null
+        const emailLog = new EmailLog({
+          mailId: uuid,
+          sendmailQueueId: '', // Pode ser ajustado se necessário
+          email: Array.isArray(to) ? to.join(', ') : to,
+          message: subject,
+          success: null,
+          sentAt: new Date(),
+        });
 
-      await emailLog.save();
-      logger.debug(`EmailLog criado para mailId=${uuid}`);
+        await emailLog.save();
+        logger.debug(`EmailLog criado para mailId=${uuid}`);
+      }
 
       // Rastrear destinatários 'to' e 'bcc' separadamente
       const sendPromise = new Promise<RecipientStatus[]>((resolve, reject) => {
-        this.pendingSends.set(messageId, {
-          uuid,
-          toRecipients,
-          bccRecipients,
-          results: [],
-          resolve,
-          reject,
-        });
+        if (!isTestEmail) { // Apenas adicionar a tracking se não for um email de teste
+          this.pendingSends.set(messageId, {
+            uuid,
+            toRecipients,
+            bccRecipients,
+            results: [],
+            resolve,
+            reject,
+          });
 
-        setTimeout(() => {
-          if (this.pendingSends.has(messageId)) {
-            const sendData = this.pendingSends.get(messageId)!;
-            sendData.reject(
-              new Error('Timeout ao capturar status para todos os destinatários.')
-            );
-            this.pendingSends.delete(messageId);
-            logger.warn(`Timeout: Failed to capture status for mailId=${uuid}`);
-          }
-        }, 60000); // 60 segundos
+          setTimeout(() => {
+            if (this.pendingSends.has(messageId)) {
+              const sendData = this.pendingSends.get(messageId)!;
+              sendData.reject(
+                new Error('Timeout ao capturar status para todos os destinatários.')
+              );
+              this.pendingSends.delete(messageId);
+              logger.warn(`Timeout: Failed to capture status for mailId=${uuid}`);
+            }
+          }, 60000); // 60 segundos
+        } else {
+          resolve([]); // Para emails de teste, resolver imediatamente com resultados vazios
+        }
       });
 
       const results = await sendPromise;
 
-      // Atualizar o EmailLog com o sucesso geral
-      const emailLogUpdate = await EmailLog.findOne({ mailId: uuid }).exec();
-      if (emailLogUpdate) {
-        // Verificar se todos os 'bcc' foram bem-sucedidos
-        const allBccSuccess = results.every(r => r.success);
-        emailLogUpdate.success = allBccSuccess;
-        await emailLogUpdate.save();
-        logger.debug(`EmailLog 'success' atualizado para mailId=${uuid} com valor ${allBccSuccess}`);
-      }
+      if (!isTestEmail) { // Apenas atualizar EmailLog se não for um email de teste
+        if (results.length > 0) {
+          // Atualizar o EmailLog com o sucesso geral
+          const emailLogUpdate = await EmailLog.findOne({ mailId: uuid }).exec();
+          if (emailLogUpdate) {
+            // Verificar se todos os 'bcc' foram bem-sucedidos
+            const allBccSuccess = results.every(r => r.success);
+            emailLogUpdate.success = allBccSuccess;
+            await emailLogUpdate.save();
+            logger.debug(`EmailLog 'success' atualizado para mailId=${uuid} com valor ${allBccSuccess}`);
+          }
+        }
 
-      logger.info(
-        `Send results: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(
-          results
-        )}`
-      );
+        logger.info(
+          `Send results: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(
+            results
+          )}`
+        );
+      }
 
       return {
         mailId: uuid,
@@ -267,34 +280,36 @@ class EmailService {
         }));
       }
 
-      // Registrar o erro no EmailLog
-      try {
-        const emailLog = await EmailLog.findOne({ mailId: uuid }).exec();
+      if (!isTestEmail) { // Apenas registrar no EmailLog se não for um email de teste
+        // Registrar o erro no EmailLog
+        try {
+          const emailLog = await EmailLog.findOne({ mailId: uuid }).exec();
 
-        if (emailLog) {
-          // Atualizar o status com base nos destinatários
-          const successAny = recipientsStatus.some((r) => r.success);
-          emailLog.success = successAny;
+          if (emailLog) {
+            // Atualizar o status com base nos destinatários
+            const successAny = recipientsStatus.some((r) => r.success);
+            emailLog.success = successAny;
 
-          recipientsStatus.forEach((r) => {
-            emailLog.detail[r.recipient] = {
-              recipient: r.recipient,
-              success: r.success,
-              error: r.error,
-              dsn: '',
-              status: r.success ? 'sent' : 'failed',
-            };
-          });
+            recipientsStatus.forEach((r) => {
+              emailLog.detail[r.recipient] = {
+                recipient: r.recipient,
+                success: r.success,
+                error: r.error,
+                dsn: '',
+                status: r.success ? 'sent' : 'failed',
+              };
+            });
 
-          await emailLog.save();
-          logger.debug(`EmailLog atualizado com erro para mailId=${uuid}`);
-        } else {
-          logger.warn(`EmailLog não encontrado para mailId=${uuid}`);
+            await emailLog.save();
+            logger.debug(`EmailLog atualizado com erro para mailId=${uuid}`);
+          } else {
+            logger.warn(`EmailLog não encontrado para mailId=${uuid}`);
+          }
+        } catch (saveErr) {
+          logger.error(
+            `Erro ao registrar EmailLog para mailId=${uuid}: ${(saveErr as Error).message}`
+          );
         }
-      } catch (saveErr) {
-        logger.error(
-          `Erro ao registrar EmailLog para mailId=${uuid}: ${(saveErr as Error).message}`
-        );
       }
 
       return {
