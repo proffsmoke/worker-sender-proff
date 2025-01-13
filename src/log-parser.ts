@@ -3,23 +3,26 @@ import logger from './utils/logger';
 import fs from 'fs';
 import EventEmitter from 'events';
 
-interface LogEntry {
+// Definir e exportar a interface LogEntry
+export interface LogEntry {
   queueId: string;
   recipient: string;
   status: string;
   messageId: string;
   dsn: string;
-  message: string; // Adicionado para garantir que 'message' esteja sempre presente
+  message: string;
 }
 
 class LogParser extends EventEmitter {
   private logFilePath: string;
   private tail: Tail | null = null;
   private queueIdToMessageId: Map<string, string> = new Map();
+  private startTime: Date;
 
   constructor(logFilePath: string = '/var/log/mail.log') {
     super();
     this.logFilePath = logFilePath;
+    this.startTime = new Date();
 
     if (!fs.existsSync(this.logFilePath)) {
       logger.error(`Log file not found at path: ${this.logFilePath}`);
@@ -53,12 +56,13 @@ class LogParser extends EventEmitter {
   }
 
   private handleLogLine(line: string) {
-    logger.debug(`Processing log line: ${line}`); // Novo log
+    const logTimestamp = this.extractTimestamp(line);
+    if (logTimestamp && logTimestamp < this.startTime) {
+      return;
+    }
 
-    // Regex para capturar a linha de cleanup que contém o Message-ID
-    const cleanupRegex = /postfix\/cleanup\[\d+\]:\s+([A-Z0-9]+):\s+message-id=<([^>]+)>/i;
-    // Regex para capturar a linha de smtp que contém o destinatário, status e dsn
     const smtpRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+)/i;
+    const cleanupRegex = /postfix\/cleanup\[\d+\]:\s+([A-Z0-9]+):\s+message-id=<([^>]+)>/i;
 
     let match = line.match(cleanupRegex);
     if (match) {
@@ -72,9 +76,6 @@ class LogParser extends EventEmitter {
     if (match) {
       const [_, queueId, recipient, dsn, status] = match;
       const messageId = this.queueIdToMessageId.get(queueId) || '';
-      if (!messageId) {
-        logger.warn(`No Message-ID found for Queue ID=${queueId}`);
-      }
 
       const logEntry: LogEntry = {
         queueId,
@@ -82,13 +83,22 @@ class LogParser extends EventEmitter {
         status,
         messageId,
         dsn,
-        message: line, // Armazena a linha completa para análise de bloqueio
+        message: line,
       };
 
       logger.debug(`LogParser captured: ${JSON.stringify(logEntry)}`);
 
       this.emit('log', logEntry);
     }
+  }
+
+  private extractTimestamp(line: string): Date | null {
+    const timestampRegex = /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)/;
+    const match = line.match(timestampRegex);
+    if (match) {
+      return new Date(match[1]);
+    }
+    return null;
   }
 }
 

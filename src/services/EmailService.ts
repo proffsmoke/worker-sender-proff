@@ -1,10 +1,9 @@
 import nodemailer from 'nodemailer';
 import EmailLog from '../models/EmailLog';
 import logger from '../utils/logger';
-import LogParser from '../log-parser';
+import LogParser, { LogEntry } from '../log-parser'; // Importar LogEntry
 import { v4 as uuidv4 } from 'uuid';
 import config from '../config';
-import MailerService from './MailerService'; // Import adicionado
 
 interface SendEmailParams {
   fromName: string;
@@ -45,7 +44,7 @@ class EmailService {
 
   constructor() {
     this.transporter = nodemailer.createTransport({
-      host: config.smtp.host, // Utilize a configuração de SMTP
+      host: config.smtp.host,
       port: config.smtp.port,
       secure: false,
       tls: { rejectUnauthorized: false },
@@ -58,17 +57,9 @@ class EmailService {
     this.logParser.on('log', this.handleLogEntry.bind(this));
   }
 
-  private async handleLogEntry(logEntry: {
-    queueId: string;
-    recipient: string;
-    status: string;
-    messageId: string;
-    dsn: string;
-    message: string;
-  }) {
+  private async handleLogEntry(logEntry: LogEntry) {
     logger.debug(`Processing Log Entry: ${JSON.stringify(logEntry)}`);
 
-    // Remover os < e > do messageId
     const cleanMessageId = logEntry.messageId.replace(/[<>]/g, '');
 
     const sendData = this.pendingSends.get(cleanMessageId);
@@ -79,19 +70,17 @@ class EmailService {
 
     const success = logEntry.dsn.startsWith('2');
 
-    // Normalizar o endereço de email para minúsculas
     const recipient = logEntry.recipient.toLowerCase();
     const isToRecipient = sendData.toRecipients.includes(recipient);
 
     logger.debug(`Is to recipient: ${isToRecipient} for recipient: ${recipient}`);
 
     if (isToRecipient) {
-      // Atualizar o campo 'success' do EmailLog
       try {
         const emailLog = await EmailLog.findOne({ mailId: sendData.uuid }).exec();
 
         if (emailLog) {
-          emailLog.success = success; // Refletir o sucesso do 'to' recipient
+          emailLog.success = success;
           await emailLog.save();
           logger.debug(`EmailLog 'success' atualizado para mailId=${sendData.uuid}`);
         } else {
@@ -103,13 +92,11 @@ class EmailService {
         );
       }
 
-      // Adicionar o destinatário 'to' ao array de resultados
       sendData.results.push({
         recipient: recipient,
         success: success
       });
     } else {
-      // Atualizar o 'detail' do EmailLog
       sendData.results.push({
         recipient: recipient,
         success,
@@ -119,7 +106,6 @@ class EmailService {
         const emailLog = await EmailLog.findOne({ mailId: sendData.uuid }).exec();
 
         if (emailLog) {
-          // Atualizar o status com base no destinatário em 'bcc'
           const recipientStatus = {
             recipient: recipient,
             success,
@@ -142,7 +128,6 @@ class EmailService {
       }
     }
 
-    // Verificar se todos os destinatários foram processados
     const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
     const processedRecipients = sendData.results.length;
 
@@ -158,18 +143,16 @@ class EmailService {
   async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
     const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
     const from = `"${fromName}" <no-reply@${emailDomain}>`;
-  
-    // Normalizar os endereços de email para minúsculas
+
     const toRecipients: string[] = Array.isArray(to) ? to.map(r => r.toLowerCase()) : [to.toLowerCase()];
     const bccRecipients: string[] = bcc.map(r => r.toLowerCase());
     const allRecipients: string[] = [...toRecipients, ...bccRecipients];
-  
+
     const messageId = `${uuid}@${emailDomain}`;
     logger.debug(`Setting Message-ID: <${messageId}> for mailId=${uuid}`);
-  
-    // Identificar se é um email de teste
+
     const isTestEmail = fromName === 'Mailer Test' && subject === 'Email de Teste Inicial';
-  
+
     try {
       const mailOptions = {
         from,
@@ -177,15 +160,13 @@ class EmailService {
         bcc,
         subject,
         html,
-        messageId: `<${messageId}>`, // Use a propriedade 'messageId' diretamente
+        messageId: `<${messageId}>`,
       };
-  
+
       const info = await this.transporter.sendMail(mailOptions);
-  
       logger.info(`Email sent: ${JSON.stringify(mailOptions)}`);
       logger.debug(`SMTP server response: ${info.response}`);
-  
-      // Rastrear destinatários 'to' e 'bcc' separadamente
+
       const sendPromise = new Promise<RecipientStatus[]>((resolve, reject) => {
         this.pendingSends.set(messageId, {
           uuid,
@@ -195,7 +176,7 @@ class EmailService {
           resolve,
           reject,
         });
-  
+
         setTimeout(() => {
           if (this.pendingSends.has(messageId)) {
             const sendData = this.pendingSends.get(messageId)!;
@@ -205,60 +186,55 @@ class EmailService {
             this.pendingSends.delete(messageId);
             logger.warn(`Timeout: Failed to capture status for mailId=${uuid}`);
           }
-        }, 60000); // 60 segundos
+        }, 10000); // 10 segundos
       });
-  
+
       const results = await sendPromise;
-  
+
       if (isTestEmail) {
-        // Para emails de teste, não criar um registro no EmailLog
         logger.info(`Send results for test email: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(results)}`);
       } else {
-        // Para outros emails, criar e atualizar o EmailLog
         const emailLog = new EmailLog({
           mailId: uuid,
-          sendmailQueueId: '', // Pode ser ajustado se necessário
+          sendmailQueueId: '',
           email: Array.isArray(to) ? to.join(', ') : to,
           message: subject,
           success: null,
           sentAt: new Date(),
         });
-  
+
         await emailLog.save();
         logger.debug(`EmailLog criado para mailId=${uuid}`);
-  
+
         if (results.length > 0) {
-          // Atualizar o EmailLog com o sucesso geral
           const emailLogUpdate = await EmailLog.findOne({ mailId: uuid }).exec();
           if (emailLogUpdate) {
-            // Verificar se todos os 'bcc' foram bem-sucedidos
             const allBccSuccess = results.every(r => r.success);
             emailLogUpdate.success = allBccSuccess;
             await emailLogUpdate.save();
             logger.debug(`EmailLog 'success' atualizado para mailId=${uuid} com valor ${allBccSuccess}`);
           }
         }
-  
+
         logger.info(
           `Send results: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(results)}`
         );
       }
-  
+
       return {
         mailId: uuid,
-        queueId: '', // Ajustar conforme necessário
+        queueId: '',
         recipients: results,
       };
     } catch (error: any) {
       logger.error(`Error sending email: ${error.message}`, error);
-  
+
       let recipientsStatus: RecipientStatus[] = [];
-  
-      // Verifica se o erro contém informações sobre destinatários rejeitados
+
       if (error.rejected && Array.isArray(error.rejected)) {
         const rejectedSet = new Set(error.rejected.map((r: string) => r.toLowerCase()));
         const acceptedSet = new Set((error.accepted || []).map((r: string) => r.toLowerCase()));
-  
+
         recipientsStatus = [...toRecipients, ...bccRecipients].map((recipient) => ({
           recipient,
           success: acceptedSet.has(recipient),
@@ -267,24 +243,21 @@ class EmailService {
             : undefined,
         }));
       } else {
-        // Se não houver informações específicas, marca todos como falhados
         recipientsStatus = [...toRecipients, ...bccRecipients].map((recipient) => ({
           recipient,
           success: false,
           error: 'Falha desconhecida ao enviar email.',
         }));
       }
-  
+
       if (!isTestEmail) {
-        // Registrar o erro no EmailLog apenas para emails que não são de teste
         try {
           const emailLog = await EmailLog.findOne({ mailId: uuid }).exec();
-  
+
           if (emailLog) {
-            // Atualizar o status com base nos destinatários
             const successAny = recipientsStatus.some((r) => r.success);
             emailLog.success = successAny;
-  
+
             recipientsStatus.forEach((r) => {
               emailLog.detail[r.recipient] = {
                 recipient: r.recipient,
@@ -294,7 +267,7 @@ class EmailService {
                 status: r.success ? 'sent' : 'failed',
               };
             });
-  
+
             await emailLog.save();
             logger.debug(`EmailLog atualizado com erro para mailId=${uuid}`);
           } else {
@@ -306,7 +279,7 @@ class EmailService {
           );
         }
       }
-  
+
       return {
         mailId: uuid,
         queueId: '',
