@@ -1,3 +1,5 @@
+import logger from "../utils/logger";
+
 const blockedErrors = {
   permanent: [
     '(S3140)',
@@ -38,6 +40,23 @@ const blockedErrors = {
 };
 
 class BlockService {
+  private isActive: boolean = false;
+
+  // Método para iniciar o serviço
+  start() {
+    if (this.isActive) return;
+    this.isActive = true;
+    logger.info('BlockService iniciado.');
+    // Aqui você pode adicionar a lógica para monitorar o mail.log
+  }
+
+  // Método para parar o serviço
+  stop() {
+    if (!this.isActive) return;
+    this.isActive = false;
+    logger.info('BlockService parado.');
+  }
+
   isPermanentError(message?: string): boolean {
     if (typeof message !== 'string') return false;
     return blockedErrors.permanent.some((err) => message.includes(err));

@@ -2,11 +2,12 @@ import logger from '../utils/logger';
 import config from '../config';
 import EmailService from './EmailService';
 import { v4 as uuidv4 } from 'uuid';
+import BlockService from './BlockService'; // Import do BlockService
 
 class MailerService {
   private isBlocked: boolean = false;
   private isBlockedPermanently: boolean = false;
-  private blockReason: string | null = null; // Novo campo para armazenar a razão do bloqueio
+  private blockReason: string | null = null;
   private createdAt: Date;
   private version: string = '4.3.26-1';
   private retryIntervalId: NodeJS.Timeout | null = null;
@@ -51,11 +52,15 @@ class MailerService {
   blockMailer(status: 'blocked_permanently' | 'blocked_temporary', reason: string): void {
     if (!this.isBlocked) {
       this.isBlocked = true;
-      this.blockReason = reason; // Armazena a razão do bloqueio
+      this.blockReason = reason;
       if (status === 'blocked_permanently') {
         this.isBlockedPermanently = true;
       }
       logger.warn(`Mailer bloqueado com status: ${status}. Razão: ${reason}`);
+
+      // Parar o BlockService quando o Mailer é bloqueado
+      BlockService.stop();
+
       if (status === 'blocked_temporary') {
         this.scheduleRetry(); // Agendar reenvio apenas para bloqueio temporário
       } else {
@@ -68,14 +73,17 @@ class MailerService {
   unblockMailer(): void {
     if (this.isBlocked && !this.isBlockedPermanently) {
       this.isBlocked = false;
-      this.blockReason = null; // Limpa a razão do bloqueio
+      this.blockReason = null;
       logger.info('Mailer desbloqueado.');
       this.clearRetryInterval();
+
+      // Iniciar o BlockService quando o Mailer é desbloqueado
+      BlockService.start();
     }
   }
 
   getBlockReason(): string | null {
-    return this.blockReason; // Método getter para obter a razão do bloqueio
+    return this.blockReason;
   }
 
   // Método para enviar o email de teste inicial
@@ -90,11 +98,11 @@ class MailerService {
       html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
       uuid: testUuid,
     };
-  
+
     try {
       const result = await EmailService.sendEmail(testEmailParams);
       logger.info(`Email de teste enviado com mailId=${result.mailId}`, { result });
-  
+
       // Aguardar o resultado do serviço de logs
       const allSuccess = result.recipients.every((r) => r.success);
       if (allSuccess) {
