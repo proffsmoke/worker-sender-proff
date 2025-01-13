@@ -42,8 +42,11 @@ const EmailLogSchema = new mongoose_1.Schema({
     success: { type: Boolean, default: null },
     detail: { type: mongoose_1.Schema.Types.Mixed, default: {} }, // Garante que detail nunca seja undefined
     sentAt: { type: Date, default: Date.now, index: true },
+    expireAt: { type: Date, default: () => new Date(Date.now() + 30 * 60 * 1000), index: true }, // Expira em 30 minutos
 }, {
     timestamps: true,
     collection: 'emailLogs', // Especifica explicitamente o nome da coleção
 });
+// Criar índice TTL no campo expireAt
+EmailLogSchema.index({ expireAt: 1 }, { expireAfterSeconds: 0 });
 exports.default = mongoose_1.default.model('EmailLog', EmailLogSchema);

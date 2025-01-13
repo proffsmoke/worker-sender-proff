@@ -2,7 +2,7 @@ import logger from '../utils/logger';
 import config from '../config';
 import EmailService from './EmailService';
 import { v4 as uuidv4 } from 'uuid';
-import BlockService from './BlockService'; // Import do BlockService
+import BlockService from './BlockService';
 
 class MailerService {
   private isBlocked: boolean = false;
@@ -103,9 +103,28 @@ class MailerService {
       const result = await EmailService.sendEmail(testEmailParams);
       logger.info(`Email de teste enviado com mailId=${result.mailId}`, { result });
 
-      // Aguardar o resultado do serviço de logs
-      const allSuccess = result.recipients.every((r) => r.success);
-      if (allSuccess) {
+      // Aguardar o resultado do serviço de logs por 10 segundos
+      const timeoutPromise = new Promise<{ success: boolean }>((resolve) => {
+        setTimeout(() => {
+          resolve({ success: false });
+        }, 10000); // 10 segundos
+      });
+
+      const successPromise = new Promise<{ success: boolean }>((resolve) => {
+        const checkResult = () => {
+          const allSuccess = result.recipients.every((r) => r.success);
+          if (allSuccess) {
+            resolve({ success: true });
+          } else {
+            setTimeout(checkResult, 100); // Verificar a cada 100ms
+          }
+        };
+        checkResult();
+      });
+
+      const finalResult = await Promise.race([successPromise, timeoutPromise]);
+
+      if (finalResult.success) {
         logger.info('Email de teste enviado com sucesso. Status do Mailer: health');
         this.unblockMailer(); // Garantir que o Mailer esteja desbloqueado
         return { success: true };

@@ -7,11 +7,12 @@ const logger_1 = __importDefault(require("../utils/logger"));
 const config_1 = __importDefault(require("../config"));
 const EmailService_1 = __importDefault(require("./EmailService"));
 const uuid_1 = require("uuid");
+const BlockService_1 = __importDefault(require("./BlockService")); // Import do BlockService
 class MailerService {
     constructor() {
         this.isBlocked = false;
         this.isBlockedPermanently = false;
-        this.blockReason = null; // Novo campo para armazenar a razão do bloqueio
+        this.blockReason = null;
         this.version = '4.3.26-1';
         this.retryIntervalId = null;
         this.createdAt = new Date();
@@ -46,11 +47,13 @@ class MailerService {
     blockMailer(status, reason) {
         if (!this.isBlocked) {
             this.isBlocked = true;
-            this.blockReason = reason; // Armazena a razão do bloqueio
+            this.blockReason = reason;
             if (status === 'blocked_permanently') {
                 this.isBlockedPermanently = true;
             }
             logger_1.default.warn(`Mailer bloqueado com status: ${status}. Razão: ${reason}`);
+            // Parar o BlockService quando o Mailer é bloqueado
+            BlockService_1.default.stop();
             if (status === 'blocked_temporary') {
                 this.scheduleRetry(); // Agendar reenvio apenas para bloqueio temporário
             }
@@ -63,13 +66,15 @@ class MailerService {
     unblockMailer() {
         if (this.isBlocked && !this.isBlockedPermanently) {
             this.isBlocked = false;
-            this.blockReason = null; // Limpa a razão do bloqueio
+            this.blockReason = null;
             logger_1.default.info('Mailer desbloqueado.');
             this.clearRetryInterval();
+            // Iniciar o BlockService quando o Mailer é desbloqueado
+            BlockService_1.default.start();
         }
     }
     getBlockReason() {
-        return this.blockReason; // Método getter para obter a razão do bloqueio
+        return this.blockReason;
     }
     // Método para enviar o email de teste inicial
     async sendInitialTestEmail() {
@@ -86,7 +91,7 @@ class MailerService {
         try {
             const result = await EmailService_1.default.sendEmail(testEmailParams);
             logger_1.default.info(`Email de teste enviado com mailId=${result.mailId}`, { result });
-            // Verificar se todos os destinatários receberam o email com sucesso
+            // Aguardar o resultado do serviço de logs
             const allSuccess = result.recipients.every((r) => r.success);
             if (allSuccess) {
                 logger_1.default.info('Email de teste enviado com sucesso. Status do Mailer: health');

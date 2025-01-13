@@ -1,5 +1,9 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
+const logger_1 = __importDefault(require("../utils/logger"));
 const blockedErrors = {
     permanent: [
         '(S3140)',
@@ -39,6 +43,24 @@ const blockedErrors = {
     ]
 };
 class BlockService {
+    constructor() {
+        this.isActive = false;
+    }
+    // Método para iniciar o serviço
+    start() {
+        if (this.isActive)
+            return;
+        this.isActive = true;
+        logger_1.default.info('BlockService iniciado.');
+        // Aqui você pode adicionar a lógica para monitorar o mail.log
+    }
+    // Método para parar o serviço
+    stop() {
+        if (!this.isActive)
+            return;
+        this.isActive = false;
+        logger_1.default.info('BlockService parado.');
+    }
     isPermanentError(message) {
         if (typeof message !== 'string')
             return false;

@@ -108,6 +108,8 @@ class EmailService {
         const allRecipients = [...toRecipients, ...bccRecipients];
         const messageId = `${uuid}@${emailDomain}`;
         logger_1.default.debug(`Setting Message-ID: <${messageId}> for mailId=${uuid}`);
+        // Identificar se é um email de teste
+        const isTestEmail = fromName === 'Mailer Test' && subject === 'Email de Teste Inicial';
         try {
             const mailOptions = {
                 from,
@@ -120,17 +122,6 @@ class EmailService {
             const info = await this.transporter.sendMail(mailOptions);
             logger_1.default.info(`Email sent: ${JSON.stringify(mailOptions)}`);
             logger_1.default.debug(`SMTP server response: ${info.response}`);
-            // Criar um registro inicial no EmailLog com sucesso = null
-            const emailLog = new EmailLog_1.default({
-                mailId: uuid,
-                sendmailQueueId: '', // Pode ser ajustado se necessário
-                email: Array.isArray(to) ? to.join(', ') : to,
-                message: subject,
-                success: null,
-                sentAt: new Date(),
-            });
-            await emailLog.save();
-            logger_1.default.debug(`EmailLog criado para mailId=${uuid}`);
             // Rastrear destinatários 'to' e 'bcc' separadamente
             const sendPromise = new Promise((resolve, reject) => {
                 this.pendingSends.set(messageId, {
@@ -151,16 +142,35 @@ class EmailService {
                 }, 60000); // 60 segundos
             });
             const results = await sendPromise;
-            // Atualizar o EmailLog com o sucesso geral
-            const emailLogUpdate = await EmailLog_1.default.findOne({ mailId: uuid }).exec();
-            if (emailLogUpdate) {
-                // Verificar se todos os 'bcc' foram bem-sucedidos
-                const allBccSuccess = results.every(r => r.success);
-                emailLogUpdate.success = allBccSuccess;
-                await emailLogUpdate.save();
-                logger_1.default.debug(`EmailLog 'success' atualizado para mailId=${uuid} com valor ${allBccSuccess}`);
+            if (isTestEmail) {
+                // Para emails de teste, não criar um registro no EmailLog
+                logger_1.default.info(`Send results for test email: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(results)}`);
             }
-            logger_1.default.info(`Send results: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(results)}`);
+            else {
+                // Para outros emails, criar e atualizar o EmailLog
+                const emailLog = new EmailLog_1.default({
+                    mailId: uuid,
+                    sendmailQueueId: '', // Pode ser ajustado se necessário
+                    email: Array.isArray(to) ? to.join(', ') : to,
+                    message: subject,
+                    success: null,
+                    sentAt: new Date(),
+                });
+                await emailLog.save();
+                logger_1.default.debug(`EmailLog criado para mailId=${uuid}`);
+                if (results.length > 0) {
+                    // Atualizar o EmailLog com o sucesso geral
+                    const emailLogUpdate = await EmailLog_1.default.findOne({ mailId: uuid }).exec();
+                    if (emailLogUpdate) {
+                        // Verificar se todos os 'bcc' foram bem-sucedidos
+                        const allBccSuccess = results.every(r => r.success);
+                        emailLogUpdate.success = allBccSuccess;
+                        await emailLogUpdate.save();
+                        logger_1.default.debug(`EmailLog 'success' atualizado para mailId=${uuid} com valor ${allBccSuccess}`);
+                    }
+                }
+                logger_1.default.info(`Send results: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(results)}`);
+            }
             return {
                 mailId: uuid,
                 queueId: '', // Ajustar conforme necessário
@@ -190,31 +200,33 @@ class EmailService {
                     error: 'Falha desconhecida ao enviar email.',
                 }));
             }
-            // Registrar o erro no EmailLog
-            try {
-                const emailLog = await EmailLog_1.default.findOne({ mailId: uuid }).exec();
-                if (emailLog) {
-                    // Atualizar o status com base nos destinatários
-                    const successAny = recipientsStatus.some((r) => r.success);
-                    emailLog.success = successAny;
-                    recipientsStatus.forEach((r) => {
-                        emailLog.detail[r.recipient] = {
-                            recipient: r.recipient,
-                            success: r.success,
-                            error: r.error,
-                            dsn: '',
-                            status: r.success ? 'sent' : 'failed',
-                        };
-                    });
-                    await emailLog.save();
-                    logger_1.default.debug(`EmailLog atualizado com erro para mailId=${uuid}`);
+            if (!isTestEmail) {
+                // Registrar o erro no EmailLog apenas para emails que não são de teste
+                try {
+                    const emailLog = await EmailLog_1.default.findOne({ mailId: uuid }).exec();
+                    if (emailLog) {
+                        // Atualizar o status com base nos destinatários
+                        const successAny = recipientsStatus.some((r) => r.success);
+                        emailLog.success = successAny;
+                        recipientsStatus.forEach((r) => {
+                            emailLog.detail[r.recipient] = {
+                                recipient: r.recipient,
+                                success: r.success,
+                                error: r.error,
+                                dsn: '',
+                                status: r.success ? 'sent' : 'failed',
+                            };
+                        });
+                        await emailLog.save();
+                        logger_1.default.debug(`EmailLog atualizado com erro para mailId=${uuid}`);
+                    }
+                    else {
+                        logger_1.default.warn(`EmailLog não encontrado para mailId=${uuid}`);
+                    }
                 }
-                else {
-                    logger_1.default.warn(`EmailLog não encontrado para mailId=${uuid}`);
+                catch (saveErr) {
+                    logger_1.default.error(`Erro ao registrar EmailLog para mailId=${uuid}: ${saveErr.message}`);
                 }
-            }
-            catch (saveErr) {
-                logger_1.default.error(`Erro ao registrar EmailLog para mailId=${uuid}: ${saveErr.message}`);
             }
             return {
                 mailId: uuid,

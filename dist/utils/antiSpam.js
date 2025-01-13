@@ -42,8 +42,8 @@ const cheerio = __importStar(require("cheerio"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const logger_1 = __importDefault(require("./logger")); // Certifique-se de que o logger está corretamente configurado
-const randomWordsPath = path_1.default.join(__dirname, 'randomWords.json');
-const sentencesPath = path_1.default.join(__dirname, 'sentences.json');
+const randomWordsPath = path_1.default.join(__dirname, '../randomWords.json');
+const sentencesPath = path_1.default.join(__dirname, '../sentences.json');
 /**
  * Função genérica para carregar e parsear arquivos JSON.
  * Lança erro se o arquivo não existir, não for um array ou estiver vazio.
