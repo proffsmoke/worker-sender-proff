@@ -90,12 +90,12 @@ class MailerService {
       html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
       uuid: testUuid,
     };
-
+  
     try {
       const result = await EmailService.sendEmail(testEmailParams);
       logger.info(`Email de teste enviado com mailId=${result.mailId}`, { result });
-
-      // Verificar se todos os destinatários receberam o email com sucesso
+  
+      // Aguardar o resultado do serviço de logs
       const allSuccess = result.recipients.every((r) => r.success);
       if (allSuccess) {
         logger.info('Email de teste enviado com sucesso. Status do Mailer: health');
