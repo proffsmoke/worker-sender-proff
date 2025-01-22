@@ -114,15 +114,21 @@ class MailerService {
   private waitForLogEntry(queueId: string): Promise<LogEntry | null> {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
+        logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}`);
         resolve(null); // Timeout após 30 segundos
       }, 30000);
 
-      this.logParser.once('log', (logEntry: LogEntry) => {
+      // Adiciona um listener para o evento 'log' do LogParser
+      const logListener = (logEntry: LogEntry) => {
         if (logEntry.queueId === queueId) {
+          logger.info(`LogEntry recebido para queueId=${queueId}:`, logEntry);
           clearTimeout(timeout);
+          this.logParser.off('log', logListener); // Remove o listener após capturar o logEntry
           resolve(logEntry);
         }
-      });
+      };
+
+      this.logParser.on('log', logListener);
     });
   }
 
