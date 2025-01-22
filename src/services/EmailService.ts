@@ -37,8 +37,6 @@ class EmailService {
       toRecipients: string[];
       bccRecipients: string[];
       results: RecipientStatus[];
-      resolve: (value: RecipientStatus[]) => void;
-      reject: (reason?: any) => void;
     }
   > = new Map();
 
@@ -112,61 +110,34 @@ class EmailService {
       return;
     }
 
-    const success = logEntry.dsn.startsWith('2'); // DSN 2.x.x indica sucesso
+    const success = logEntry.status === 'sent'; // Apenas 'sent' é considerado sucesso
     const recipient = logEntry.recipient.toLowerCase();
-    const isToRecipient = sendData.toRecipients.includes(recipient);
 
-    if (isToRecipient) {
-      try {
-        const emailLog = await EmailLog.findOne({ mailId: sendData.uuid }).exec();
-
-        if (emailLog) {
-          emailLog.success = success;
-          await emailLog.save();
-        }
-      } catch (err) {
-        logger.error(`Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${(err as Error).message}`);
-      }
-
-      sendData.results.push({
-        recipient: recipient,
-        success: success,
-        error: success ? undefined : `Status: ${logEntry.status}, DSN: ${logEntry.dsn}`,
-      });
-    } else {
-      sendData.results.push({
-        recipient: recipient,
-        success: success,
-        error: success ? undefined : `Status: ${logEntry.status}, DSN: ${logEntry.dsn}`,
-      });
-
-      try {
-        const emailLog = await EmailLog.findOne({ mailId: sendData.uuid }).exec();
-
-        if (emailLog) {
-          const recipientStatus = {
-            recipient: recipient,
-            success: success,
-            dsn: logEntry.dsn,
-            status: logEntry.status,
-          };
-          emailLog.detail = {
-            ...emailLog.detail,
-            [recipient]: recipientStatus,
-          };
-          await emailLog.save();
-        }
-      } catch (err) {
-        logger.error(`Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${(err as Error).message}`);
+    // Atualiza o status do destinatário
+    const recipientIndex = sendData.results.findIndex((r) => r.recipient === recipient);
+    if (recipientIndex !== -1) {
+      sendData.results[recipientIndex].success = success;
+      if (!success) {
+        sendData.results[recipientIndex].error = `Status: ${logEntry.status}`;
       }
     }
 
+    // Atualiza o EmailLog
+    try {
+      const emailLog = await EmailLog.findOne({ mailId: sendData.uuid }).exec();
+      if (emailLog) {
+        emailLog.success = sendData.results.every((r) => r.success);
+        await emailLog.save();
+      }
+    } catch (err) {
+      logger.error(`Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${(err as Error).message}`);
+    }
+
+    // Remove do pendingSends se todos os destinatários tiverem um resultado
     const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
     const processedRecipients = sendData.results.length;
 
-    // Só resolve a promise quando todos os destinatários tiverem um resultado (success: true ou false)
     if (processedRecipients >= totalRecipients) {
-      sendData.resolve(sendData.results);
       this.pendingSends.delete(cleanMessageId);
     }
   }
@@ -203,22 +174,21 @@ class EmailService {
         logger.debug(`SMTP server response: ${info.response}`);
       }
 
-      // Cria uma promise para aguardar o resultado do LogParser
-      const sendPromise = new Promise<RecipientStatus[]>((resolve, reject) => {
-        this.pendingSends.set(messageId, {
-          uuid,
-          toRecipients,
-          bccRecipients,
-          results: [],
-          resolve,
-          reject,
-        });
+      // Cria o resultado imediatamente após o envio
+      const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
+        recipient,
+        success: true, // Assume sucesso inicialmente
+      }));
+
+      // Registra o envio no pendingSends para atualização posterior
+      this.pendingSends.set(messageId, {
+        uuid,
+        toRecipients,
+        bccRecipients,
+        results: recipientsStatus,
       });
 
-      // Aguarda o resultado do LogParser
-      const recipientsStatus = await sendPromise;
-
-      // Retorna o resultado final
+      // Retorna o resultado imediatamente
       return {
         mailId: uuid,
         queueId: info.messageId || '',

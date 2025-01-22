@@ -55,13 +55,26 @@ class LogParser extends EventEmitter {
   }
 
   private handleLogLine(line: string) {
-    const logTimestamp = this.extractTimestamp(line);
-    if (logTimestamp && logTimestamp < this.startTime) {
-      return;
-    }
+    try {
+      const logTimestamp = this.extractTimestamp(line);
+      if (logTimestamp && logTimestamp < this.startTime) {
+        return; // Ignora logs antigos
+      }
 
-    const smtpRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+)/i;
+      // Tenta extrair informações do log
+      const logEntry = this.parseLogLine(line);
+      if (logEntry) {
+        logger.debug(`LogParser captured: ${JSON.stringify(logEntry)}`);
+        this.emit('log', logEntry);
+      }
+    } catch (error) {
+      logger.error(`Error processing log line: ${line}`, error);
+    }
+  }
+
+  private parseLogLine(line: string): LogEntry | null {
     const cleanupRegex = /postfix\/cleanup\[\d+\]:\s+([A-Z0-9]+):\s+message-id=<([^>]+)>/i;
+    const smtpRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+)/i;
     const bounceRegex = /postfix\/bounce\[\d+\]:\s+([A-Z0-9]+):\s+sender non-delivery notification:/i;
     const deferredRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*status=deferred/i;
 
@@ -70,7 +83,7 @@ class LogParser extends EventEmitter {
       const [_, queueId, messageId] = match;
       this.queueIdToMessageId.set(queueId, messageId);
       logger.debug(`Mapped Queue ID=${queueId} to Message-ID=${messageId}`);
-      return;
+      return null; // Não é um log de entrega, apenas mapeia o messageId
     }
 
     match = line.match(smtpRegex);
@@ -78,7 +91,7 @@ class LogParser extends EventEmitter {
       const [_, queueId, recipient, dsn, status] = match;
       const messageId = this.queueIdToMessageId.get(queueId) || '';
 
-      const logEntry: LogEntry = {
+      return {
         queueId,
         recipient,
         status,
@@ -86,9 +99,6 @@ class LogParser extends EventEmitter {
         dsn,
         message: line,
       };
-
-      logger.debug(`LogParser captured: ${JSON.stringify(logEntry)}`);
-      this.emit('log', logEntry);
     }
 
     match = line.match(bounceRegex);
@@ -96,7 +106,7 @@ class LogParser extends EventEmitter {
       const [_, queueId] = match;
       const messageId = this.queueIdToMessageId.get(queueId) || '';
 
-      const logEntry: LogEntry = {
+      return {
         queueId,
         recipient: '',
         status: 'bounced',
@@ -104,9 +114,6 @@ class LogParser extends EventEmitter {
         dsn: '5.0.0',
         message: line,
       };
-
-      logger.debug(`LogParser captured bounce: ${JSON.stringify(logEntry)}`);
-      this.emit('log', logEntry);
     }
 
     match = line.match(deferredRegex);
@@ -114,7 +121,7 @@ class LogParser extends EventEmitter {
       const [_, queueId, recipient] = match;
       const messageId = this.queueIdToMessageId.get(queueId) || '';
 
-      const logEntry: LogEntry = {
+      return {
         queueId,
         recipient,
         status: 'deferred',
@@ -122,17 +129,18 @@ class LogParser extends EventEmitter {
         dsn: '4.0.0',
         message: line,
       };
-
-      logger.debug(`LogParser captured deferred: ${JSON.stringify(logEntry)}`);
-      this.emit('log', logEntry);
     }
+
+    return null; // Ignora logs que não correspondem a nenhum padrão
   }
 
   private extractTimestamp(line: string): Date | null {
     const timestampRegex = /(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/;
     const match = line.match(timestampRegex);
     if (match) {
-      return new Date(match[0]);
+      const timestampStr = match[0];
+      const currentYear = new Date().getFullYear();
+      return new Date(`${timestampStr} ${currentYear}`);
     }
     return null;
   }
