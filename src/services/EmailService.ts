@@ -180,12 +180,9 @@ public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
           results: recipientsStatus,
       });
 
-      // Espera o queueId do Postfix nos logs
-      await this.awaitEmailResults(queueId); // Use o queueId extraído do log do servidor
-
       return {
           mailId: uuid,
-          queueId: queueId,  // Agora estamos usando o queueId extraído corretamente
+          queueId: queueId,  // Retorna o queueId imediatamente
           recipients: recipientsStatus,
       };
   } catch (error: any) {
