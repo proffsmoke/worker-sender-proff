@@ -1,25 +1,24 @@
+// log-parser.ts
 import { Tail } from 'tail';
 import logger from './utils/logger';
 import fs from 'fs';
 import EventEmitter from 'events';
 
 export interface LogEntry {
-  timestamp: string; // Timestamp do log
-  email: string; // Endereço de e-mail do destinatário
-  result: string; // Resultado do envio (status)
-  success: boolean; // Indica se o envio foi bem-sucedido
-  queueId: string
+  timestamp: string;
+  queueId: string;
+  email: string;
+  result: string;
+  success: boolean;
 }
 
 class LogParser extends EventEmitter {
   private logFilePath: string;
   private tail: Tail | null = null;
-  private startTime: Date;
 
   constructor(logFilePath: string = '/var/log/mail.log') {
     super();
     this.logFilePath = logFilePath;
-    this.startTime = new Date();
 
     if (!fs.existsSync(this.logFilePath)) {
       logger.error(`Log file not found at path: ${this.logFilePath}`);
@@ -43,26 +42,11 @@ class LogParser extends EventEmitter {
     logger.info(`Monitoring log file: ${this.logFilePath}`);
   }
 
-  stopMonitoring() {
-    if (this.tail) {
-      this.tail.unwatch();
-      logger.info('Log monitoring stopped.');
-    } else {
-      logger.warn('No active monitoring to stop.');
-    }
-  }
-
   private handleLogLine(line: string) {
     try {
-      const logTimestamp = this.extractTimestamp(line);
-      if (logTimestamp && logTimestamp < this.startTime) {
-        return; // Ignora logs antigos
-      }
-
-      // Tenta extrair informações do log
       const logEntry = this.parseLogLine(line);
       if (logEntry) {
-        logger.debug(`LogParser captured: ${JSON.stringify(logEntry)}`);
+        console.log('Log analisado:', logEntry); // Exibe o log em tempo real
         this.emit('log', logEntry);
       }
     } catch (error) {
@@ -73,28 +57,16 @@ class LogParser extends EventEmitter {
   private parseLogLine(line: string): LogEntry | null {
     const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
     if (!match) return null;
-  
+
     const [, queueId, email, result] = match;
-  
+
     return {
       timestamp: new Date().toISOString(),
-      queueId, // Usa apenas o queueId
+      queueId,
       email: email.trim(),
       result,
       success: result.startsWith('sent'),
     };
-  }
-
-
-  private extractTimestamp(line: string): Date | null {
-    const timestampRegex = /(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/;
-    const match = line.match(timestampRegex);
-    if (match) {
-      const timestampStr = match[0];
-      const currentYear = new Date().getFullYear();
-      return new Date(`${timestampStr} ${currentYear}`);
-    }
-    return null;
   }
 }
 
