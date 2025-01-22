@@ -112,7 +112,7 @@ class EmailService {
       return;
     }
 
-    const success = logEntry.dsn.startsWith('2');
+    const success = logEntry.dsn.startsWith('2'); // DSN 2.x.x indica sucesso
     const recipient = logEntry.recipient.toLowerCase();
     const isToRecipient = sendData.toRecipients.includes(recipient);
 
@@ -130,12 +130,14 @@ class EmailService {
 
       sendData.results.push({
         recipient: recipient,
-        success: success
+        success: success,
+        error: success ? undefined : `Status: ${logEntry.status}, DSN: ${logEntry.dsn}`,
       });
     } else {
       sendData.results.push({
         recipient: recipient,
-        success,
+        success: success,
+        error: success ? undefined : `Status: ${logEntry.status}, DSN: ${logEntry.dsn}`,
       });
 
       try {
@@ -144,7 +146,7 @@ class EmailService {
         if (emailLog) {
           const recipientStatus = {
             recipient: recipient,
-            success,
+            success: success,
             dsn: logEntry.dsn,
             status: logEntry.status,
           };
@@ -172,18 +174,18 @@ class EmailService {
   public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
     const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
     const from = `"${fromName}" <no-reply@${emailDomain}>`;
-  
+
     const toRecipients: string[] = Array.isArray(to) ? to.map(r => r.toLowerCase()) : [to.toLowerCase()];
     const bccRecipients: string[] = bcc.map(r => r.toLowerCase());
     const allRecipients: string[] = [...toRecipients, ...bccRecipients];
-  
+
     const messageId = `${uuid}@${emailDomain}`;
     const isTestEmail = fromName === 'Mailer Test' && subject === 'Email de Teste Inicial';
-  
+
     if (isTestEmail) {
       logger.debug(`Setting Message-ID: <${messageId}> for mailId=${uuid}`);
     }
-  
+
     try {
       const mailOptions = {
         from,
@@ -193,40 +195,40 @@ class EmailService {
         html,
         messageId: `<${messageId}>`,
       };
-  
+
       // Envia o email
       const info = await this.transporter.sendMail(mailOptions);
       if (isTestEmail) {
         logger.info(`Email sent: ${JSON.stringify(mailOptions)}`);
         logger.debug(`SMTP server response: ${info.response}`);
       }
-  
+
       // Cria o resultado imediatamente após o envio
       const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
         recipient,
         success: true, // Assume sucesso, pois o email foi enviado pelo SMTP
       }));
-  
+
       // Retorna o resultado imediatamente
       const result = {
         mailId: uuid,
-        queueId: '',
+        queueId: info.messageId || '',
         recipients: recipientsStatus,
       };
-  
+
       // Processa o resultado em segundo plano e registra no log
       this.processResultInBackground(uuid, messageId, recipientsStatus, isTestEmail);
-  
+
       return result;
     } catch (error: any) {
       logger.error(`Error sending email: ${error.message}`, error);
-  
+
       let recipientsStatus: RecipientStatus[] = [];
-  
+
       if (error.rejected && Array.isArray(error.rejected)) {
         const rejectedSet = new Set(error.rejected.map((r: string) => r.toLowerCase()));
         const acceptedSet = new Set((error.accepted || []).map((r: string) => r.toLowerCase()));
-  
+
         recipientsStatus = allRecipients.map((recipient) => ({
           recipient,
           success: acceptedSet.has(recipient),
@@ -241,10 +243,10 @@ class EmailService {
           error: 'Falha desconhecida ao enviar email.',
         }));
       }
-  
+
       // Processa o resultado em segundo plano e registra no log
       this.processResultInBackground(uuid, messageId, recipientsStatus, isTestEmail);
-  
+
       return {
         mailId: uuid,
         queueId: '',
@@ -252,7 +254,7 @@ class EmailService {
       };
     }
   }
-  
+
   private async processResultInBackground(
     uuid: string,
     messageId: string,
@@ -262,13 +264,13 @@ class EmailService {
     try {
       // Simula um processamento em segundo plano (opcional)
       await new Promise((resolve) => setTimeout(resolve, 1000)); // Simula um pequeno atraso
-  
+
       // Registra o resultado no log
       if (!isTestEmail) {
         const successAny = recipientsStatus.some((r) => r.success);
         logger.info(`Send results for email: MailID: ${uuid}, Message-ID: ${messageId}, Success: ${successAny}, Recipients: ${JSON.stringify(recipientsStatus)}`);
       }
-  
+
       // Atualiza o EmailLog (se necessário)
       const emailLog = await EmailLog.findOne({ mailId: uuid }).exec();
       if (emailLog) {

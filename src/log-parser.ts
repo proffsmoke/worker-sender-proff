@@ -3,7 +3,6 @@ import logger from './utils/logger';
 import fs from 'fs';
 import EventEmitter from 'events';
 
-// Definir e exportar a interface LogEntry
 export interface LogEntry {
   queueId: string;
   recipient: string;
@@ -64,7 +63,6 @@ class LogParser extends EventEmitter {
     const smtpRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+)/i;
     const cleanupRegex = /postfix\/cleanup\[\d+\]:\s+([A-Z0-9]+):\s+message-id=<([^>]+)>/i;
     const bounceRegex = /postfix\/bounce\[\d+\]:\s+([A-Z0-9]+):\s+sender non-delivery notification:/i;
-    const qmgrRegex = /postfix\/qmgr\[\d+\]:\s+([A-Z0-9]+):\s+removed/i;
     const deferredRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*status=deferred/i;
 
     let match = line.match(cleanupRegex);
@@ -90,7 +88,6 @@ class LogParser extends EventEmitter {
       };
 
       logger.debug(`LogParser captured: ${JSON.stringify(logEntry)}`);
-
       this.emit('log', logEntry);
     }
 
@@ -109,26 +106,6 @@ class LogParser extends EventEmitter {
       };
 
       logger.debug(`LogParser captured bounce: ${JSON.stringify(logEntry)}`);
-
-      this.emit('log', logEntry);
-    }
-
-    match = line.match(qmgrRegex);
-    if (match) {
-      const [_, queueId] = match;
-      const messageId = this.queueIdToMessageId.get(queueId) || '';
-
-      const logEntry: LogEntry = {
-        queueId,
-        recipient: '',
-        status: 'removed',
-        messageId,
-        dsn: '2.0.0',
-        message: line,
-      };
-
-      logger.debug(`LogParser captured qmgr removal: ${JSON.stringify(logEntry)}`);
-
       this.emit('log', logEntry);
     }
 
@@ -147,16 +124,15 @@ class LogParser extends EventEmitter {
       };
 
       logger.debug(`LogParser captured deferred: ${JSON.stringify(logEntry)}`);
-
       this.emit('log', logEntry);
     }
   }
 
   private extractTimestamp(line: string): Date | null {
-    const timestampRegex = /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)/;
+    const timestampRegex = /(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/;
     const match = line.match(timestampRegex);
     if (match) {
-      return new Date(match[1]);
+      return new Date(match[0]);
     }
     return null;
   }
