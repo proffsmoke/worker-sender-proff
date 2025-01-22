@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+// log-parser.ts
 const tail_1 = require("tail");
 const logger_1 = __importDefault(require("./utils/logger"));
 const fs_1 = __importDefault(require("fs"));
@@ -12,7 +13,6 @@ class LogParser extends events_1.default {
         super();
         this.tail = null;
         this.logFilePath = logFilePath;
-        this.startTime = new Date();
         if (!fs_1.default.existsSync(this.logFilePath)) {
             logger_1.default.error(`Log file not found at path: ${this.logFilePath}`);
             throw new Error(`Log file not found: ${this.logFilePath}`);
@@ -30,25 +30,11 @@ class LogParser extends events_1.default {
         });
         logger_1.default.info(`Monitoring log file: ${this.logFilePath}`);
     }
-    stopMonitoring() {
-        if (this.tail) {
-            this.tail.unwatch();
-            logger_1.default.info('Log monitoring stopped.');
-        }
-        else {
-            logger_1.default.warn('No active monitoring to stop.');
-        }
-    }
     handleLogLine(line) {
         try {
-            const logTimestamp = this.extractTimestamp(line);
-            if (logTimestamp && logTimestamp < this.startTime) {
-                return; // Ignora logs antigos
-            }
-            // Tenta extrair informações do log
             const logEntry = this.parseLogLine(line);
             if (logEntry) {
-                logger_1.default.debug(`LogParser captured: ${JSON.stringify(logEntry)}`);
+                console.log('Log analisado:', logEntry); // Exibe o log em tempo real
                 this.emit('log', logEntry);
             }
         }
@@ -63,21 +49,11 @@ class LogParser extends events_1.default {
         const [, queueId, email, result] = match;
         return {
             timestamp: new Date().toISOString(),
-            queueId, // Usa apenas o queueId
+            queueId,
             email: email.trim(),
             result,
             success: result.startsWith('sent'),
         };
-    }
-    extractTimestamp(line) {
-        const timestampRegex = /(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/;
-        const match = line.match(timestampRegex);
-        if (match) {
-            const timestampStr = match[0];
-            const currentYear = new Date().getFullYear();
-            return new Date(`${timestampStr} ${currentYear}`);
-        }
-        return null;
     }
 }
 exports.default = LogParser;

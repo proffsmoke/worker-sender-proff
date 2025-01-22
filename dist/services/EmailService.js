@@ -7,7 +7,7 @@ const nodemailer_1 = __importDefault(require("nodemailer"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const log_parser_1 = __importDefault(require("../log-parser"));
 class EmailService {
-    constructor() {
+    constructor(logParser) {
         this.pendingSends = new Map();
         this.version = '1.0.0'; // Versão do serviço
         this.createdAt = new Date(); // Data de criação do serviço
@@ -19,8 +19,7 @@ class EmailService {
             secure: false,
             tls: { rejectUnauthorized: false }, // Permite conexões TLS não verificadas
         });
-        this.logParser = new log_parser_1.default('/var/log/mail.log');
-        this.logParser.startMonitoring();
+        this.logParser = logParser;
         this.logParser.on('log', this.handleLogEntry.bind(this));
     }
     getVersion() {
@@ -146,4 +145,5 @@ class EmailService {
         });
     }
 }
-exports.default = new EmailService();
+const logParser = new log_parser_1.default('/var/log/mail.log');
+exports.default = new EmailService(logParser);

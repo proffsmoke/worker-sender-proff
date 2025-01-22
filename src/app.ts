@@ -1,11 +1,11 @@
-// src/app.ts
-
 import express from 'express';
 import routes from './routes';
 import logger from './utils/logger';
 import mongoose from 'mongoose';
 import config from './config';
 import MailerService from './services/MailerService';
+import LogParser from './log-parser';
+
 import BlockManagerService from './services/BlockManagerService'; 
 import CleanlogsService from './services/CleanlogsService'; 
 
@@ -21,6 +21,8 @@ mongoose
   });
 
 // Inicializar MailerService
+const logParser = new LogParser('/var/log/mail.log');
+logParser.startMonitoring();
 MailerService;
 BlockManagerService;
 // CleanlogsService;

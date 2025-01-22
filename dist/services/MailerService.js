@@ -6,14 +6,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const logger_1 = __importDefault(require("../utils/logger"));
 const config_1 = __importDefault(require("../config"));
 const EmailService_1 = __importDefault(require("./EmailService"));
+const log_parser_1 = __importDefault(require("../log-parser"));
 class MailerService {
     constructor() {
         this.isBlocked = false;
         this.isBlockedPermanently = false;
-        this.blockReason = null; // Novo campo para armazenar a razão do bloqueio
+        this.blockReason = null;
         this.version = '4.3.26-1';
         this.retryIntervalId = null;
         this.createdAt = new Date();
+        this.logParser = new log_parser_1.default('/var/log/mail.log'); // Cria uma instância de LogParser
         this.initialize();
     }
     initialize() {
@@ -47,23 +49,23 @@ class MailerService {
     blockMailer(status, reason) {
         if (!this.isBlocked) {
             this.isBlocked = true;
-            this.blockReason = reason; // Armazena a razão do bloqueio
+            this.blockReason = reason;
             if (status === 'blocked_permanently') {
                 this.isBlockedPermanently = true;
             }
             logger_1.default.warn(`Mailer bloqueado com status: ${status}. Razão: ${reason}`);
             if (status === 'blocked_temporary') {
-                this.scheduleRetry(); // Agendar reenvio apenas para bloqueio temporário
+                this.scheduleRetry();
             }
             else {
-                this.clearRetryInterval(); // Cancelar reenvios se for bloqueio permanente
+                this.clearRetryInterval();
             }
         }
     }
     unblockMailer() {
         if (this.isBlocked && !this.isBlockedPermanently) {
             this.isBlocked = false;
-            this.blockReason = null; // Limpa a razão do bloqueio
+            this.blockReason = null;
             logger_1.default.info('Mailer desbloqueado.');
             this.clearRetryInterval();
         }
@@ -80,11 +82,11 @@ class MailerService {
         try {
             const result = await EmailService_1.default.sendEmail(testEmailParams);
             logger_1.default.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
-            // Verificar se todos os destinatários receberam o email com sucesso
-            const allSuccess = result.recipients.every((r) => r.success);
-            if (allSuccess) {
+            // Aguarda o resultado do LogParser para verificar o sucesso
+            const logEntry = await this.waitForLogEntry(result.queueId);
+            if (logEntry && logEntry.success) {
                 logger_1.default.info('Email de teste enviado com sucesso. Status do Mailer: health');
-                this.unblockMailer(); // Garantir que o Mailer esteja desbloqueado
+                this.unblockMailer();
                 return { success: true };
             }
             else {
@@ -99,13 +101,25 @@ class MailerService {
             return { success: false };
         }
     }
+    waitForLogEntry(queueId) {
+        return new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+                resolve(null); // Timeout após 30 segundos
+            }, 30000);
+            this.logParser.once('log', (logEntry) => {
+                if (logEntry.queueId === queueId) {
+                    clearTimeout(timeout);
+                    resolve(logEntry);
+                }
+            });
+        });
+    }
     scheduleRetry() {
         if (this.isBlockedPermanently) {
             logger_1.default.info('Mailer está permanentemente bloqueado. Não tentará reenviar emails.');
             return;
         }
         if (this.retryIntervalId) {
-            // Já existe um intervalo de retry agendado
             return;
         }
         logger_1.default.info('Agendando tentativa de reenviar email de teste a cada 4 minutos.');
@@ -113,7 +127,6 @@ class MailerService {
     }
     async retrySendEmail() {
         if (!this.isBlocked || this.isBlockedPermanently) {
-            // Se não estiver temporariamente bloqueado, não tentar reenviar
             this.clearRetryInterval();
             logger_1.default.info('Mailer não está temporariamente bloqueado ou está permanentemente bloqueado. Cancelando tentativas de reenvio.');
             return;

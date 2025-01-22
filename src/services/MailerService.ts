@@ -14,8 +14,8 @@ class MailerService {
 
   constructor() {
     this.createdAt = new Date();
-    this.logParser = new LogParser('/var/log/mail.log');
-    this.logParser.startMonitoring();
+    this.logParser = new LogParser('/var/log/mail.log'); // Cria uma instância de LogParser
+
     this.initialize();
   }
 

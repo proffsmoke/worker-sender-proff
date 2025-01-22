@@ -42,7 +42,7 @@ class EmailService {
   private status: string = 'health'; // Status do serviço
   private blockReason: string | null = null; // Razão do bloqueio, se houver
 
-  constructor() {
+  constructor(logParser: LogParser) {
     this.transporter = nodemailer.createTransport({
       host: 'localhost',  // Configura para usar o Postfix local
       port: 25,           // Porta do servidor SMTP local (geralmente é 25 no Postfix)
@@ -50,8 +50,7 @@ class EmailService {
       tls: { rejectUnauthorized: false },  // Permite conexões TLS não verificadas
     });
 
-    this.logParser = new LogParser('/var/log/mail.log');
-    this.logParser.startMonitoring();
+    this.logParser = logParser;
     this.logParser.on('log', this.handleLogEntry.bind(this));
   }
 
@@ -202,4 +201,5 @@ class EmailService {
   }
 }
 
-export default new EmailService();
+const logParser = new LogParser('/var/log/mail.log');
+export default new EmailService(logParser);

@@ -1,5 +1,4 @@
 "use strict";
-// src/app.ts
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -10,6 +9,7 @@ const logger_1 = __importDefault(require("./utils/logger"));
 const mongoose_1 = __importDefault(require("mongoose"));
 const config_1 = __importDefault(require("./config"));
 const MailerService_1 = __importDefault(require("./services/MailerService"));
+const log_parser_1 = __importDefault(require("./log-parser"));
 const BlockManagerService_1 = __importDefault(require("./services/BlockManagerService"));
 const app = (0, express_1.default)();
 // Conectar ao MongoDB
@@ -21,6 +21,8 @@ mongoose_1.default
     process.exit(1);
 });
 // Inicializar MailerService
+const logParser = new log_parser_1.default('/var/log/mail.log');
+logParser.startMonitoring();
 MailerService_1.default;
 BlockManagerService_1.default;
 // CleanlogsService;
