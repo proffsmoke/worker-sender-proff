@@ -14,7 +14,6 @@ const router = (0, express_1.Router)();
 router.use(auth_1.basicAuth);
 // Rotas de envio
 router.post('/send', (0, asyncHandler_1.default)(EmailController_1.default.sendNormal));
-router.post('/send-bulk', (0, asyncHandler_1.default)(EmailController_1.default.sendBulk));
 // Rota de status
 router.get('/status', (0, asyncHandler_1.default)(StatusController_1.default.getStatus));
 exports.default = router;

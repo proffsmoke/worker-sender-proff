@@ -9,6 +9,7 @@ export interface LogEntry {
   email: string; // Endereço de e-mail do destinatário
   result: string; // Resultado do envio (status)
   success: boolean; // Indica se o envio foi bem-sucedido
+  queueId: string
 }
 
 class LogParser extends EventEmitter {
@@ -73,20 +74,27 @@ class LogParser extends EventEmitter {
   private parseLogLine(line: string): LogEntry | null {
     const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
     if (!match) return null;
-
+  
     const [, mailId, email, result] = match;
+    
+    // Extração do queueId
+    const queueIdMatch = result.match(/<([^>]+)>/); // Captura o queueId entre os sinais de menor e maior
+    const queueId = queueIdMatch ? queueIdMatch[1] : '';  // Se não encontrar, usa string vazia
+  
     const isBulk = email.includes(','); // Verifica se é um envio em massa
     const emails = isBulk ? email.split(',') : [email]; // Separa os e-mails se for envio em massa
-
+  
     // Retorna um objeto para cada e-mail
     return {
       timestamp: new Date().toISOString(), // Adiciona um timestamp atual
       mailId,
+      queueId, // Agora inclui o queueId no objeto
       email: emails[0].trim(), // Considera apenas o primeiro e-mail para simplificar
       result,
       success: result.startsWith('sent'), // Determina se o envio foi bem-sucedido
     };
   }
+  
 
   private extractTimestamp(line: string): Date | null {
     const timestampRegex = /(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/;

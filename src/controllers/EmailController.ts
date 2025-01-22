@@ -8,7 +8,7 @@ class EmailController {
   // Envio normal permanece inalterado
   async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { fromName, emailDomain, to, subject, html, uuid } = req.body;
-
+  
     if (!fromName || !emailDomain || !to || !subject || !html || !uuid) {
       res.status(400).json({
         success: false,
@@ -17,9 +17,9 @@ class EmailController {
       });
       return;
     }
-
+  
     try {
-      const processedHtml = html;//antiSpam(html);
+      const processedHtml = html; // antiSpam(html);
       const result = await EmailService.sendEmail({
         fromName,
         emailDomain,
@@ -29,10 +29,13 @@ class EmailController {
         html: processedHtml,
         uuid,
       });
-
+  
+      // Aguarda os logs de envio e retorna quando todos os destinatários tiverem sido processados
+      await EmailService.awaitEmailResults(result.queueId);
+  
       // Determina o sucesso geral baseado nos destinatários
-      const overallSuccess = result.recipients.some((r) => r.success);
-
+      const overallSuccess = result.recipients.every((r) => r.success);
+  
       res.json({
         success: overallSuccess,
         status: result,
@@ -42,6 +45,7 @@ class EmailController {
       res.status(500).json({ success: false, message: 'Erro ao enviar email.' });
     }
   }
+  
 }
 
 export default new EmailController();

@@ -11,7 +11,6 @@ class LogParser extends events_1.default {
     constructor(logFilePath = '/var/log/mail.log') {
         super();
         this.tail = null;
-        this.queueIdToMessageId = new Map();
         this.logFilePath = logFilePath;
         this.startTime = new Date();
         if (!fs_1.default.existsSync(this.logFilePath)) {
@@ -41,72 +40,49 @@ class LogParser extends events_1.default {
         }
     }
     handleLogLine(line) {
-        const logTimestamp = this.extractTimestamp(line);
-        if (logTimestamp && logTimestamp < this.startTime) {
-            return;
+        try {
+            const logTimestamp = this.extractTimestamp(line);
+            if (logTimestamp && logTimestamp < this.startTime) {
+                return; // Ignora logs antigos
+            }
+            // Tenta extrair informações do log
+            const logEntry = this.parseLogLine(line);
+            if (logEntry) {
+                logger_1.default.debug(`LogParser captured: ${JSON.stringify(logEntry)}`);
+                this.emit('log', logEntry);
+            }
         }
-        const smtpRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+)/i;
-        const cleanupRegex = /postfix\/cleanup\[\d+\]:\s+([A-Z0-9]+):\s+message-id=<([^>]+)>/i;
-        const bounceRegex = /postfix\/bounce\[\d+\]:\s+([A-Z0-9]+):\s+sender non-delivery notification:/i;
-        const qmgrRegex = /postfix\/qmgr\[\d+\]:\s+([A-Z0-9]+):\s+removed/i;
-        let match = line.match(cleanupRegex);
-        if (match) {
-            const [_, queueId, messageId] = match;
-            this.queueIdToMessageId.set(queueId, messageId);
-            logger_1.default.debug(`Mapped Queue ID=${queueId} to Message-ID=${messageId}`);
-            return;
-        }
-        match = line.match(smtpRegex);
-        if (match) {
-            const [_, queueId, recipient, dsn, status] = match;
-            const messageId = this.queueIdToMessageId.get(queueId) || '';
-            const logEntry = {
-                queueId,
-                recipient,
-                status,
-                messageId,
-                dsn,
-                message: line,
-            };
-            logger_1.default.debug(`LogParser captured: ${JSON.stringify(logEntry)}`);
-            this.emit('log', logEntry);
-        }
-        match = line.match(bounceRegex);
-        if (match) {
-            const [_, queueId] = match;
-            const messageId = this.queueIdToMessageId.get(queueId) || '';
-            const logEntry = {
-                queueId,
-                recipient: '',
-                status: 'bounced',
-                messageId,
-                dsn: '5.0.0',
-                message: line,
-            };
-            logger_1.default.debug(`LogParser captured bounce: ${JSON.stringify(logEntry)}`);
-            this.emit('log', logEntry);
-        }
-        match = line.match(qmgrRegex);
-        if (match) {
-            const [_, queueId] = match;
-            const messageId = this.queueIdToMessageId.get(queueId) || '';
-            const logEntry = {
-                queueId,
-                recipient: '',
-                status: 'removed',
-                messageId,
-                dsn: '2.0.0',
-                message: line,
-            };
-            logger_1.default.debug(`LogParser captured qmgr removal: ${JSON.stringify(logEntry)}`);
-            this.emit('log', logEntry);
+        catch (error) {
+            logger_1.default.error(`Error processing log line: ${line}`, error);
         }
     }
+    parseLogLine(line) {
+        const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
+        if (!match)
+            return null;
+        const [, mailId, email, result] = match;
+        // Extração do queueId
+        const queueIdMatch = result.match(/<([^>]+)>/); // Captura o queueId entre os sinais de menor e maior
+        const queueId = queueIdMatch ? queueIdMatch[1] : ''; // Se não encontrar, usa string vazia
+        const isBulk = email.includes(','); // Verifica se é um envio em massa
+        const emails = isBulk ? email.split(',') : [email]; // Separa os e-mails se for envio em massa
+        // Retorna um objeto para cada e-mail
+        return {
+            timestamp: new Date().toISOString(), // Adiciona um timestamp atual
+            mailId,
+            queueId, // Agora inclui o queueId no objeto
+            email: emails[0].trim(), // Considera apenas o primeiro e-mail para simplificar
+            result,
+            success: result.startsWith('sent'), // Determina se o envio foi bem-sucedido
+        };
+    }
     extractTimestamp(line) {
-        const timestampRegex = /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)/;
+        const timestampRegex = /(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/;
         const match = line.match(timestampRegex);
         if (match) {
-            return new Date(match[1]);
+            const timestampStr = match[0];
+            const currentYear = new Date().getFullYear();
+            return new Date(`${timestampStr} ${currentYear}`);
         }
         return null;
     }

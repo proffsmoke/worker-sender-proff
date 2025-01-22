@@ -1,5 +1,4 @@
 "use strict";
-// EmailService.ts
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -25,7 +24,7 @@ class EmailService {
         });
         this.logParser = new log_parser_1.default('/var/log/mail.log');
         this.logParser.startMonitoring();
-        // Listen to log events
+        // Escuta eventos de log
         this.logParser.on('log', this.handleLogEntry.bind(this));
     }
     // Métodos adicionais para suportar as chamadas em outros arquivos
@@ -63,67 +62,43 @@ class EmailService {
         return this.sendEmail(testEmailParams);
     }
     async handleLogEntry(logEntry) {
-        const cleanMessageId = logEntry.messageId.replace(/[<>]/g, '');
-        const sendData = this.pendingSends.get(cleanMessageId);
+        const sendData = this.pendingSends.get(logEntry.queueId); // Agora usamos o queueId
         if (!sendData) {
             return;
         }
-        const success = logEntry.dsn.startsWith('2');
-        const recipient = logEntry.recipient.toLowerCase();
-        const isToRecipient = sendData.toRecipients.includes(recipient);
-        if (isToRecipient) {
-            try {
-                const emailLog = await EmailLog_1.default.findOne({ mailId: sendData.uuid }).exec();
-                if (emailLog) {
-                    emailLog.success = success;
-                    await emailLog.save();
-                }
-            }
-            catch (err) {
-                logger_1.default.error(`Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${err.message}`);
-            }
-            sendData.results.push({
-                recipient: recipient,
-                success: success
-            });
-        }
-        else {
-            sendData.results.push({
-                recipient: recipient,
-                success,
-            });
-            try {
-                const emailLog = await EmailLog_1.default.findOne({ mailId: sendData.uuid }).exec();
-                if (emailLog) {
-                    const recipientStatus = {
-                        recipient: recipient,
-                        success,
-                        dsn: logEntry.dsn,
-                        status: logEntry.status,
-                    };
-                    emailLog.detail = {
-                        ...emailLog.detail,
-                        [recipient]: recipientStatus,
-                    };
-                    await emailLog.save();
-                }
-            }
-            catch (err) {
-                logger_1.default.error(`Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${err.message}`);
+        const success = logEntry.success; // Usa o campo 'success' do LogEntry
+        const recipient = logEntry.email.toLowerCase(); // Usa o campo 'email' do LogEntry
+        // Atualiza o status do destinatário
+        const recipientIndex = sendData.results.findIndex((r) => r.recipient === recipient);
+        if (recipientIndex !== -1) {
+            sendData.results[recipientIndex].success = success;
+            if (!success) {
+                sendData.results[recipientIndex].error = `Status: ${logEntry.result}`;
             }
         }
+        // Atualiza o EmailLog
+        try {
+            const emailLog = await EmailLog_1.default.findOne({ mailId: sendData.uuid }).exec();
+            if (emailLog) {
+                emailLog.success = sendData.results.every((r) => r.success);
+                await emailLog.save();
+            }
+        }
+        catch (err) {
+            logger_1.default.error(`Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${err.message}`);
+        }
+        // Remove do pendingSends se todos os destinatários tiverem um resultado
         const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
         const processedRecipients = sendData.results.length;
         if (processedRecipients >= totalRecipients) {
-            sendData.resolve(sendData.results);
-            this.pendingSends.delete(cleanMessageId);
+            this.pendingSends.delete(logEntry.queueId); // Remover usando o queueId
         }
     }
     async sendEmail(params) {
         const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
         const from = `"${fromName}" <no-reply@${emailDomain}>`;
-        const toRecipients = Array.isArray(to) ? to.map(r => r.toLowerCase()) : [to.toLowerCase()];
-        const bccRecipients = bcc.map(r => r.toLowerCase());
+        const toRecipients = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
+        const bccRecipients = bcc.map((r) => r.toLowerCase());
         const allRecipients = [...toRecipients, ...bccRecipients];
         const messageId = `${uuid}@${emailDomain}`;
         const isTestEmail = fromName === 'Mailer Test' && subject === 'Email de Teste Inicial';
@@ -139,87 +114,57 @@ class EmailService {
                 html,
                 messageId: `<${messageId}>`,
             };
+            // Envia o email
             const info = await this.transporter.sendMail(mailOptions);
             if (isTestEmail) {
                 logger_1.default.info(`Email sent: ${JSON.stringify(mailOptions)}`);
                 logger_1.default.debug(`SMTP server response: ${info.response}`);
             }
-            const sendPromise = new Promise((resolve, reject) => {
-                this.pendingSends.set(messageId, {
-                    uuid,
-                    toRecipients,
-                    bccRecipients,
-                    results: [],
-                    resolve,
-                    reject,
-                });
-                setTimeout(() => {
-                    if (this.pendingSends.has(messageId)) {
-                        const sendData = this.pendingSends.get(messageId);
-                        sendData.reject(new Error('Timeout ao capturar status para todos os destinatários.'));
-                        this.pendingSends.delete(messageId);
-                        if (isTestEmail) {
-                            logger_1.default.warn(`Timeout: Failed to capture status for mailId=${uuid}`);
-                        }
-                    }
-                }, 10000); // 10 segundos
+            // Cria o resultado imediatamente após o envio
+            const recipientsStatus = allRecipients.map((recipient) => ({
+                recipient,
+                success: true, // Assume sucesso inicialmente
+            }));
+            // Registra o envio no pendingSends para atualização posterior
+            this.pendingSends.set(info.messageId || messageId, {
+                uuid,
+                toRecipients,
+                bccRecipients,
+                results: recipientsStatus,
             });
-            const results = await sendPromise;
-            if (isTestEmail) {
-                logger_1.default.info(`Send results for test email: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(results)}`);
-            }
-            else {
-                const emailLog = new EmailLog_1.default({
-                    mailId: uuid,
-                    sendmailQueueId: '',
-                    email: Array.isArray(to) ? to.join(', ') : to,
-                    message: subject,
-                    success: null,
-                    sentAt: new Date(),
-                });
-                await emailLog.save();
-                if (results.length > 0) {
-                    const emailLogUpdate = await EmailLog_1.default.findOne({ mailId: uuid }).exec();
-                    if (emailLogUpdate) {
-                        const allBccSuccess = results.every(r => r.success);
-                        emailLogUpdate.success = allBccSuccess;
-                        await emailLogUpdate.save();
-                    }
-                }
-            }
+            // Retorna o resultado imediatamente
             return {
                 mailId: uuid,
-                queueId: '',
-                recipients: results,
+                queueId: info.messageId || '',
+                recipients: recipientsStatus,
             };
         }
         catch (error) {
             logger_1.default.error(`Error sending email: ${error.message}`, error);
-            let recipientsStatus = [];
-            if (error.rejected && Array.isArray(error.rejected)) {
-                const rejectedSet = new Set(error.rejected.map((r) => r.toLowerCase()));
-                const acceptedSet = new Set((error.accepted || []).map((r) => r.toLowerCase()));
-                recipientsStatus = [...toRecipients, ...bccRecipients].map((recipient) => ({
-                    recipient,
-                    success: acceptedSet.has(recipient),
-                    error: rejectedSet.has(recipient)
-                        ? 'Rejeitado pelo servidor SMTP.'
-                        : undefined,
-                }));
-            }
-            else {
-                recipientsStatus = [...toRecipients, ...bccRecipients].map((recipient) => ({
-                    recipient,
-                    success: false,
-                    error: 'Falha desconhecida ao enviar email.',
-                }));
-            }
+            const recipientsStatus = allRecipients.map((recipient) => ({
+                recipient,
+                success: false,
+                error: error.message,
+            }));
             return {
                 mailId: uuid,
                 queueId: '',
                 recipients: recipientsStatus,
             };
         }
+    }
+    async awaitEmailResults(queueId) {
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error(`Timeout exceeded for queueId ${queueId}`));
+            }, 30000); // Timeout de 30 segundos, você pode ajustar conforme necessário
+            this.logParser.once('log', (logEntry) => {
+                if (logEntry.queueId === queueId) {
+                    clearTimeout(timeout);
+                    resolve();
+                }
+            });
+        });
     }
 }
 exports.default = new EmailService();
