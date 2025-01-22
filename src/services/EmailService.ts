@@ -164,15 +164,16 @@ public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
       console.log(`Email enviado!`);
       console.log(`mailId (UUID gerado): ${uuid}`);
       console.log(`queueId (messageId do servidor): ${info.messageId}`);
-      console.log(`info completo: `, info); // Adiciona o log completo de 'info'
+      console.log(`info completo: `, info);
 
       const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
           recipient,
           success: true, // Assume sucesso inicialmente
       }));
 
-      // Armazena o uuid juntamente com o queueId para associar mais tarde
-      this.pendingSends.set(info.messageId || messageId, {
+      // Armazena o uuid juntamente com o queueId correto (extraído do log do Postfix)
+      const queueId = info.response.match(/queued as\s([A-Z0-9]+)/)[1]; // Extrai o queueId da resposta do servidor
+      this.pendingSends.set(queueId, {
           uuid,
           toRecipients,
           bccRecipients,
@@ -180,11 +181,11 @@ public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
       });
 
       // Espera o queueId do Postfix nos logs
-      await this.awaitEmailResults(info.messageId || messageId);
+      await this.awaitEmailResults(queueId); // Use o queueId extraído do log do servidor
 
       return {
           mailId: uuid,
-          queueId: info.messageId || '',  // Use messageId, que é agora o 'queueId'
+          queueId: queueId,  // Agora estamos usando o queueId extraído corretamente
           recipients: recipientsStatus,
       };
   } catch (error: any) {
@@ -203,6 +204,7 @@ public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
       };
   }
 }
+
 
 public async awaitEmailResults(queueId: string): Promise<void> {
   return new Promise((resolve, reject) => {
