@@ -10,6 +10,7 @@ export interface LogEntry {
   messageId: string;
   dsn: string;
   message: string;
+  success: boolean; // Adicionado campo success
 }
 
 class LogParser extends EventEmitter {
@@ -98,6 +99,7 @@ class LogParser extends EventEmitter {
         messageId,
         dsn,
         message: line,
+        success: status === 'sent', // Determina se o envio foi bem-sucedido
       };
     }
 
@@ -113,6 +115,7 @@ class LogParser extends EventEmitter {
         messageId,
         dsn: '5.0.0',
         message: line,
+        success: false, // Bounced nunca é sucesso
       };
     }
 
@@ -128,6 +131,7 @@ class LogParser extends EventEmitter {
         messageId,
         dsn: '4.0.0',
         message: line,
+        success: false, // Deferred não é sucesso
       };
     }
 
