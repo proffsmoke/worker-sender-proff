@@ -164,6 +164,7 @@ class EmailService {
     const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
     const processedRecipients = sendData.results.length;
 
+    // Só resolve a promise quando todos os destinatários tiverem um resultado (success: true ou false)
     if (processedRecipients >= totalRecipients) {
       sendData.resolve(sendData.results);
       this.pendingSends.delete(cleanMessageId);
