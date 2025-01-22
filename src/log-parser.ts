@@ -65,6 +65,7 @@ class LogParser extends EventEmitter {
     const cleanupRegex = /postfix\/cleanup\[\d+\]:\s+([A-Z0-9]+):\s+message-id=<([^>]+)>/i;
     const bounceRegex = /postfix\/bounce\[\d+\]:\s+([A-Z0-9]+):\s+sender non-delivery notification:/i;
     const qmgrRegex = /postfix\/qmgr\[\d+\]:\s+([A-Z0-9]+):\s+removed/i;
+    const deferredRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*status=deferred/i;
 
     let match = line.match(cleanupRegex);
     if (match) {
@@ -127,6 +128,25 @@ class LogParser extends EventEmitter {
       };
 
       logger.debug(`LogParser captured qmgr removal: ${JSON.stringify(logEntry)}`);
+
+      this.emit('log', logEntry);
+    }
+
+    match = line.match(deferredRegex);
+    if (match) {
+      const [_, queueId, recipient] = match;
+      const messageId = this.queueIdToMessageId.get(queueId) || '';
+
+      const logEntry: LogEntry = {
+        queueId,
+        recipient,
+        status: 'deferred',
+        messageId,
+        dsn: '4.0.0',
+        message: line,
+      };
+
+      logger.debug(`LogParser captured deferred: ${JSON.stringify(logEntry)}`);
 
       this.emit('log', logEntry);
     }
