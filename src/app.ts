@@ -23,7 +23,7 @@ mongoose
 // Inicializar MailerService
 MailerService;
 BlockManagerService;
-CleanlogsService;
+// CleanlogsService;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
