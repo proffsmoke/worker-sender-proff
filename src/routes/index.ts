@@ -12,7 +12,6 @@ router.use(basicAuth);
 
 // Rotas de envio
 router.post('/send', asyncHandler(EmailController.sendNormal));
-router.post('/send-bulk', asyncHandler(EmailController.sendBulk));
 
 // Rota de status
 router.get('/status', asyncHandler(StatusController.getStatus));

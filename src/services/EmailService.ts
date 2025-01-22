@@ -1,5 +1,3 @@
-// EmailService.ts
-
 import nodemailer from 'nodemailer';
 import EmailLog from '../models/EmailLog';
 import logger from '../utils/logger';
