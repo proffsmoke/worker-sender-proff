@@ -204,7 +204,6 @@ public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
   }
 }
 
-
 public async awaitEmailResults(queueId: string): Promise<void> {
   return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -212,14 +211,18 @@ public async awaitEmailResults(queueId: string): Promise<void> {
       }, 30000); // Timeout de 30 segundos
 
       this.logParser.once('log', (logEntry) => {
-          console.log('Log recebido:', logEntry); // Loga todas as entradas de log recebidas
+          console.log(`Comparando queueId recebido: ${logEntry.queueId} com ${queueId}`); // Adicionando log para depuração
           if (logEntry.queueId === queueId) {
+              console.log('Correspondência encontrada, resolvendo...'); // Confirma quando há correspondência
               clearTimeout(timeout);
               resolve();
+          } else {
+              console.log(`QueueId não corresponde: ${logEntry.queueId} != ${queueId}`); // Log de falha na correspondência
           }
       });
   });
 }
+
 
 }
 
