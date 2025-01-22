@@ -4,19 +4,16 @@ import fs from 'fs';
 import EventEmitter from 'events';
 
 export interface LogEntry {
-  queueId: string;
-  recipient: string;
-  status: string;
-  messageId: string;
-  dsn: string;
-  message: string;
-  success: boolean; // Adicionado campo success
+  timestamp: string; // Timestamp do log
+  mailId: string; // ID do e-mail (queueId)
+  email: string; // Endereço de e-mail do destinatário
+  result: string; // Resultado do envio (status)
+  success: boolean; // Indica se o envio foi bem-sucedido
 }
 
 class LogParser extends EventEmitter {
   private logFilePath: string;
   private tail: Tail | null = null;
-  private queueIdToMessageId: Map<string, string> = new Map();
   private startTime: Date;
 
   constructor(logFilePath: string = '/var/log/mail.log') {
@@ -74,68 +71,21 @@ class LogParser extends EventEmitter {
   }
 
   private parseLogLine(line: string): LogEntry | null {
-    const cleanupRegex = /postfix\/cleanup\[\d+\]:\s+([A-Z0-9]+):\s+message-id=<([^>]+)>/i;
-    const smtpRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+)/i;
-    const bounceRegex = /postfix\/bounce\[\d+\]:\s+([A-Z0-9]+):\s+sender non-delivery notification:/i;
-    const deferredRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*status=deferred/i;
+    const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
+    if (!match) return null;
 
-    let match = line.match(cleanupRegex);
-    if (match) {
-      const [_, queueId, messageId] = match;
-      this.queueIdToMessageId.set(queueId, messageId);
-      logger.debug(`Mapped Queue ID=${queueId} to Message-ID=${messageId}`);
-      return null; // Não é um log de entrega, apenas mapeia o messageId
-    }
+    const [, mailId, email, result] = match;
+    const isBulk = email.includes(','); // Verifica se é um envio em massa
+    const emails = isBulk ? email.split(',') : [email]; // Separa os e-mails se for envio em massa
 
-    match = line.match(smtpRegex);
-    if (match) {
-      const [_, queueId, recipient, dsn, status] = match;
-      const messageId = this.queueIdToMessageId.get(queueId) || '';
-
-      return {
-        queueId,
-        recipient,
-        status,
-        messageId,
-        dsn,
-        message: line,
-        success: status === 'sent', // Determina se o envio foi bem-sucedido
-      };
-    }
-
-    match = line.match(bounceRegex);
-    if (match) {
-      const [_, queueId] = match;
-      const messageId = this.queueIdToMessageId.get(queueId) || '';
-
-      return {
-        queueId,
-        recipient: '',
-        status: 'bounced',
-        messageId,
-        dsn: '5.0.0',
-        message: line,
-        success: false, // Bounced nunca é sucesso
-      };
-    }
-
-    match = line.match(deferredRegex);
-    if (match) {
-      const [_, queueId, recipient] = match;
-      const messageId = this.queueIdToMessageId.get(queueId) || '';
-
-      return {
-        queueId,
-        recipient,
-        status: 'deferred',
-        messageId,
-        dsn: '4.0.0',
-        message: line,
-        success: false, // Deferred não é sucesso
-      };
-    }
-
-    return null; // Ignora logs que não correspondem a nenhum padrão
+    // Retorna um objeto para cada e-mail
+    return {
+      timestamp: new Date().toISOString(), // Adiciona um timestamp atual
+      mailId,
+      email: emails[0].trim(), // Considera apenas o primeiro e-mail para simplificar
+      result,
+      success: result.startsWith('sent'), // Determina se o envio foi bem-sucedido
+    };
   }
 
   private extractTimestamp(line: string): Date | null {

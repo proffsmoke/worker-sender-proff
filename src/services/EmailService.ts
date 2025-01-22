@@ -56,7 +56,7 @@ class EmailService {
     this.logParser = new LogParser('/var/log/mail.log');
     this.logParser.startMonitoring();
 
-    // Listen to log events
+    // Escuta eventos de log
     this.logParser.on('log', this.handleLogEntry.bind(this));
   }
 
@@ -103,22 +103,22 @@ class EmailService {
   }
 
   private async handleLogEntry(logEntry: LogEntry) {
-    const cleanMessageId = logEntry.messageId.replace(/[<>]/g, '');
+    const cleanMessageId = logEntry.mailId; // Usa o mailId como identificador
 
     const sendData = this.pendingSends.get(cleanMessageId);
     if (!sendData) {
       return;
     }
 
-    const success = logEntry.status === 'sent'; // Apenas 'sent' é considerado sucesso
-    const recipient = logEntry.recipient.toLowerCase();
+    const success = logEntry.success; // Usa o campo 'success' do LogEntry
+    const recipient = logEntry.email.toLowerCase(); // Usa o campo 'email' do LogEntry
 
     // Atualiza o status do destinatário
     const recipientIndex = sendData.results.findIndex((r) => r.recipient === recipient);
     if (recipientIndex !== -1) {
       sendData.results[recipientIndex].success = success;
       if (!success) {
-        sendData.results[recipientIndex].error = `Status: ${logEntry.status}`;
+        sendData.results[recipientIndex].error = `Status: ${logEntry.result}`;
       }
     }
 
@@ -146,8 +146,8 @@ class EmailService {
     const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
     const from = `"${fromName}" <no-reply@${emailDomain}>`;
 
-    const toRecipients: string[] = Array.isArray(to) ? to.map(r => r.toLowerCase()) : [to.toLowerCase()];
-    const bccRecipients: string[] = bcc.map(r => r.toLowerCase());
+    const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
+    const bccRecipients: string[] = bcc.map((r) => r.toLowerCase());
     const allRecipients: string[] = [...toRecipients, ...bccRecipients];
 
     const messageId = `${uuid}@${emailDomain}`;
