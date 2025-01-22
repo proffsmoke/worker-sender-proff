@@ -14,13 +14,13 @@ class MailerService {
 
   constructor() {
     this.createdAt = new Date();
-    this.logParser = new LogParser('/var/log/mail.log'); // Cria uma instância de LogParser
+    this.logParser = new LogParser('/var/log/mail.log');
+    this.logParser.on('logs', this.handleLogEntries.bind(this)); // Ouve o evento 'logs'
 
     this.initialize();
   }
 
   initialize() {
-    // Enviar email de teste ao iniciar
     this.sendInitialTestEmail();
   }
 
@@ -111,6 +111,17 @@ class MailerService {
     }
   }
   
+  private handleLogEntries(logEntries: LogEntry[]) {
+    // Processa os logs acumulados
+    logEntries.forEach((logEntry) => {
+      if (logEntry.success) {
+        logger.info(`LogEntry processado com sucesso para queueId=${logEntry.queueId}`);
+      } else {
+        logger.warn(`Falha no envio para queueId=${logEntry.queueId}: ${logEntry.result}`);
+      }
+    });
+  }
+  
   private waitForLogEntry(queueId: string): Promise<LogEntry | null> {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
@@ -118,23 +129,15 @@ class MailerService {
         resolve(null); // Timeout após 60 segundos
       }, 60000); // Alterado para 60 segundos
   
-      logger.info(`Aguardando logEntry para queueId=${queueId}...`);
-  
-      // Adiciona um listener para o evento 'log' do LogParser
-      const logListener = (logEntry: LogEntry) => {
-        if (logEntry.queueId === queueId) {
-          logger.info(`LogEntry encontrado para queueId=${queueId}:`, logEntry);
-          clearTimeout(timeout);
-          this.logParser.off('log', logListener); // Remove o listener após capturar o logEntry
-          resolve(logEntry);
-        }
-      };
-  
-      this.logParser.on('log', logListener);
+      // Procura no buffer se já existe um log com o queueId
+      const logEntry = this.logParser['logBuffer'].find(entry => entry.queueId === queueId);
+      if (logEntry) {
+        clearTimeout(timeout);
+        resolve(logEntry);
+      }
     });
   }
   
-
   private scheduleRetry(): void {
     if (this.isBlockedPermanently) {
       logger.info('Mailer está permanentemente bloqueado. Não tentará reenviar emails.');

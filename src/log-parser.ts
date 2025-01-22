@@ -1,4 +1,3 @@
-// log-parser.ts
 import { Tail } from 'tail';
 import logger from './utils/logger';
 import fs from 'fs';
@@ -15,6 +14,8 @@ export interface LogEntry {
 class LogParser extends EventEmitter {
   private logFilePath: string;
   private tail: Tail | null = null;
+  private logBuffer: LogEntry[] = []; // Buffer temporário de logs para otimizar a captura
+  private maxBufferSize: number = 500; // Limite de logs no buffer
 
   constructor(logFilePath: string = '/var/log/mail.log') {
     super();
@@ -46,8 +47,14 @@ class LogParser extends EventEmitter {
     try {
       const logEntry = this.parseLogLine(line);
       if (logEntry) {
-        console.log('Log analisado:', logEntry); // Exibe o log em tempo real
-        this.emit('log', logEntry);
+        this.logBuffer.push(logEntry); // Adiciona o log ao buffer
+
+        // Limpa o buffer após atingir o limite de 500 entradas
+        if (this.logBuffer.length >= this.maxBufferSize) {
+          this.emitLogs();
+        }
+
+        console.log('Log analisado:', logEntry); // Log em tempo real
       }
     } catch (error) {
       logger.error(`Error processing log line: ${line}`, error);
@@ -67,6 +74,13 @@ class LogParser extends EventEmitter {
       result,
       success: result.startsWith('sent'),
     };
+  }
+
+  private emitLogs() {
+    // Emite os logs acumulados e limpa o buffer
+    logger.info(`Emitindo logs: ${this.logBuffer.length} entradas`);
+    this.emit('logs', this.logBuffer);
+    this.logBuffer = []; // Limpa o buffer
   }
 }
 
