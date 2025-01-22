@@ -46,11 +46,12 @@ class EmailService {
   private blockReason: string | null = null; // Razão do bloqueio, se houver
 
   constructor() {
+    // Altere para usar o Postfix como servidor SMTP local
     this.transporter = nodemailer.createTransport({
-      host: config.smtp.host,
-      port: config.smtp.port,
-      secure: false,
-      tls: { rejectUnauthorized: false },
+      host: 'localhost', // Usando o Postfix local
+      port: 25, // Porta padrão do Postfix
+      secure: false, // Postfix não usa TLS por padrão
+      tls: { rejectUnauthorized: false }, // Aceitar conexões não seguras, caso necessário
     });
 
     this.logParser = new LogParser('/var/log/mail.log');
@@ -140,8 +141,6 @@ class EmailService {
     }
 }
 
- 
-
 public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
   const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
   const from = `"${fromName}" <no-reply@${emailDomain}>`;
@@ -188,7 +187,7 @@ public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
 
       return {
           mailId: uuid,
-          queueId: info.messageId || '',
+          queueId: info.messageId || '', // O Postfix irá gerar um queueId aqui
           recipients: recipientsStatus,
       };
   } catch (error: any) {
@@ -207,27 +206,6 @@ public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
       };
   }
 }
-
-
-
-
-public async awaitEmailResults(queueId: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-          reject(new Error(`Timeout exceeded for queueId ${queueId}`));
-      }, 30000); // Timeout de 30 segundos
-
-      this.logParser.once('log', (logEntry) => {
-          if (logEntry.queueId === queueId) {
-              clearTimeout(timeout);
-              resolve();
-          }
-      });
-  });
 }
-
   
-  
-}
-
 export default new EmailService();

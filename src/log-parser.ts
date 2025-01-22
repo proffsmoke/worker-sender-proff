@@ -92,9 +92,7 @@ class LogParser extends EventEmitter {
         result,
         success: result.startsWith('sent'),
     };
-}
-
-  
+  }
 
   private extractTimestamp(line: string): Date | null {
     const timestampRegex = /(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/;
