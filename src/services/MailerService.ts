@@ -11,11 +11,12 @@ class MailerService {
   private version: string = '4.3.26-1';
   private retryIntervalId: NodeJS.Timeout | null = null;
   private logParser: LogParser;
+  private pendingLogs: Map<string, LogEntry[]> = new Map(); // Fila de logs aguardando confirmação de envio
 
   constructor() {
     this.createdAt = new Date();
     this.logParser = new LogParser('/var/log/mail.log');
-    this.logParser.on('logs', this.handleLogEntries.bind(this)); // Ouve o evento 'logs'
+    this.logParser.on('log', this.handleLogEntry.bind(this)); // Observer que escuta logs novos
 
     this.initialize();
   }
@@ -110,34 +111,51 @@ class MailerService {
       return { success: false };
     }
   }
-  
-  private handleLogEntries(logEntries: LogEntry[]) {
-    // Processa os logs acumulados
-    logEntries.forEach((logEntry) => {
-      if (logEntry.success) {
-        logger.info(`LogEntry processado com sucesso para queueId=${logEntry.queueId}`);
-      } else {
-        logger.warn(`Falha no envio para queueId=${logEntry.queueId}: ${logEntry.result}`);
-      }
-    });
+
+  private handleLogEntry(logEntry: LogEntry) {
+    logger.info(`LogEntry recebido para queueId=${logEntry.queueId}: ${logEntry.result}`);
+
+    // Armazena os logs para processamento
+    if (!this.pendingLogs.has(logEntry.queueId)) {
+      this.pendingLogs.set(logEntry.queueId, []);
+    }
+    this.pendingLogs.get(logEntry.queueId)?.push(logEntry);
+
+    // Processa o log se já tiver um log de sucesso
+    if (this.pendingLogs.get(logEntry.queueId)?.length === 1) {
+      this.processLogEntry(logEntry.queueId);
+    }
   }
-  
+
+  private processLogEntry(queueId: string) {
+    const logs = this.pendingLogs.get(queueId) || [];
+    const latestLog = logs[logs.length - 1];
+
+    if (latestLog.success) {
+      logger.info(`Email com queueId=${queueId} foi enviado com sucesso.`);
+      this.pendingLogs.delete(queueId); // Remove log processado
+      this.unblockMailer();
+    } else {
+      logger.warn(`Falha no envio para queueId=${queueId}: ${latestLog.result}`);
+      this.blockMailer('blocked_temporary', `Falha no envio para queueId=${queueId}`);
+    }
+  }
+
   private waitForLogEntry(queueId: string): Promise<LogEntry | null> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 60 segundos.`);
         resolve(null); // Timeout após 60 segundos
       }, 60000); // Alterado para 60 segundos
   
-      // Procura no buffer se já existe um log com o queueId
-      const logEntry = this.logParser['logBuffer'].find(entry => entry.queueId === queueId);
-      if (logEntry) {
+      // Verifica se o log já foi processado
+      if (this.pendingLogs.has(queueId)) {
         clearTimeout(timeout);
-        resolve(logEntry);
+        resolve(this.pendingLogs.get(queueId)?.[0] || null);
       }
     });
   }
-  
+
   private scheduleRetry(): void {
     if (this.isBlockedPermanently) {
       logger.info('Mailer está permanentemente bloqueado. Não tentará reenviar emails.');
