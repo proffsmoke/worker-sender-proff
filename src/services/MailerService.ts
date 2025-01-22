@@ -114,9 +114,9 @@ class MailerService {
   private waitForLogEntry(queueId: string): Promise<LogEntry | null> {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
-        logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 30 segundos.`);
-        resolve(null); // Timeout após 30 segundos
-      }, 30000);
+        logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 60 segundos.`);
+        resolve(null); // Timeout após 60 segundos
+      }, 60000); // Alterado para 60 segundos
   
       logger.info(`Aguardando logEntry para queueId=${queueId}...`);
   

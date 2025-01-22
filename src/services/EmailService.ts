@@ -142,7 +142,14 @@ class EmailService {
       const info = await this.transporter.sendMail(mailOptions);
 
       // Extrai o queueId da resposta do servidor
-      const queueId = info.response.match(/queued as\s([A-Z0-9]+)/)[1];
+      const queueId = info.response.match(/queued as\s([A-Z0-9]+)/);
+      if (queueId && queueId[1]) {
+        // Extrai o queueId corretamente
+        const extractedQueueId = queueId[1];
+        logger.info(`queueId extraído com sucesso: ${extractedQueueId}`);
+      } else {
+        throw new Error('Não foi possível extrair o queueId da resposta');
+      }
 
       // Log de depuração
       console.log(`Email enviado!`);
@@ -155,14 +162,14 @@ class EmailService {
       }));
 
       // Armazena o queueId para monitoramento
-      this.pendingSends.set(queueId, {
+      this.pendingSends.set(queueId[1], {
         toRecipients,
         bccRecipients,
         results: recipientsStatus,
       });
 
       return {
-        queueId,
+        queueId: queueId[1],
         recipients: recipientsStatus,
       };
     } catch (error: any) {
@@ -185,7 +192,7 @@ class EmailService {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error(`Timeout exceeded for queueId ${queueId}`));
-      }, 30000); // Timeout de 30 segundos
+      }, 60000); // Timeout de 60 segundos
 
       this.logParser.once('log', (logEntry) => {
         console.log(`Comparando queueId recebido: ${logEntry.queueId} com ${queueId}`);
