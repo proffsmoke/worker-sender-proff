@@ -74,26 +74,26 @@ class LogParser extends EventEmitter {
   private parseLogLine(line: string): LogEntry | null {
     const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
     if (!match) return null;
-  
+
     const [, mailId, email, result] = match;
-    
+
     // Extração do queueId
-    const queueIdMatch = result.match(/<([^>]+)>/); // Captura o queueId entre os sinais de menor e maior
-    const queueId = queueIdMatch ? queueIdMatch[1] : '';  // Se não encontrar, usa string vazia
-  
-    const isBulk = email.includes(','); // Verifica se é um envio em massa
-    const emails = isBulk ? email.split(',') : [email]; // Separa os e-mails se for envio em massa
-  
-    // Retorna um objeto para cada e-mail
+    const queueIdMatch = result.match(/<([^>]+)>/);
+    const queueId = queueIdMatch ? queueIdMatch[1] : '';  // Captura o queueId entre os sinais de menor e maior
+
+    const isBulk = email.includes(',');
+    const emails = isBulk ? email.split(',') : [email];
+
     return {
-      timestamp: new Date().toISOString(), // Adiciona um timestamp atual
-      mailId,
-      queueId, // Agora inclui o queueId no objeto
-      email: emails[0].trim(), // Considera apenas o primeiro e-mail para simplificar
-      result,
-      success: result.startsWith('sent'), // Determina se o envio foi bem-sucedido
+        timestamp: new Date().toISOString(),
+        mailId,
+        queueId, // Inclui o queueId no objeto
+        email: emails[0].trim(),
+        result,
+        success: result.startsWith('sent'),
     };
-  }
+}
+
   
 
   private extractTimestamp(line: string): Date | null {
