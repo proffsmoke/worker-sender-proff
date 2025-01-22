@@ -84,6 +84,8 @@ class LogParser extends EventEmitter {
     const isBulk = email.includes(',');
     const emails = isBulk ? email.split(',') : [email];
 
+    console.log('Log analisado:', { mailId, queueId, email, result }); // Log para verificar o conteúdo extraído
+
     return {
         timestamp: new Date().toISOString(),
         mailId,
@@ -92,7 +94,8 @@ class LogParser extends EventEmitter {
         result,
         success: result.startsWith('sent'),
     };
-  }
+}
+
 
   private extractTimestamp(line: string): Date | null {
     const timestampRegex = /(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/;
