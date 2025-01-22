@@ -22,7 +22,7 @@ mongoose
 
 // Inicializar MailerService
 const logParser = new LogParser('/var/log/mail.log');
-logParser.startMonitoring();
+// logParser.startMonitoring();
 MailerService;
 BlockManagerService;
 // CleanlogsService;
