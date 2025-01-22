@@ -88,11 +88,11 @@ class MailerService {
       subject: 'Email de Teste Inicial',
       html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
     };
-
+  
     try {
       const result = await EmailService.sendEmail(testEmailParams);
       logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
-
+  
       // Aguarda o resultado do LogParser para verificar o sucesso
       const logEntry = await this.waitForLogEntry(result.queueId);
       if (logEntry && logEntry.success) {
@@ -100,7 +100,7 @@ class MailerService {
         this.unblockMailer();
         return { success: true };
       } else {
-        logger.warn('Falha ao enviar email de teste. Verifique os logs para mais detalhes.');
+        logger.warn(`Falha ao enviar email de teste. LogEntry: ${JSON.stringify(logEntry)}`);
         this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
         return { success: false };
       }
@@ -110,27 +110,30 @@ class MailerService {
       return { success: false };
     }
   }
-
+  
   private waitForLogEntry(queueId: string): Promise<LogEntry | null> {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
-        logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}`);
+        logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 30 segundos.`);
         resolve(null); // Timeout após 30 segundos
       }, 30000);
-
+  
+      logger.info(`Aguardando logEntry para queueId=${queueId}...`);
+  
       // Adiciona um listener para o evento 'log' do LogParser
       const logListener = (logEntry: LogEntry) => {
         if (logEntry.queueId === queueId) {
-          logger.info(`LogEntry recebido para queueId=${queueId}:`, logEntry);
+          logger.info(`LogEntry encontrado para queueId=${queueId}:`, logEntry);
           clearTimeout(timeout);
           this.logParser.off('log', logListener); // Remove o listener após capturar o logEntry
           resolve(logEntry);
         }
       };
-
+  
       this.logParser.on('log', logListener);
     });
   }
+  
 
   private scheduleRetry(): void {
     if (this.isBlockedPermanently) {
