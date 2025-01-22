@@ -113,31 +113,22 @@ class MailerService {
   }
 
   private handleLogEntry(logEntry: LogEntry) {
-    logger.info(`LogEntry recebido para queueId=${logEntry.queueId}: ${logEntry.result}`);
+    // Log detalhado do que está sendo processado
+    logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
 
-    // Armazena os logs para processamento
-    if (!this.pendingLogs.has(logEntry.queueId)) {
-      this.pendingLogs.set(logEntry.queueId, []);
-    }
-    this.pendingLogs.get(logEntry.queueId)?.push(logEntry);
-
-    // Processa o log se já tiver um log de sucesso
-    if (this.pendingLogs.get(logEntry.queueId)?.length === 1) {
-      this.processLogEntry(logEntry.queueId);
-    }
+    // Empurrando o log imediatamente para o processamento
+    this.processLogEntry(logEntry);
   }
 
-  private processLogEntry(queueId: string) {
-    const logs = this.pendingLogs.get(queueId) || [];
-    const latestLog = logs[logs.length - 1];
-
-    if (latestLog.success) {
-      logger.info(`Email com queueId=${queueId} foi enviado com sucesso.`);
-      this.pendingLogs.delete(queueId); // Remove log processado
+  private processLogEntry(logEntry: LogEntry) {
+    logger.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
+    if (logEntry.success) {
+      logger.info(`Email com queueId=${logEntry.queueId} foi enviado com sucesso.`);
+      this.pendingLogs.delete(logEntry.queueId); // Remove log processado
       this.unblockMailer();
     } else {
-      logger.warn(`Falha no envio para queueId=${queueId}: ${latestLog.result}`);
-      this.blockMailer('blocked_temporary', `Falha no envio para queueId=${queueId}`);
+      logger.warn(`Falha no envio para queueId=${logEntry.queueId}: ${logEntry.result}`);
+      this.blockMailer('blocked_temporary', `Falha no envio para queueId=${logEntry.queueId}`);
     }
   }
 

@@ -47,20 +47,13 @@ class LogParser extends EventEmitter {
     try {
       const logEntry = this.parseLogLine(line);
       if (logEntry) {
-        this.logBuffer.push(logEntry); // Adiciona o log ao buffer
-
-        // Limpa o buffer após atingir o limite de 500 entradas
-        if (this.logBuffer.length >= this.maxBufferSize) {
-          this.emitLogs();
-        }
-
-        console.log('Log analisado:', logEntry); // Log em tempo real
+        this.emit('log', logEntry); // Emite o log assim que é analisado
       }
     } catch (error) {
       logger.error(`Error processing log line: ${line}`, error);
     }
   }
-
+  
   private parseLogLine(line: string): LogEntry | null {
     const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
     if (!match) return null;
