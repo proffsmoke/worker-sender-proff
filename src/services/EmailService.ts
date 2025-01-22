@@ -141,65 +141,69 @@ class EmailService {
 }
  
 
-  public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
-    const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
-    const from = `"${fromName}" <no-reply@${emailDomain}>`;
+public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
+  const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
+  const from = `"${fromName}" <no-reply@${emailDomain}>`;
 
-    const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
-    const bccRecipients: string[] = bcc.map((r) => r.toLowerCase());
-    const allRecipients: string[] = [...toRecipients, ...bccRecipients];
+  const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
+  const bccRecipients: string[] = bcc.map((r) => r.toLowerCase());
+  const allRecipients: string[] = [...toRecipients, ...bccRecipients];
 
-    const messageId = `${uuid}@${emailDomain}`; // Usa o uuid para definir o messageId
-    const isTestEmail = fromName === 'Mailer Test' && subject === 'Email de Teste Inicial';
+  const messageId = `${uuid}@${emailDomain}`; // Usa o uuid para definir o messageId
+  const isTestEmail = fromName === 'Mailer Test' && subject === 'Email de Teste Inicial';
 
-    try {
-        const mailOptions = {
-            from,
-            to: Array.isArray(to) ? to.join(', ') : to,
-            bcc,
-            subject,
-            html,
-            messageId: `<${messageId}>`,
-        };
+  try {
+      const mailOptions = {
+          from,
+          to: Array.isArray(to) ? to.join(', ') : to,
+          bcc,
+          subject,
+          html,
+          messageId: `<${messageId}>`,
+      };
 
-        // Envia o email
-        const info = await this.transporter.sendMail(mailOptions);
+      // Envia o email
+      const info = await this.transporter.sendMail(mailOptions);
 
-        // Registra o envio no pendingSends para atualização posterior
-        const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
-            recipient,
-            success: true, // Assume sucesso inicialmente
-        }));
+      // Registra o envio no pendingSends para atualização posterior
+      const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
+          recipient,
+          success: true, // Assume sucesso inicialmente
+      }));
 
-        // Armazena o uuid juntamente com o queueId para associar mais tarde
-        this.pendingSends.set(info.messageId || messageId, {
-            uuid,
-            toRecipients,
-            bccRecipients,
-            results: recipientsStatus,
-        });
+      // Armazena o uuid juntamente com o queueId para associar mais tarde
+      this.pendingSends.set(info.messageId || messageId, {
+          uuid,
+          toRecipients,
+          bccRecipients,
+          results: recipientsStatus,
+      });
 
-        return {
-            mailId: uuid,
-            queueId: info.messageId || '',
-            recipients: recipientsStatus,
-        };
-    } catch (error: any) {
-        logger.error(`Error sending email: ${error.message}`, error);
+      // Adiciona o log do queueId
+      console.log(`Email enviado com sucesso! queueId: ${info.messageId || messageId}`);
 
-        const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
-            recipient,
-            success: false,
-            error: error.message,
-        }));
+      return {
+          mailId: uuid,
+          queueId: info.messageId || '',
+          recipients: recipientsStatus,
+      };
+  } catch (error: any) {
+      logger.error(`Error sending email: ${error.message}`, error);
 
-        return {
-            mailId: uuid,
-            queueId: '',
-            recipients: recipientsStatus,
-        };
-    }
+      const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
+          recipient,
+          success: false,
+          error: error.message,
+      }));
+
+      return {
+          mailId: uuid,
+          queueId: '',
+          recipients: recipientsStatus,
+      };
+  }
 }
+
 
 
 public async awaitEmailResults(queueId: string): Promise<void> {

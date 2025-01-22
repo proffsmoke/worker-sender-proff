@@ -62,12 +62,12 @@ class EmailService {
         return this.sendEmail(testEmailParams);
     }
     async handleLogEntry(logEntry) {
-        const sendData = this.pendingSends.get(logEntry.queueId); // Agora usamos o queueId
+        const sendData = this.pendingSends.get(logEntry.queueId); // Agora usa queueId para associar
         if (!sendData) {
             return;
         }
-        const success = logEntry.success; // Usa o campo 'success' do LogEntry
-        const recipient = logEntry.email.toLowerCase(); // Usa o campo 'email' do LogEntry
+        const success = logEntry.success;
+        const recipient = logEntry.email.toLowerCase();
         // Atualiza o status do destinatário
         const recipientIndex = sendData.results.findIndex((r) => r.recipient === recipient);
         if (recipientIndex !== -1) {
@@ -78,7 +78,7 @@ class EmailService {
         }
         // Atualiza o EmailLog
         try {
-            const emailLog = await EmailLog_1.default.findOne({ mailId: sendData.uuid }).exec();
+            const emailLog = await EmailLog_1.default.findOne({ mailId: sendData.uuid }).exec(); // Usa uuid aqui
             if (emailLog) {
                 emailLog.success = sendData.results.every((r) => r.success);
                 await emailLog.save();
@@ -91,7 +91,7 @@ class EmailService {
         const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
         const processedRecipients = sendData.results.length;
         if (processedRecipients >= totalRecipients) {
-            this.pendingSends.delete(logEntry.queueId); // Remover usando o queueId
+            this.pendingSends.delete(logEntry.queueId); // Remove usando o queueId
         }
     }
     async sendEmail(params) {
@@ -100,11 +100,8 @@ class EmailService {
         const toRecipients = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
         const bccRecipients = bcc.map((r) => r.toLowerCase());
         const allRecipients = [...toRecipients, ...bccRecipients];
-        const messageId = `${uuid}@${emailDomain}`;
+        const messageId = `${uuid}@${emailDomain}`; // Usa o uuid para definir o messageId
         const isTestEmail = fromName === 'Mailer Test' && subject === 'Email de Teste Inicial';
-        if (isTestEmail) {
-            logger_1.default.debug(`Setting Message-ID: <${messageId}> for mailId=${uuid}`);
-        }
         try {
             const mailOptions = {
                 from,
@@ -116,23 +113,18 @@ class EmailService {
             };
             // Envia o email
             const info = await this.transporter.sendMail(mailOptions);
-            if (isTestEmail) {
-                logger_1.default.info(`Email sent: ${JSON.stringify(mailOptions)}`);
-                logger_1.default.debug(`SMTP server response: ${info.response}`);
-            }
-            // Cria o resultado imediatamente após o envio
+            // Registra o envio no pendingSends para atualização posterior
             const recipientsStatus = allRecipients.map((recipient) => ({
                 recipient,
                 success: true, // Assume sucesso inicialmente
             }));
-            // Registra o envio no pendingSends para atualização posterior
+            // Armazena o uuid juntamente com o queueId para associar mais tarde
             this.pendingSends.set(info.messageId || messageId, {
                 uuid,
                 toRecipients,
                 bccRecipients,
                 results: recipientsStatus,
             });
-            // Retorna o resultado imediatamente
             return {
                 mailId: uuid,
                 queueId: info.messageId || '',
@@ -157,7 +149,7 @@ class EmailService {
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 reject(new Error(`Timeout exceeded for queueId ${queueId}`));
-            }, 30000); // Timeout de 30 segundos, você pode ajustar conforme necessário
+            }, 30000); // Timeout de 30 segundos
             this.logParser.once('log', (logEntry) => {
                 if (logEntry.queueId === queueId) {
                     clearTimeout(timeout);
