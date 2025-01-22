@@ -55,19 +55,22 @@ class LogParser extends EventEmitter {
   }
 
   private parseLogLine(line: string): LogEntry | null {
-    const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
+    // Atualizando a regex para capturar corretamente os logs com os novos detalhes
+    const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=sent \(.*\) 250 (.*)/);
+    
     if (!match) return null;
-
+  
     const [, queueId, email, result] = match;
-
+  
     return {
       timestamp: new Date().toISOString(),
       queueId,
       email: email.trim(),
       result,
-      success: result.startsWith('sent'),
+      success: result.includes('250 2.1.5'), // Verificando o sucesso do envio
     };
   }
+  
 }
 
 export default LogParser;
