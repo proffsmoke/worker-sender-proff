@@ -75,58 +75,26 @@ class EmailService {
 
     logger.debug(`Is to recipient: ${isToRecipient} for recipient: ${recipient}`);
 
-    if (isToRecipient) {
-      try {
-        const emailLog = await EmailLog.findOne({ mailId: sendData.uuid }).exec();
+    try {
+      const emailLog = await EmailLog.findOne({ mailId: sendData.uuid }).exec();
 
-        if (emailLog) {
-          emailLog.success = success;
-          await emailLog.save();
-          logger.debug(`EmailLog 'success' atualizado para mailId=${sendData.uuid}`);
-        } else {
-          logger.warn(`EmailLog não encontrado para mailId=${sendData.uuid}`);
-        }
-      } catch (err) {
-        logger.error(
-          `Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${(err as Error).message}`
-        );
+      if (emailLog) {
+        emailLog.success = success;
+        await emailLog.save();
+        logger.debug(`EmailLog 'success' atualizado para mailId=${sendData.uuid}`);
+      } else {
+        logger.warn(`EmailLog não encontrado para mailId=${sendData.uuid}`);
       }
-
-      sendData.results.push({
-        recipient: recipient,
-        success: success
-      });
-    } else {
-      sendData.results.push({
-        recipient: recipient,
-        success,
-      });
-
-      try {
-        const emailLog = await EmailLog.findOne({ mailId: sendData.uuid }).exec();
-
-        if (emailLog) {
-          const recipientStatus = {
-            recipient: recipient,
-            success,
-            dsn: logEntry.dsn,
-            status: logEntry.status,
-          };
-          emailLog.detail = {
-            ...emailLog.detail,
-            [recipient]: recipientStatus,
-          };
-          await emailLog.save();
-          logger.debug(`EmailLog 'detail' atualizado para mailId=${sendData.uuid}`);
-        } else {
-          logger.warn(`EmailLog não encontrado para mailId=${sendData.uuid}`);
-        }
-      } catch (err) {
-        logger.error(
-          `Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${(err as Error).message}`
-        );
-      }
+    } catch (err) {
+      logger.error(
+        `Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${(err as Error).message}`
+      );
     }
+
+    sendData.results.push({
+      recipient: recipient,
+      success: success
+    });
 
     const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
     const processedRecipients = sendData.results.length;
