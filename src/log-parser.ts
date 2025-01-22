@@ -78,7 +78,7 @@ class LogParser extends EventEmitter {
     const [, mailId, email, result] = match;
 
     // Extração do queueId da resposta "queued as"
-    const queueIdMatch = result.match(/queued as\s([A-Z0-9]+)/);
+    const queueIdMatch = result.match(/queued as\s([A-Z0-9]+)/);  // Extraindo apenas o ID após "queued as"
     const queueId = queueIdMatch ? queueIdMatch[1] : '';  // Captura o queueId após 'queued as'
 
     const isBulk = email.includes(',');
@@ -95,7 +95,6 @@ class LogParser extends EventEmitter {
         success: result.startsWith('sent'),
     };
 }
-
 
 
   private extractTimestamp(line: string): Date | null {
