@@ -203,82 +203,41 @@ class EmailService {
         logger.debug(`SMTP server response: ${info.response}`);
       }
 
-      // Cria o resultado imediatamente após o envio
-      const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
-        recipient,
-        success: true, // Assume sucesso, pois o email foi enviado pelo SMTP
-      }));
+      // Cria uma promise para aguardar o resultado do LogParser
+      const sendPromise = new Promise<RecipientStatus[]>((resolve, reject) => {
+        this.pendingSends.set(messageId, {
+          uuid,
+          toRecipients,
+          bccRecipients,
+          results: [],
+          resolve,
+          reject,
+        });
+      });
 
-      // Retorna o resultado imediatamente
-      const result = {
+      // Aguarda o resultado do LogParser
+      const recipientsStatus = await sendPromise;
+
+      // Retorna o resultado final
+      return {
         mailId: uuid,
         queueId: info.messageId || '',
         recipients: recipientsStatus,
       };
-
-      // Processa o resultado em segundo plano e registra no log
-      this.processResultInBackground(uuid, messageId, recipientsStatus, isTestEmail);
-
-      return result;
     } catch (error: any) {
       logger.error(`Error sending email: ${error.message}`, error);
 
-      let recipientsStatus: RecipientStatus[] = [];
-
-      if (error.rejected && Array.isArray(error.rejected)) {
-        const rejectedSet = new Set(error.rejected.map((r: string) => r.toLowerCase()));
-        const acceptedSet = new Set((error.accepted || []).map((r: string) => r.toLowerCase()));
-
-        recipientsStatus = allRecipients.map((recipient) => ({
-          recipient,
-          success: acceptedSet.has(recipient),
-          error: rejectedSet.has(recipient)
-            ? 'Rejeitado pelo servidor SMTP.'
-            : undefined,
-        }));
-      } else {
-        recipientsStatus = allRecipients.map((recipient) => ({
-          recipient,
-          success: false,
-          error: 'Falha desconhecida ao enviar email.',
-        }));
-      }
-
-      // Processa o resultado em segundo plano e registra no log
-      this.processResultInBackground(uuid, messageId, recipientsStatus, isTestEmail);
+      const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
+        recipient,
+        success: false,
+        error: error.message,
+      }));
 
       return {
         mailId: uuid,
         queueId: '',
         recipients: recipientsStatus,
       };
-    }
-  }
-
-  private async processResultInBackground(
-    uuid: string,
-    messageId: string,
-    recipientsStatus: RecipientStatus[],
-    isTestEmail: boolean
-  ): Promise<void> {
-    try {
-      // Simula um processamento em segundo plano (opcional)
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // Simula um pequeno atraso
-
-      // Registra o resultado no log
-      if (!isTestEmail) {
-        const successAny = recipientsStatus.some((r) => r.success);
-        logger.info(`Send results for email: MailID: ${uuid}, Message-ID: ${messageId}, Success: ${successAny}, Recipients: ${JSON.stringify(recipientsStatus)}`);
-      }
-
-      // Atualiza o EmailLog (se necessário)
-      const emailLog = await EmailLog.findOne({ mailId: uuid }).exec();
-      if (emailLog) {
-        emailLog.success = recipientsStatus.some((r) => r.success);
-        await emailLog.save();
-      }
-    } catch (err) {
-      logger.error(`Erro ao processar resultado em segundo plano para mailId=${uuid}: ${(err as Error).message}`);
     }
   }
 }
