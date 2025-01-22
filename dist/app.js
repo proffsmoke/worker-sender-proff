@@ -11,7 +11,6 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const config_1 = __importDefault(require("./config"));
 const MailerService_1 = __importDefault(require("./services/MailerService"));
 const BlockManagerService_1 = __importDefault(require("./services/BlockManagerService"));
-const CleanlogsService_1 = __importDefault(require("./services/CleanlogsService"));
 const app = (0, express_1.default)();
 // Conectar ao MongoDB
 mongoose_1.default
@@ -24,7 +23,7 @@ mongoose_1.default
 // Inicializar MailerService
 MailerService_1.default;
 BlockManagerService_1.default;
-CleanlogsService_1.default;
+// CleanlogsService;
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 app.use('/api', routes_1.default);
