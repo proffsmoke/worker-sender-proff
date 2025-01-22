@@ -228,24 +228,23 @@ class EmailService {
 
       const results = await sendPromise;
 
+      // Log dos resultados para emails de teste
       if (isTestEmail) {
         logger.info(`Send results for test email: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(results)}`);
-      } else {
+      }
+
+      // Log dos resultados para emails normais
+      if (!isTestEmail) {
         try {
           const emailLog = await EmailLog.findOne({ mailId: uuid }).exec();
 
           if (emailLog) {
             const successAny = results.some((r) => r.success);
             emailLog.success = successAny;
-            emailLog.detail = results.reduce((acc, result) => {
-              acc[result.recipient] = {
-                recipient: result.recipient,
-                success: result.success,
-                error: result.error,
-              };
-              return acc;
-            }, {} as Record<string, RecipientStatus>);
             await emailLog.save();
+
+            // Log detalhado para emails normais
+            logger.info(`Send results for email: MailID: ${uuid}, Message-ID: ${messageId}, Success: ${successAny}, Recipients: ${JSON.stringify(results)}`);
           }
         } catch (err) {
           logger.error(`Erro ao atualizar EmailLog para mailId=${uuid}: ${(err as Error).message}`);
