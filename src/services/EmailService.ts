@@ -280,6 +280,11 @@ class EmailService {
         }));
       }
 
+      // Log de erro para emails normais
+      if (!isTestEmail) {
+        logger.info(`Send results for email: MailID: ${uuid}, Message-ID: ${messageId}, Success: false, Recipients: ${JSON.stringify(recipientsStatus)}`);
+      }
+
       return {
         mailId: uuid,
         queueId: '',
