@@ -1,17 +1,21 @@
 import logger from '../utils/logger';
 import config from '../config';
 import EmailService from './EmailService';
+import LogParser, { LogEntry } from '../log-parser';
 
 class MailerService {
   private isBlocked: boolean = false;
   private isBlockedPermanently: boolean = false;
-  private blockReason: string | null = null; // Novo campo para armazenar a razão do bloqueio
+  private blockReason: string | null = null;
   private createdAt: Date;
   private version: string = '4.3.26-1';
   private retryIntervalId: NodeJS.Timeout | null = null;
+  private logParser: LogParser;
 
   constructor() {
     this.createdAt = new Date();
+    this.logParser = new LogParser('/var/log/mail.log');
+    this.logParser.startMonitoring();
     this.initialize();
   }
 
@@ -53,15 +57,15 @@ class MailerService {
   blockMailer(status: 'blocked_permanently' | 'blocked_temporary', reason: string): void {
     if (!this.isBlocked) {
       this.isBlocked = true;
-      this.blockReason = reason; // Armazena a razão do bloqueio
+      this.blockReason = reason;
       if (status === 'blocked_permanently') {
         this.isBlockedPermanently = true;
       }
       logger.warn(`Mailer bloqueado com status: ${status}. Razão: ${reason}`);
       if (status === 'blocked_temporary') {
-        this.scheduleRetry(); // Agendar reenvio apenas para bloqueio temporário
+        this.scheduleRetry();
       } else {
-        this.clearRetryInterval(); // Cancelar reenvios se for bloqueio permanente
+        this.clearRetryInterval();
       }
     }
   }
@@ -69,7 +73,7 @@ class MailerService {
   unblockMailer(): void {
     if (this.isBlocked && !this.isBlockedPermanently) {
       this.isBlocked = false;
-      this.blockReason = null; // Limpa a razão do bloqueio
+      this.blockReason = null;
       logger.info('Mailer desbloqueado.');
       this.clearRetryInterval();
     }
@@ -89,11 +93,11 @@ class MailerService {
       const result = await EmailService.sendEmail(testEmailParams);
       logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
 
-      // Verificar se todos os destinatários receberam o email com sucesso
-      const allSuccess = result.recipients.every((r) => r.success);
-      if (allSuccess) {
+      // Aguarda o resultado do LogParser para verificar o sucesso
+      const logEntry = await this.waitForLogEntry(result.queueId);
+      if (logEntry && logEntry.success) {
         logger.info('Email de teste enviado com sucesso. Status do Mailer: health');
-        this.unblockMailer(); // Garantir que o Mailer esteja desbloqueado
+        this.unblockMailer();
         return { success: true };
       } else {
         logger.warn('Falha ao enviar email de teste. Verifique os logs para mais detalhes.');
@@ -107,6 +111,21 @@ class MailerService {
     }
   }
 
+  private waitForLogEntry(queueId: string): Promise<LogEntry | null> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve(null); // Timeout após 30 segundos
+      }, 30000);
+
+      this.logParser.once('log', (logEntry: LogEntry) => {
+        if (logEntry.queueId === queueId) {
+          clearTimeout(timeout);
+          resolve(logEntry);
+        }
+      });
+    });
+  }
+
   private scheduleRetry(): void {
     if (this.isBlockedPermanently) {
       logger.info('Mailer está permanentemente bloqueado. Não tentará reenviar emails.');
@@ -114,7 +133,6 @@ class MailerService {
     }
 
     if (this.retryIntervalId) {
-      // Já existe um intervalo de retry agendado
       return;
     }
 
@@ -124,7 +142,6 @@ class MailerService {
 
   private async retrySendEmail(): Promise<void> {
     if (!this.isBlocked || this.isBlockedPermanently) {
-      // Se não estiver temporariamente bloqueado, não tentar reenviar
       this.clearRetryInterval();
       logger.info('Mailer não está temporariamente bloqueado ou está permanentemente bloqueado. Cancelando tentativas de reenvio.');
       return;
