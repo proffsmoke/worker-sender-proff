@@ -172,18 +172,18 @@ class EmailService {
   public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
     const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
     const from = `"${fromName}" <no-reply@${emailDomain}>`;
-
+  
     const toRecipients: string[] = Array.isArray(to) ? to.map(r => r.toLowerCase()) : [to.toLowerCase()];
     const bccRecipients: string[] = bcc.map(r => r.toLowerCase());
     const allRecipients: string[] = [...toRecipients, ...bccRecipients];
-
+  
     const messageId = `${uuid}@${emailDomain}`;
     const isTestEmail = fromName === 'Mailer Test' && subject === 'Email de Teste Inicial';
-
+  
     if (isTestEmail) {
       logger.debug(`Setting Message-ID: <${messageId}> for mailId=${uuid}`);
     }
-
+  
     try {
       const mailOptions = {
         from,
@@ -193,77 +193,41 @@ class EmailService {
         html,
         messageId: `<${messageId}>`,
       };
-
+  
+      // Envia o email
       const info = await this.transporter.sendMail(mailOptions);
       if (isTestEmail) {
         logger.info(`Email sent: ${JSON.stringify(mailOptions)}`);
         logger.debug(`SMTP server response: ${info.response}`);
       }
-
-      const sendPromise = new Promise<RecipientStatus[]>((resolve, reject) => {
-        this.pendingSends.set(messageId, {
-          uuid,
-          toRecipients,
-          bccRecipients,
-          results: [],
-          resolve,
-          reject,
-        });
-
-        setTimeout(() => {
-          if (this.pendingSends.has(messageId)) {
-            const sendData = this.pendingSends.get(messageId)!;
-            sendData.reject(
-              new Error('Timeout ao capturar status para todos os destinatários.')
-            );
-            this.pendingSends.delete(messageId);
-            if (isTestEmail) {
-              logger.warn(`Timeout: Failed to capture status for mailId=${uuid}`);
-            }
-          }
-        }, 10000); // 10 segundos
-      });
-
-      const results = await sendPromise;
-
-      // Log dos resultados para emails de teste
-      if (isTestEmail) {
-        logger.info(`Send results for test email: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(results)}`);
-      }
-
-      // Log dos resultados para emails normais
-      if (!isTestEmail) {
-        try {
-          const emailLog = await EmailLog.findOne({ mailId: uuid }).exec();
-
-          if (emailLog) {
-            const successAny = results.some((r) => r.success);
-            emailLog.success = successAny;
-            await emailLog.save();
-
-            // Log detalhado para emails normais
-            logger.info(`Send results for email: MailID: ${uuid}, Message-ID: ${messageId}, Success: ${successAny}, Recipients: ${JSON.stringify(results)}`);
-          }
-        } catch (err) {
-          logger.error(`Erro ao atualizar EmailLog para mailId=${uuid}: ${(err as Error).message}`);
-        }
-      }
-
-      return {
+  
+      // Cria o resultado imediatamente após o envio
+      const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
+        recipient,
+        success: true, // Assume sucesso, pois o email foi enviado pelo SMTP
+      }));
+  
+      // Retorna o resultado imediatamente
+      const result = {
         mailId: uuid,
         queueId: '',
-        recipients: results,
+        recipients: recipientsStatus,
       };
+  
+      // Processa o resultado em segundo plano e registra no log
+      this.processResultInBackground(uuid, messageId, recipientsStatus, isTestEmail);
+  
+      return result;
     } catch (error: any) {
       logger.error(`Error sending email: ${error.message}`, error);
-
+  
       let recipientsStatus: RecipientStatus[] = [];
-
+  
       if (error.rejected && Array.isArray(error.rejected)) {
         const rejectedSet = new Set(error.rejected.map((r: string) => r.toLowerCase()));
         const acceptedSet = new Set((error.accepted || []).map((r: string) => r.toLowerCase()));
-
-        recipientsStatus = [...toRecipients, ...bccRecipients].map((recipient) => ({
+  
+        recipientsStatus = allRecipients.map((recipient) => ({
           recipient,
           success: acceptedSet.has(recipient),
           error: rejectedSet.has(recipient)
@@ -271,23 +235,48 @@ class EmailService {
             : undefined,
         }));
       } else {
-        recipientsStatus = [...toRecipients, ...bccRecipients].map((recipient) => ({
+        recipientsStatus = allRecipients.map((recipient) => ({
           recipient,
           success: false,
           error: 'Falha desconhecida ao enviar email.',
         }));
       }
-
-      // Log de erro para emails normais
-      if (!isTestEmail) {
-        logger.info(`Send results for email: MailID: ${uuid}, Message-ID: ${messageId}, Success: false, Recipients: ${JSON.stringify(recipientsStatus)}`);
-      }
-
+  
+      // Processa o resultado em segundo plano e registra no log
+      this.processResultInBackground(uuid, messageId, recipientsStatus, isTestEmail);
+  
       return {
         mailId: uuid,
         queueId: '',
         recipients: recipientsStatus,
       };
+    }
+  }
+  
+  private async processResultInBackground(
+    uuid: string,
+    messageId: string,
+    recipientsStatus: RecipientStatus[],
+    isTestEmail: boolean
+  ): Promise<void> {
+    try {
+      // Simula um processamento em segundo plano (opcional)
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Simula um pequeno atraso
+  
+      // Registra o resultado no log
+      if (!isTestEmail) {
+        const successAny = recipientsStatus.some((r) => r.success);
+        logger.info(`Send results for email: MailID: ${uuid}, Message-ID: ${messageId}, Success: ${successAny}, Recipients: ${JSON.stringify(recipientsStatus)}`);
+      }
+  
+      // Atualiza o EmailLog (se necessário)
+      const emailLog = await EmailLog.findOne({ mailId: uuid }).exec();
+      if (emailLog) {
+        emailLog.success = recipientsStatus.some((r) => r.success);
+        await emailLog.save();
+      }
+    } catch (err) {
+      logger.error(`Erro ao processar resultado em segundo plano para mailId=${uuid}: ${(err as Error).message}`);
     }
   }
 }
