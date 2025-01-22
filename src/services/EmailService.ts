@@ -139,6 +139,7 @@ class EmailService {
         this.pendingSends.delete(logEntry.queueId);  // Remove usando o queueId
     }
 }
+
  
 
 public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
@@ -167,8 +168,8 @@ public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
 
       // Log de todos os dados para depuração
       console.log(`Email enviado!`);
-      console.log(`mailId: ${uuid}`);
-      console.log(`queueId (messageId): ${info.messageId}`);
+      console.log(`mailId (UUID gerado): ${uuid}`);
+      console.log(`queueId (messageId do servidor): ${info.messageId}`);
       console.log(`messageId para associação: ${messageId}`);
       
       // Registra o envio no pendingSends para atualização posterior
@@ -206,6 +207,7 @@ public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
       };
   }
 }
+
 
 
 
