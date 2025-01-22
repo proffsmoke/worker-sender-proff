@@ -165,6 +165,12 @@ public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
       // Envia o email
       const info = await this.transporter.sendMail(mailOptions);
 
+      // Log de todos os dados para depuração
+      console.log(`Email enviado!`);
+      console.log(`mailId: ${uuid}`);
+      console.log(`queueId (messageId): ${info.messageId}`);
+      console.log(`messageId para associação: ${messageId}`);
+      
       // Registra o envio no pendingSends para atualização posterior
       const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
           recipient,
@@ -178,9 +184,6 @@ public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
           bccRecipients,
           results: recipientsStatus,
       });
-
-      // Adiciona o log do queueId
-      console.log(`Email enviado com sucesso! queueId: ${info.messageId || messageId}`);
 
       return {
           mailId: uuid,
