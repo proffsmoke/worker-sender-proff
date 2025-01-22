@@ -3,219 +3,137 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const nodemailer_1 = __importDefault(require("nodemailer"));
-const EmailLog_1 = __importDefault(require("../models/EmailLog"));
 const logger_1 = __importDefault(require("../utils/logger"));
-const log_parser_1 = __importDefault(require("../log-parser")); // Importar LogEntry
 const config_1 = __importDefault(require("../config"));
-class EmailService {
+const EmailService_1 = __importDefault(require("./EmailService"));
+const uuid_1 = require("uuid");
+class MailerService {
     constructor() {
-        this.pendingSends = new Map();
-        this.transporter = nodemailer_1.default.createTransport({
-            host: config_1.default.smtp.host,
-            port: config_1.default.smtp.port,
-            secure: false,
-            tls: { rejectUnauthorized: false },
-        });
-        this.logParser = new log_parser_1.default('/var/log/mail.log');
-        this.logParser.startMonitoring();
-        // Listen to log events
-        this.logParser.on('log', this.handleLogEntry.bind(this));
+        this.isBlocked = false;
+        this.isBlockedPermanently = false;
+        this.blockReason = null; // Novo campo para armazenar a razão do bloqueio
+        this.version = '4.3.26-1';
+        this.retryIntervalId = null;
+        this.createdAt = new Date();
+        this.initialize();
     }
-    async handleLogEntry(logEntry) {
-        logger_1.default.debug(`Processing Log Entry: ${JSON.stringify(logEntry)}`);
-        const cleanMessageId = logEntry.messageId.replace(/[<>]/g, '');
-        const sendData = this.pendingSends.get(cleanMessageId);
-        if (!sendData) {
-            logger_1.default.warn(`No pending send found for Message-ID: ${cleanMessageId}`);
-            return;
-        }
-        const success = logEntry.dsn.startsWith('2');
-        const recipient = logEntry.recipient.toLowerCase();
-        const isToRecipient = sendData.toRecipients.includes(recipient);
-        logger_1.default.debug(`Is to recipient: ${isToRecipient} for recipient: ${recipient}`);
-        if (isToRecipient) {
-            try {
-                const emailLog = await EmailLog_1.default.findOne({ mailId: sendData.uuid }).exec();
-                if (emailLog) {
-                    emailLog.success = success;
-                    await emailLog.save();
-                    logger_1.default.debug(`EmailLog 'success' atualizado para mailId=${sendData.uuid}`);
-                }
-                else {
-                    logger_1.default.warn(`EmailLog não encontrado para mailId=${sendData.uuid}`);
-                }
-            }
-            catch (err) {
-                logger_1.default.error(`Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${err.message}`);
-            }
-            sendData.results.push({
-                recipient: recipient,
-                success: success
-            });
-        }
-        else {
-            sendData.results.push({
-                recipient: recipient,
-                success,
-            });
-            try {
-                const emailLog = await EmailLog_1.default.findOne({ mailId: sendData.uuid }).exec();
-                if (emailLog) {
-                    const recipientStatus = {
-                        recipient: recipient,
-                        success,
-                        dsn: logEntry.dsn,
-                        status: logEntry.status,
-                    };
-                    emailLog.detail = {
-                        ...emailLog.detail,
-                        [recipient]: recipientStatus,
-                    };
-                    await emailLog.save();
-                    logger_1.default.debug(`EmailLog 'detail' atualizado para mailId=${sendData.uuid}`);
-                }
-                else {
-                    logger_1.default.warn(`EmailLog não encontrado para mailId=${sendData.uuid}`);
-                }
-            }
-            catch (err) {
-                logger_1.default.error(`Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${err.message}`);
-            }
-        }
-        const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
-        const processedRecipients = sendData.results.length;
-        logger_1.default.debug(`Total Recipients: ${totalRecipients}, Processed Recipients: ${processedRecipients}`);
-        if (processedRecipients >= totalRecipients) {
-            sendData.resolve(sendData.results);
-            this.pendingSends.delete(cleanMessageId);
-            logger_1.default.debug(`All recipients processed for mailId=${sendData.uuid}`);
-        }
+    initialize() {
+        // Enviar email de teste ao iniciar
+        this.sendInitialTestEmail();
     }
-    async sendEmail(params) {
-        const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
-        const from = `"${fromName}" <no-reply@${emailDomain}>`;
-        const toRecipients = Array.isArray(to) ? to.map(r => r.toLowerCase()) : [to.toLowerCase()];
-        const bccRecipients = bcc.map(r => r.toLowerCase());
-        const allRecipients = [...toRecipients, ...bccRecipients];
-        const messageId = `${uuid}@${emailDomain}`;
-        logger_1.default.debug(`Setting Message-ID: <${messageId}> for mailId=${uuid}`);
-        const isTestEmail = fromName === 'Mailer Test' && subject === 'Email de Teste Inicial';
-        try {
-            const mailOptions = {
-                from,
-                to: Array.isArray(to) ? to.join(', ') : to,
-                bcc,
-                subject,
-                html,
-                messageId: `<${messageId}>`,
-            };
-            const info = await this.transporter.sendMail(mailOptions);
-            logger_1.default.info(`Email sent: ${JSON.stringify(mailOptions)}`);
-            logger_1.default.debug(`SMTP server response: ${info.response}`);
-            const sendPromise = new Promise((resolve, reject) => {
-                this.pendingSends.set(messageId, {
-                    uuid,
-                    toRecipients,
-                    bccRecipients,
-                    results: [],
-                    resolve,
-                    reject,
-                });
-                setTimeout(() => {
-                    if (this.pendingSends.has(messageId)) {
-                        const sendData = this.pendingSends.get(messageId);
-                        sendData.reject(new Error('Timeout ao capturar status para todos os destinatários.'));
-                        this.pendingSends.delete(messageId);
-                        logger_1.default.warn(`Timeout: Failed to capture status for mailId=${uuid}`);
-                    }
-                }, 10000); // 10 segundos
-            });
-            const results = await sendPromise;
-            if (isTestEmail) {
-                logger_1.default.info(`Send results for test email: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(results)}`);
+    isMailerBlocked() {
+        return this.isBlocked;
+    }
+    isMailerPermanentlyBlocked() {
+        return this.isBlockedPermanently;
+    }
+    getCreatedAt() {
+        return this.createdAt;
+    }
+    getStatus() {
+        if (this.isBlockedPermanently) {
+            return 'blocked_permanently';
+        }
+        if (this.isBlocked) {
+            return 'blocked_temporary';
+        }
+        return 'health';
+    }
+    getVersion() {
+        return this.version;
+    }
+    getBlockReason() {
+        return this.blockReason;
+    }
+    blockMailer(status, reason) {
+        if (!this.isBlocked) {
+            this.isBlocked = true;
+            this.blockReason = reason; // Armazena a razão do bloqueio
+            if (status === 'blocked_permanently') {
+                this.isBlockedPermanently = true;
+            }
+            logger_1.default.warn(`Mailer bloqueado com status: ${status}. Razão: ${reason}`);
+            if (status === 'blocked_temporary') {
+                this.scheduleRetry(); // Agendar reenvio apenas para bloqueio temporário
             }
             else {
-                const emailLog = new EmailLog_1.default({
-                    mailId: uuid,
-                    sendmailQueueId: '',
-                    email: Array.isArray(to) ? to.join(', ') : to,
-                    message: subject,
-                    success: null,
-                    sentAt: new Date(),
-                });
-                await emailLog.save();
-                logger_1.default.debug(`EmailLog criado para mailId=${uuid}`);
-                if (results.length > 0) {
-                    const emailLogUpdate = await EmailLog_1.default.findOne({ mailId: uuid }).exec();
-                    if (emailLogUpdate) {
-                        const allBccSuccess = results.every(r => r.success);
-                        emailLogUpdate.success = allBccSuccess;
-                        await emailLogUpdate.save();
-                        logger_1.default.debug(`EmailLog 'success' atualizado para mailId=${uuid} com valor ${allBccSuccess}`);
-                    }
-                }
-                logger_1.default.info(`Send results: MailID: ${uuid}, Message-ID: ${messageId}, Recipients: ${JSON.stringify(results)}`);
+                this.clearRetryInterval(); // Cancelar reenvios se for bloqueio permanente
             }
-            return {
-                mailId: uuid,
-                queueId: '',
-                recipients: results,
-            };
+        }
+    }
+    unblockMailer() {
+        if (this.isBlocked && !this.isBlockedPermanently) {
+            this.isBlocked = false;
+            this.blockReason = null; // Limpa a razão do bloqueio
+            logger_1.default.info('Mailer desbloqueado.');
+            this.clearRetryInterval();
+        }
+    }
+    async sendInitialTestEmail() {
+        const testUuid = (0, uuid_1.v4)();
+        const testEmailParams = {
+            fromName: 'Mailer Test',
+            emailDomain: config_1.default.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
+            to: config_1.default.mailer.noreplyEmail,
+            bcc: [],
+            subject: 'Email de Teste Inicial',
+            html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
+            uuid: testUuid,
+        };
+        try {
+            const result = await EmailService_1.default.sendEmail(testEmailParams);
+            logger_1.default.info(`Email de teste enviado com mailId=${result.mailId}`, { result });
+            // Verificar se todos os destinatários receberam o email com sucesso
+            const allSuccess = result.recipients.every((r) => r.success);
+            if (allSuccess) {
+                logger_1.default.info('Email de teste enviado com sucesso. Status do Mailer: health');
+                this.unblockMailer(); // Garantir que o Mailer esteja desbloqueado
+                return { success: true };
+            }
+            else {
+                logger_1.default.warn('Falha ao enviar email de teste. Verifique os logs para mais detalhes.');
+                this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
+                return { success: false };
+            }
         }
         catch (error) {
-            logger_1.default.error(`Error sending email: ${error.message}`, error);
-            let recipientsStatus = [];
-            if (error.rejected && Array.isArray(error.rejected)) {
-                const rejectedSet = new Set(error.rejected.map((r) => r.toLowerCase()));
-                const acceptedSet = new Set((error.accepted || []).map((r) => r.toLowerCase()));
-                recipientsStatus = [...toRecipients, ...bccRecipients].map((recipient) => ({
-                    recipient,
-                    success: acceptedSet.has(recipient),
-                    error: rejectedSet.has(recipient)
-                        ? 'Rejeitado pelo servidor SMTP.'
-                        : undefined,
-                }));
-            }
-            else {
-                recipientsStatus = [...toRecipients, ...bccRecipients].map((recipient) => ({
-                    recipient,
-                    success: false,
-                    error: 'Falha desconhecida ao enviar email.',
-                }));
-            }
-            if (!isTestEmail) {
-                try {
-                    const emailLog = await EmailLog_1.default.findOne({ mailId: uuid }).exec();
-                    if (emailLog) {
-                        const successAny = recipientsStatus.some((r) => r.success);
-                        emailLog.success = successAny;
-                        recipientsStatus.forEach((r) => {
-                            emailLog.detail[r.recipient] = {
-                                recipient: r.recipient,
-                                success: r.success,
-                                error: r.error,
-                                dsn: '',
-                                status: r.success ? 'sent' : 'failed',
-                            };
-                        });
-                        await emailLog.save();
-                        logger_1.default.debug(`EmailLog atualizado com erro para mailId=${uuid}`);
-                    }
-                    else {
-                        logger_1.default.warn(`EmailLog não encontrado para mailId=${uuid}`);
-                    }
-                }
-                catch (saveErr) {
-                    logger_1.default.error(`Erro ao registrar EmailLog para mailId=${uuid}: ${saveErr.message}`);
-                }
-            }
-            return {
-                mailId: uuid,
-                queueId: '',
-                recipients: recipientsStatus,
-            };
+            logger_1.default.error(`Erro ao enviar email de teste: ${error.message}`, error);
+            this.blockMailer('blocked_temporary', `Erro ao enviar email de teste: ${error.message}`);
+            return { success: false };
+        }
+    }
+    scheduleRetry() {
+        if (this.isBlockedPermanently) {
+            logger_1.default.info('Mailer está permanentemente bloqueado. Não tentará reenviar emails.');
+            return;
+        }
+        if (this.retryIntervalId) {
+            // Já existe um intervalo de retry agendado
+            return;
+        }
+        logger_1.default.info('Agendando tentativa de reenviar email de teste a cada 4 minutos.');
+        this.retryIntervalId = setInterval(() => this.retrySendEmail(), 4 * 60 * 1000); // 4 minutos
+    }
+    async retrySendEmail() {
+        if (!this.isBlocked || this.isBlockedPermanently) {
+            // Se não estiver temporariamente bloqueado, não tentar reenviar
+            this.clearRetryInterval();
+            logger_1.default.info('Mailer não está temporariamente bloqueado ou está permanentemente bloqueado. Cancelando tentativas de reenvio.');
+            return;
+        }
+        logger_1.default.info('Tentando reenviar email de teste...');
+        const result = await this.sendInitialTestEmail();
+        if (result.success) {
+            logger_1.default.info('Reenvio de email de teste bem-sucedido. Cancelando futuras tentativas.');
+            this.clearRetryInterval();
+        }
+    }
+    clearRetryInterval() {
+        if (this.retryIntervalId) {
+            clearInterval(this.retryIntervalId);
+            this.retryIntervalId = null;
+            logger_1.default.info('Intervalo de tentativa de reenvio cancelado.');
         }
     }
 }
-exports.default = new EmailService();
+exports.default = new MailerService();

@@ -47,6 +47,8 @@ class LogParser extends events_1.default {
         }
         const smtpRegex = /postfix\/smtp\[\d+\]:\s+([A-Z0-9]+):\s+to=<([^>]+)>,.*dsn=(\d+\.\d+\.\d+),.*status=([a-z]+)/i;
         const cleanupRegex = /postfix\/cleanup\[\d+\]:\s+([A-Z0-9]+):\s+message-id=<([^>]+)>/i;
+        const bounceRegex = /postfix\/bounce\[\d+\]:\s+([A-Z0-9]+):\s+sender non-delivery notification:/i;
+        const qmgrRegex = /postfix\/qmgr\[\d+\]:\s+([A-Z0-9]+):\s+removed/i;
         let match = line.match(cleanupRegex);
         if (match) {
             const [_, queueId, messageId] = match;
@@ -67,6 +69,36 @@ class LogParser extends events_1.default {
                 message: line,
             };
             logger_1.default.debug(`LogParser captured: ${JSON.stringify(logEntry)}`);
+            this.emit('log', logEntry);
+        }
+        match = line.match(bounceRegex);
+        if (match) {
+            const [_, queueId] = match;
+            const messageId = this.queueIdToMessageId.get(queueId) || '';
+            const logEntry = {
+                queueId,
+                recipient: '',
+                status: 'bounced',
+                messageId,
+                dsn: '5.0.0',
+                message: line,
+            };
+            logger_1.default.debug(`LogParser captured bounce: ${JSON.stringify(logEntry)}`);
+            this.emit('log', logEntry);
+        }
+        match = line.match(qmgrRegex);
+        if (match) {
+            const [_, queueId] = match;
+            const messageId = this.queueIdToMessageId.get(queueId) || '';
+            const logEntry = {
+                queueId,
+                recipient: '',
+                status: 'removed',
+                messageId,
+                dsn: '2.0.0',
+                message: line,
+            };
+            logger_1.default.debug(`LogParser captured qmgr removal: ${JSON.stringify(logEntry)}`);
             this.emit('log', logEntry);
         }
     }

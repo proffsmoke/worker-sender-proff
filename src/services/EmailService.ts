@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import EmailLog from '../models/EmailLog';
 import logger from '../utils/logger';
-import LogParser, { LogEntry } from '../log-parser'; // Importar LogEntry
+import LogParser, { LogEntry } from '../log-parser';
 import { v4 as uuidv4 } from 'uuid';
 import config from '../config';
 
@@ -42,6 +42,11 @@ class EmailService {
     }
   > = new Map();
 
+  private version: string = '1.0.0'; // Versão do serviço
+  private createdAt: Date = new Date(); // Data de criação do serviço
+  private status: string = 'health'; // Status do serviço
+  private blockReason: string | null = null; // Razão do bloqueio, se houver
+
   constructor() {
     this.transporter = nodemailer.createTransport({
       host: config.smtp.host,
@@ -55,6 +60,47 @@ class EmailService {
 
     // Listen to log events
     this.logParser.on('log', this.handleLogEntry.bind(this));
+  }
+
+  public getVersion(): string {
+    return this.version;
+  }
+
+  public getCreatedAt(): Date {
+    return this.createdAt;
+  }
+
+  public getStatus(): string {
+    return this.status;
+  }
+
+  public getBlockReason(): string | null {
+    return this.blockReason;
+  }
+
+  public blockMailer(blockType: 'blocked_temporary' | 'blocked_permanently', reason: string): void {
+    this.status = blockType;
+    this.blockReason = reason;
+    logger.warn(`Mailer bloqueado com status: ${blockType}. Razão: ${reason}`);
+  }
+
+  public unblockMailer(): void {
+    this.status = 'health';
+    this.blockReason = null;
+    logger.info('Mailer desbloqueado.');
+  }
+
+  public async sendInitialTestEmail(): Promise<SendEmailResult> {
+    const testEmailParams: SendEmailParams = {
+      fromName: 'Mailer Test',
+      emailDomain: 'outlook.com',
+      to: 'no-reply@outlook.com',
+      subject: 'Email de Teste Inicial',
+      html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
+      uuid: uuidv4(),
+    };
+
+    return this.sendEmail(testEmailParams);
   }
 
   private async handleLogEntry(logEntry: LogEntry) {
@@ -75,26 +121,58 @@ class EmailService {
 
     logger.debug(`Is to recipient: ${isToRecipient} for recipient: ${recipient}`);
 
-    try {
-      const emailLog = await EmailLog.findOne({ mailId: sendData.uuid }).exec();
+    if (isToRecipient) {
+      try {
+        const emailLog = await EmailLog.findOne({ mailId: sendData.uuid }).exec();
 
-      if (emailLog) {
-        emailLog.success = success;
-        await emailLog.save();
-        logger.debug(`EmailLog 'success' atualizado para mailId=${sendData.uuid}`);
-      } else {
-        logger.warn(`EmailLog não encontrado para mailId=${sendData.uuid}`);
+        if (emailLog) {
+          emailLog.success = success;
+          await emailLog.save();
+          logger.debug(`EmailLog 'success' atualizado para mailId=${sendData.uuid}`);
+        } else {
+          logger.warn(`EmailLog não encontrado para mailId=${sendData.uuid}`);
+        }
+      } catch (err) {
+        logger.error(
+          `Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${(err as Error).message}`
+        );
       }
-    } catch (err) {
-      logger.error(
-        `Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${(err as Error).message}`
-      );
-    }
 
-    sendData.results.push({
-      recipient: recipient,
-      success: success
-    });
+      sendData.results.push({
+        recipient: recipient,
+        success: success
+      });
+    } else {
+      sendData.results.push({
+        recipient: recipient,
+        success,
+      });
+
+      try {
+        const emailLog = await EmailLog.findOne({ mailId: sendData.uuid }).exec();
+
+        if (emailLog) {
+          const recipientStatus = {
+            recipient: recipient,
+            success,
+            dsn: logEntry.dsn,
+            status: logEntry.status,
+          };
+          emailLog.detail = {
+            ...emailLog.detail,
+            [recipient]: recipientStatus,
+          };
+          await emailLog.save();
+          logger.debug(`EmailLog 'detail' atualizado para mailId=${sendData.uuid}`);
+        } else {
+          logger.warn(`EmailLog não encontrado para mailId=${sendData.uuid}`);
+        }
+      } catch (err) {
+        logger.error(
+          `Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${(err as Error).message}`
+        );
+      }
+    }
 
     const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
     const processedRecipients = sendData.results.length;
@@ -108,7 +186,7 @@ class EmailService {
     }
   }
 
-  async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
+  public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
     const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
     const from = `"${fromName}" <no-reply@${emailDomain}>`;
 

@@ -6,11 +6,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const EmailLog_1 = __importDefault(require("../models/EmailLog"));
 const logger_1 = __importDefault(require("../utils/logger"));
-const log_parser_1 = __importDefault(require("../log-parser")); // Importar LogEntry
+const log_parser_1 = __importDefault(require("../log-parser"));
+const uuid_1 = require("uuid");
 const config_1 = __importDefault(require("../config"));
 class EmailService {
     constructor() {
         this.pendingSends = new Map();
+        this.version = '1.0.0'; // Versão do serviço
+        this.createdAt = new Date(); // Data de criação do serviço
+        this.status = 'health'; // Status do serviço
+        this.blockReason = null; // Razão do bloqueio, se houver
         this.transporter = nodemailer_1.default.createTransport({
             host: config_1.default.smtp.host,
             port: config_1.default.smtp.port,
@@ -21,6 +26,39 @@ class EmailService {
         this.logParser.startMonitoring();
         // Listen to log events
         this.logParser.on('log', this.handleLogEntry.bind(this));
+    }
+    getVersion() {
+        return this.version;
+    }
+    getCreatedAt() {
+        return this.createdAt;
+    }
+    getStatus() {
+        return this.status;
+    }
+    getBlockReason() {
+        return this.blockReason;
+    }
+    blockMailer(blockType, reason) {
+        this.status = blockType;
+        this.blockReason = reason;
+        logger_1.default.warn(`Mailer bloqueado com status: ${blockType}. Razão: ${reason}`);
+    }
+    unblockMailer() {
+        this.status = 'health';
+        this.blockReason = null;
+        logger_1.default.info('Mailer desbloqueado.');
+    }
+    async sendInitialTestEmail() {
+        const testEmailParams = {
+            fromName: 'Mailer Test',
+            emailDomain: 'outlook.com',
+            to: 'no-reply@outlook.com',
+            subject: 'Email de Teste Inicial',
+            html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
+            uuid: (0, uuid_1.v4)(),
+        };
+        return this.sendEmail(testEmailParams);
     }
     async handleLogEntry(logEntry) {
         logger_1.default.debug(`Processing Log Entry: ${JSON.stringify(logEntry)}`);
