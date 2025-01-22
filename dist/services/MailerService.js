@@ -6,7 +6,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const logger_1 = __importDefault(require("../utils/logger"));
 const config_1 = __importDefault(require("../config"));
 const EmailService_1 = __importDefault(require("./EmailService"));
-const uuid_1 = require("uuid");
 class MailerService {
     constructor() {
         this.isBlocked = false;
@@ -70,7 +69,6 @@ class MailerService {
         }
     }
     async sendInitialTestEmail() {
-        const testUuid = (0, uuid_1.v4)();
         const testEmailParams = {
             fromName: 'Mailer Test',
             emailDomain: config_1.default.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
@@ -78,11 +76,10 @@ class MailerService {
             bcc: [],
             subject: 'Email de Teste Inicial',
             html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
-            uuid: testUuid,
         };
         try {
             const result = await EmailService_1.default.sendEmail(testEmailParams);
-            logger_1.default.info(`Email de teste enviado com mailId=${result.mailId}`, { result });
+            logger_1.default.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
             // Verificar se todos os destinatários receberam o email com sucesso
             const allSuccess = result.recipients.every((r) => r.success);
             if (allSuccess) {

@@ -4,11 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const nodemailer_1 = __importDefault(require("nodemailer"));
-const EmailLog_1 = __importDefault(require("../models/EmailLog"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const log_parser_1 = __importDefault(require("../log-parser"));
-const uuid_1 = require("uuid");
-const config_1 = __importDefault(require("../config"));
 class EmailService {
     constructor() {
         this.pendingSends = new Map();
@@ -17,17 +14,15 @@ class EmailService {
         this.status = 'health'; // Status do serviço
         this.blockReason = null; // Razão do bloqueio, se houver
         this.transporter = nodemailer_1.default.createTransport({
-            host: config_1.default.smtp.host,
-            port: config_1.default.smtp.port,
+            host: 'localhost', // Configura para usar o Postfix local
+            port: 25, // Porta do servidor SMTP local (geralmente é 25 no Postfix)
             secure: false,
-            tls: { rejectUnauthorized: false },
+            tls: { rejectUnauthorized: false }, // Permite conexões TLS não verificadas
         });
         this.logParser = new log_parser_1.default('/var/log/mail.log');
         this.logParser.startMonitoring();
-        // Escuta eventos de log
         this.logParser.on('log', this.handleLogEntry.bind(this));
     }
-    // Métodos adicionais para suportar as chamadas em outros arquivos
     getVersion() {
         return this.version;
     }
@@ -57,12 +52,11 @@ class EmailService {
             to: 'no-reply@outlook.com',
             subject: 'Email de Teste Inicial',
             html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
-            uuid: (0, uuid_1.v4)(),
         };
         return this.sendEmail(testEmailParams);
     }
     async handleLogEntry(logEntry) {
-        const sendData = this.pendingSends.get(logEntry.queueId); // Agora usa queueId para associar
+        const sendData = this.pendingSends.get(logEntry.queueId);
         if (!sendData) {
             return;
         }
@@ -76,32 +70,19 @@ class EmailService {
                 sendData.results[recipientIndex].error = `Status: ${logEntry.result}`;
             }
         }
-        // Atualiza o EmailLog
-        try {
-            const emailLog = await EmailLog_1.default.findOne({ mailId: sendData.uuid }).exec(); // Usa uuid aqui
-            if (emailLog) {
-                emailLog.success = sendData.results.every((r) => r.success);
-                await emailLog.save();
-            }
-        }
-        catch (err) {
-            logger_1.default.error(`Erro ao atualizar EmailLog para mailId=${sendData.uuid}: ${err.message}`);
-        }
         // Remove do pendingSends se todos os destinatários tiverem um resultado
         const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
         const processedRecipients = sendData.results.length;
         if (processedRecipients >= totalRecipients) {
-            this.pendingSends.delete(logEntry.queueId); // Remove usando o queueId
+            this.pendingSends.delete(logEntry.queueId);
         }
     }
     async sendEmail(params) {
-        const { fromName, emailDomain, to, bcc = [], subject, html, uuid } = params;
+        const { fromName, emailDomain, to, bcc = [], subject, html } = params;
         const from = `"${fromName}" <no-reply@${emailDomain}>`;
         const toRecipients = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
         const bccRecipients = bcc.map((r) => r.toLowerCase());
         const allRecipients = [...toRecipients, ...bccRecipients];
-        const messageId = `${uuid}@${emailDomain}`; // Usa o uuid para definir o messageId
-        const isTestEmail = fromName === 'Mailer Test' && subject === 'Email de Teste Inicial';
         try {
             const mailOptions = {
                 from,
@@ -109,25 +90,27 @@ class EmailService {
                 bcc,
                 subject,
                 html,
-                messageId: `<${messageId}>`,
             };
             // Envia o email
             const info = await this.transporter.sendMail(mailOptions);
-            // Registra o envio no pendingSends para atualização posterior
+            // Extrai o queueId da resposta do servidor
+            const queueId = info.response.match(/queued as\s([A-Z0-9]+)/)[1];
+            // Log de depuração
+            console.log(`Email enviado!`);
+            console.log(`queueId (messageId do servidor): ${queueId}`);
+            console.log(`info completo: `, info);
             const recipientsStatus = allRecipients.map((recipient) => ({
                 recipient,
                 success: true, // Assume sucesso inicialmente
             }));
-            // Armazena o uuid juntamente com o queueId para associar mais tarde
-            this.pendingSends.set(info.messageId || messageId, {
-                uuid,
+            // Armazena o queueId para monitoramento
+            this.pendingSends.set(queueId, {
                 toRecipients,
                 bccRecipients,
                 results: recipientsStatus,
             });
             return {
-                mailId: uuid,
-                queueId: info.messageId || '',
+                queueId,
                 recipients: recipientsStatus,
             };
         }
@@ -139,7 +122,6 @@ class EmailService {
                 error: error.message,
             }));
             return {
-                mailId: uuid,
                 queueId: '',
                 recipients: recipientsStatus,
             };
@@ -151,9 +133,14 @@ class EmailService {
                 reject(new Error(`Timeout exceeded for queueId ${queueId}`));
             }, 30000); // Timeout de 30 segundos
             this.logParser.once('log', (logEntry) => {
+                console.log(`Comparando queueId recebido: ${logEntry.queueId} com ${queueId}`);
                 if (logEntry.queueId === queueId) {
+                    console.log('Correspondência encontrada, resolvendo...');
                     clearTimeout(timeout);
                     resolve();
+                }
+                else {
+                    console.log(`QueueId não corresponde: ${logEntry.queueId} != ${queueId}`);
                 }
             });
         });

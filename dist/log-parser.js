@@ -60,17 +60,11 @@ class LogParser extends events_1.default {
         const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
         if (!match)
             return null;
-        const [, mailId, email, result] = match;
-        // Extração do queueId
-        const queueIdMatch = result.match(/<([^>]+)>/);
-        const queueId = queueIdMatch ? queueIdMatch[1] : ''; // Captura o queueId entre os sinais de menor e maior
-        const isBulk = email.includes(',');
-        const emails = isBulk ? email.split(',') : [email];
+        const [, queueId, email, result] = match;
         return {
             timestamp: new Date().toISOString(),
-            mailId,
-            queueId, // Inclui o queueId no objeto
-            email: emails[0].trim(),
+            queueId, // Usa apenas o queueId
+            email: email.trim(),
             result,
             success: result.startsWith('sent'),
         };

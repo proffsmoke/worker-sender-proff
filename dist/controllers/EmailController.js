@@ -6,34 +6,28 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const EmailService_1 = __importDefault(require("../services/EmailService"));
 const logger_1 = __importDefault(require("../utils/logger"));
 class EmailController {
-    // Envio normal permanece inalterado
     async sendNormal(req, res, next) {
-        const { fromName, emailDomain, to, subject, html, uuid } = req.body;
-        if (!fromName || !emailDomain || !to || !subject || !html || !uuid) {
+        const { fromName, emailDomain, to, subject, html } = req.body;
+        if (!fromName || !emailDomain || !to || !subject || !html) {
             res.status(400).json({
                 success: false,
-                message: 'Dados inválidos. "fromName", "emailDomain", "to", "subject", "html" e "uuid" são obrigatórios.',
+                message: 'Dados inválidos. "fromName", "emailDomain", "to", "subject" e "html" são obrigatórios.',
             });
             return;
         }
         try {
-            const processedHtml = html; // antiSpam(html);
             const result = await EmailService_1.default.sendEmail({
                 fromName,
                 emailDomain,
                 to,
                 bcc: [],
                 subject,
-                html: processedHtml,
-                uuid,
+                html,
             });
-            // Aguarda os logs de envio e retorna quando todos os destinatários tiverem sido processados
-            await EmailService_1.default.awaitEmailResults(result.queueId);
-            // Determina o sucesso geral baseado nos destinatários
-            const overallSuccess = result.recipients.every((r) => r.success);
+            // Retorna o queueId imediatamente
             res.json({
-                success: overallSuccess,
-                status: result,
+                success: true,
+                queueId: result.queueId,
             });
         }
         catch (error) {

@@ -1,7 +1,6 @@
 import logger from '../utils/logger';
 import config from '../config';
 import EmailService from './EmailService';
-import { v4 as uuidv4 } from 'uuid';
 
 class MailerService {
   private isBlocked: boolean = false;
@@ -77,7 +76,6 @@ class MailerService {
   }
 
   private async sendInitialTestEmail(): Promise<{ success: boolean }> {
-    const testUuid = uuidv4();
     const testEmailParams = {
       fromName: 'Mailer Test',
       emailDomain: config.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
@@ -85,12 +83,11 @@ class MailerService {
       bcc: [],
       subject: 'Email de Teste Inicial',
       html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
-      uuid: testUuid,
     };
 
     try {
       const result = await EmailService.sendEmail(testEmailParams);
-      logger.info(`Email de teste enviado com mailId=${result.mailId}`, { result });
+      logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
 
       // Verificar se todos os destinatários receberam o email com sucesso
       const allSuccess = result.recipients.every((r) => r.success);

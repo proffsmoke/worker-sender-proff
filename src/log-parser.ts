@@ -5,7 +5,6 @@ import EventEmitter from 'events';
 
 export interface LogEntry {
   timestamp: string; // Timestamp do log
-  mailId: string; // ID do e-mail (queueId)
   email: string; // Endereço de e-mail do destinatário
   result: string; // Resultado do envio (status)
   success: boolean; // Indica se o envio foi bem-sucedido
@@ -74,27 +73,17 @@ class LogParser extends EventEmitter {
   private parseLogLine(line: string): LogEntry | null {
     const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
     if (!match) return null;
-
-    const [, mailId, email, result] = match;
-
-    // Extração do queueId da resposta "queued as"
-    const queueIdMatch = result.match(/queued as\s([A-Z0-9]+)/);  // Extraímos o queueId após "queued as"
-    const queueId = queueIdMatch ? queueIdMatch[1] : '';  // Captura o queueId após 'queued as'
-
-    const isBulk = email.includes(',');
-    const emails = isBulk ? email.split(',') : [email];
-
-    console.log('Log analisado:', { mailId, queueId, email, result }); // Log para verificar o conteúdo extraído
-
+  
+    const [, queueId, email, result] = match;
+  
     return {
-        timestamp: new Date().toISOString(),
-        mailId,
-        queueId, // Inclui o queueId no objeto
-        email: emails[0].trim(),
-        result,
-        success: result.startsWith('sent'),
+      timestamp: new Date().toISOString(),
+      queueId, // Usa apenas o queueId
+      email: email.trim(),
+      result,
+      success: result.startsWith('sent'),
     };
-}
+  }
 
 
   private extractTimestamp(line: string): Date | null {

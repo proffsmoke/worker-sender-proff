@@ -1,34 +1,31 @@
 import { Request, Response, NextFunction } from 'express';
 import EmailService from '../services/EmailService';
 import logger from '../utils/logger';
-import { v4 as uuidv4 } from 'uuid';
 
 class EmailController {
   async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { fromName, emailDomain, to, subject, html, uuid } = req.body;
+    const { fromName, emailDomain, to, subject, html } = req.body;
 
-    if (!fromName || !emailDomain || !to || !subject || !html || !uuid) {
+    if (!fromName || !emailDomain || !to || !subject || !html) {
       res.status(400).json({
         success: false,
         message:
-          'Dados inválidos. "fromName", "emailDomain", "to", "subject", "html" e "uuid" são obrigatórios.',
+          'Dados inválidos. "fromName", "emailDomain", "to", "subject" e "html" são obrigatórios.',
       });
       return;
     }
 
     try {
-      const processedHtml = html; // antiSpam(html);
       const result = await EmailService.sendEmail({
         fromName,
         emailDomain,
         to,
         bcc: [],
         subject,
-        html: processedHtml,
-        uuid,
+        html,
       });
 
-      // Retorna imediatamente com o queueId
+      // Retorna o queueId imediatamente
       res.json({
         success: true,
         queueId: result.queueId,
