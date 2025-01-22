@@ -14,8 +14,6 @@ export interface LogEntry {
 class LogParser extends EventEmitter {
   private logFilePath: string;
   private tail: Tail | null = null;
-  private logBuffer: LogEntry[] = []; // Buffer temporário de logs para otimizar a captura
-  private maxBufferSize: number = 500; // Limite de logs no buffer
 
   constructor(logFilePath: string = '/var/log/mail.log') {
     super();
@@ -47,13 +45,17 @@ class LogParser extends EventEmitter {
     try {
       const logEntry = this.parseLogLine(line);
       if (logEntry) {
-        this.emit('log', logEntry); // Emite o log assim que é analisado
+        // Log analisado em tempo real
+        logger.info('Log analisado:', logEntry);
+
+        // Emite o log para que o MailerService possa processá-lo imediatamente
+        this.emit('log', logEntry);
       }
     } catch (error) {
       logger.error(`Error processing log line: ${line}`, error);
     }
   }
-  
+
   private parseLogLine(line: string): LogEntry | null {
     const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
     if (!match) return null;
@@ -67,13 +69,6 @@ class LogParser extends EventEmitter {
       result,
       success: result.startsWith('sent'),
     };
-  }
-
-  private emitLogs() {
-    // Emite os logs acumulados e limpa o buffer
-    logger.info(`Emitindo logs: ${this.logBuffer.length} entradas`);
-    this.emit('logs', this.logBuffer);
-    this.logBuffer = []; // Limpa o buffer
   }
 }
 

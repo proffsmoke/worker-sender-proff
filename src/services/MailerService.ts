@@ -11,12 +11,11 @@ class MailerService {
   private version: string = '4.3.26-1';
   private retryIntervalId: NodeJS.Timeout | null = null;
   private logParser: LogParser;
-  private pendingLogs: Map<string, LogEntry[]> = new Map(); // Fila de logs aguardando confirmação de envio
 
   constructor() {
     this.createdAt = new Date();
     this.logParser = new LogParser('/var/log/mail.log');
-    this.logParser.on('log', this.handleLogEntry.bind(this)); // Observer que escuta logs novos
+    this.logParser.on('log', this.handleLogEntry.bind(this)); // Agora escutando os logs em tempo real
 
     this.initialize();
   }
@@ -114,7 +113,7 @@ class MailerService {
 
   private handleLogEntry(logEntry: LogEntry) {
     // Log detalhado do que está sendo processado
-    logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
+    logger.info(`Log recebido para queueId=${logEntry.queueId}: ${logEntry.result}`);
 
     // Empurrando o log imediatamente para o processamento
     this.processLogEntry(logEntry);
@@ -124,7 +123,6 @@ class MailerService {
     logger.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
     if (logEntry.success) {
       logger.info(`Email com queueId=${logEntry.queueId} foi enviado com sucesso.`);
-      this.pendingLogs.delete(logEntry.queueId); // Remove log processado
       this.unblockMailer();
     } else {
       logger.warn(`Falha no envio para queueId=${logEntry.queueId}: ${logEntry.result}`);
@@ -140,10 +138,7 @@ class MailerService {
       }, 60000); // Alterado para 60 segundos
   
       // Verifica se o log já foi processado
-      if (this.pendingLogs.has(queueId)) {
-        clearTimeout(timeout);
-        resolve(this.pendingLogs.get(queueId)?.[0] || null);
-      }
+      resolve(null);
     });
   }
 
