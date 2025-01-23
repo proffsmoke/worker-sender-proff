@@ -109,7 +109,6 @@ class MailerService {
     }
   }
 
-  // Método para agendar a tentativa de reenvio a cada 4 minutos
   private scheduleRetry(): void {
     if (this.isBlockedPermanently) {
       logger.info('Mailer está permanentemente bloqueado. Não tentará reenviar emails.');
@@ -124,7 +123,6 @@ class MailerService {
     this.retryIntervalId = setInterval(() => this.retrySendEmail(), 4 * 60 * 1000); // Reenvio a cada 4 minutos
   }
 
-  // Método para cancelar o intervalo de tentativa de reenvio
   private clearRetryInterval(): void {
     if (this.retryIntervalId) {
       clearInterval(this.retryIntervalId);
@@ -133,7 +131,6 @@ class MailerService {
     }
   }
 
-  // Método para reenviar o e-mail de teste
   private async retrySendEmail(): Promise<void> {
     if (!this.isBlocked || this.isBlockedPermanently) {
       this.clearRetryInterval();
@@ -150,7 +147,6 @@ class MailerService {
     }
   }
 
-  // Função para enviar o e-mail de teste inicial
   public async sendInitialTestEmail(): Promise<{ success: boolean; recipients: RecipientStatus[] }> {
     const testEmailParams = {
       fromName: 'Mailer Test',
@@ -225,20 +221,14 @@ class MailerService {
     }
   }
   
-  
-  
-  
-
   private async sendConsolidatedResults(results: any[], queueId: string): Promise<void> {
     logger.info(`Aguardando todos os logs para a consolidação de resultados para queueId=${queueId}`);
   
-    // Você pode aqui implementar uma lógica que espera até que todos os logs para este `queueId` sejam processados
-    // Espera todos os resultados para um determinado `uuid` (exemplo: esperar até todos os logs estarem processados)
-  
-    // Vamos agora consolidar os resultados
+    // Consolidar os resultados
     const successCount = results.filter(r => r.success).length;
     const failureCount = results.filter(r => !r.success).length;
   
+    // Exibe no log os resultados consolidados
     logger.info(`Todos os recipients processados para queueId=${queueId}. Resultados consolidados:`);
     logger.info(`Resumo para queueId=${queueId}:`);
     logger.info(`Emails enviados com sucesso: ${successCount}`);
@@ -253,7 +243,6 @@ class MailerService {
     // Exemplo:
     // await this.sendResultsToApi(queueId, results);
   }
-  
 
   private async waitForLogEntry(queueId: string): Promise<LogEntry | null> {
     return new Promise((resolve, reject) => {
