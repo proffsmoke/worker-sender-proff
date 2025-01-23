@@ -71,11 +71,11 @@ class EmailService {
   public async sendEmail(params: SendEmailParams, uuid?: string): Promise<SendEmailResult> {
     const { fromName = 'No-Reply', emailDomain, to, bcc = [], subject, html, clientName } = params;
     const from = `"${fromName}" <${process.env.MAILER_NOREPLY_EMAIL || 'no-reply@outlook.com'}>`;
-  
+    
     const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
     const bccRecipients: string[] = bcc.map((r) => r.toLowerCase());
     const allRecipients: string[] = [...toRecipients, ...bccRecipients];
-  
+    
     try {
       const mailOptions = {
         from,
@@ -97,10 +97,16 @@ class EmailService {
   
       logger.info(`queueId extraído com sucesso: ${queueId}`);
       logger.info(`Email enviado!`);
-      logger.info(`queueId (messageId do servidor): queued as ${queueId}`);
-      logger.info(`Info completo: `, info);
   
-      // Associe o mailId ao queueId
+      // Associar imediatamente o queueId ao UUID
+      if (uuid) {
+        this.stateManager.addQueueIdToUuid(uuid, queueId);  // Associando uuid ao queueId
+        logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
+      }
+  
+      // Exibindo que está aguardando os logs
+      logger.info(`Aguardando log para o queueId=${queueId}. Este email está pendente de logs.`);
+    
       const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
         recipient,
         success: true,
@@ -114,10 +120,6 @@ class EmailService {
         bccRecipients,
         results: recipientsStatus,
       });
-  
-      if (uuid) {
-        this.stateManager.addQueueIdToUuid(uuid, queueId);  // Associando uuid ao queueId
-      }
   
       return {
         queueId,
@@ -140,6 +142,7 @@ class EmailService {
       };
     }
   }
+  
   
 
   public async sendEmailList(
