@@ -45,10 +45,8 @@ class LogParser extends EventEmitter {
     try {
       const logEntry = this.parseLogLine(line);
       if (logEntry) {
-        // Adiciona um log para verificar o conteúdo completo do log
-        logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
-
-        // Emite o log para que o MailerService possa processá-lo
+        // Registra apenas o queueId e o status do log, sem dados sensíveis
+        logger.info(`Log analisado - queueId: ${logEntry.queueId}, Status: ${logEntry.result}`);
         this.emit('log', logEntry);
       }
     } catch (error) {

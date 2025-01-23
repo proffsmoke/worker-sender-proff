@@ -91,7 +91,7 @@ class MailerService {
   
     try {
       const result = await EmailService.sendEmail(testEmailParams);
-      logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
+      logger.info(`Email de teste enviado com queueId=${result.queueId}`);
   
       // Aguarda o resultado do LogParser para verificar o sucesso
       const logEntry = await this.waitForLogEntry(result.queueId);
@@ -100,7 +100,7 @@ class MailerService {
         this.unblockMailer();
         return { success: true };
       } else {
-        logger.warn(`Falha ao enviar email de teste. LogEntry: ${JSON.stringify(logEntry)}`);
+        logger.warn(`Falha ao enviar email de teste. LogEntry: ${logEntry ? 'Falha no log' : 'Sem log'}`);
         this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
         return { success: false };
       }
@@ -112,15 +112,13 @@ class MailerService {
   }
 
   private handleLogEntry(logEntry: LogEntry) {
-    // Log detalhado do que está sendo processado
-    logger.info(`Log recebido para queueId=${logEntry.queueId}: ${JSON.stringify(logEntry)}`);
-
-    // Empurrando o log imediatamente para o processamento
+    // Apenas registra a ação sem os dados sensíveis
+    logger.info(`Log recebido para queueId=${logEntry.queueId}. Status: ${logEntry.result}`);
     this.processLogEntry(logEntry);
   }
 
   private processLogEntry(logEntry: LogEntry) {
-    logger.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
+    logger.info(`Processando log para queueId=${logEntry.queueId}. Status do resultado: ${logEntry.result}`);
     if (logEntry.success) {
       logger.info(`Email com queueId=${logEntry.queueId} foi enviado com sucesso.`);
       this.unblockMailer();
