@@ -21,6 +21,7 @@ class MailerService {
   private logParser: LogParser;
   private emailService: EmailService;
   private blockManagerService: BlockManagerService;
+  private isMonitoringStarted: boolean = false; // Flag para controlar a inicialização
 
   private constructor() {
     this.createdAt = new Date();
@@ -28,9 +29,12 @@ class MailerService {
     this.emailService = EmailService.getInstance(this.logParser);
     this.blockManagerService = BlockManagerService.getInstance(this);
 
-    // Inicia o monitoramento de logs
-    this.logParser.on('log', this.handleLogEntry.bind(this));
-    this.logParser.startMonitoring();
+    // Inicia o monitoramento de logs apenas uma vez
+    if (!this.isMonitoringStarted) {
+      this.logParser.on('log', this.handleLogEntry.bind(this));
+      this.logParser.startMonitoring();
+      this.isMonitoringStarted = true; // Marca como inicializado
+    }
 
     this.initialize();
   }
@@ -168,14 +172,14 @@ class MailerService {
         logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 60 segundos.`);
         resolve(null);
       }, 60000);
-  
+
       this.logParser.once('log', (logEntry: LogEntry) => {
         if (logEntry.queueId === queueId) {
           clearTimeout(timeout);
           resolve(logEntry);
         }
       });
-  
+
       const logEntry = this.getLogEntryByQueueId(queueId);
       if (logEntry) {
         clearTimeout(timeout);
@@ -183,7 +187,6 @@ class MailerService {
       }
     });
   }
-  
 
   private getLogEntryByQueueId(queueId: string): LogEntry | null {
     logger.info(`Verificando log para queueId=${queueId}`);

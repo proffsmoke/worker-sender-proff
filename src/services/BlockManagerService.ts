@@ -1,5 +1,6 @@
 import logger from '../utils/logger';
 import MailerService from './MailerService'; // Importando o MailerService
+import { LogEntry } from '../log-parser';
 
 class BlockManagerService {
   private static instance: BlockManagerService; // Singleton instance
@@ -17,26 +18,25 @@ class BlockManagerService {
     return BlockManagerService.instance;
   }
 
-  public handleLogEntry(logEntry: any) {
+  public handleLogEntry(logEntry: LogEntry) {
     if (this.mailerService.getStatus() !== 'health') {
       logger.info(`Ignorando logEntry porque o Mailer está bloqueado. Status atual: ${this.mailerService.getStatus()}`);
       return;
     }
 
-    const { message } = logEntry;
-
-    if (typeof message !== 'string') {
-      logger.warn('Log entry missing or invalid message:', logEntry);
+    // Verifica se o logEntry é válido
+    if (!logEntry || typeof logEntry !== 'object' || !logEntry.queueId || !logEntry.result) {
+      logger.warn('Log entry missing or invalid:', logEntry);
       return;
     }
 
     // Verifica se o erro é permanente ou temporário e aplica o bloqueio correspondente
-    if (this.isPermanentError(message)) {
-      this.applyBlock('permanent', message);
-      logger.info(`Bloqueio permanente aplicado devido à linha de log: "${message}"`);
-    } else if (this.isTemporaryError(message)) {
-      this.applyBlock('temporary', message);
-      logger.info(`Bloqueio temporário aplicado devido à linha de log: "${message}"`);
+    if (this.isPermanentError(logEntry.result)) {
+      this.applyBlock('permanent', logEntry.result);
+      logger.info(`Bloqueio permanente aplicado devido à linha de log: "${logEntry.result}"`);
+    } else if (this.isTemporaryError(logEntry.result)) {
+      this.applyBlock('temporary', logEntry.result);
+      logger.info(`Bloqueio temporário aplicado devido à linha de log: "${logEntry.result}"`);
     }
   }
 

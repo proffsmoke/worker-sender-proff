@@ -48,17 +48,17 @@ class LogParser extends EventEmitter {
       const logEntry = this.parseLogLine(line);
       if (logEntry) {
         const logHash = `${logEntry.timestamp}-${logEntry.queueId}-${logEntry.result}`;
+
+        // Verifica se o log já está no cache
         if (this.recentLogs.some(log => `${log.timestamp}-${log.queueId}-${log.result}` === logHash)) {
-          // Ignorar logs duplicados
           logger.info(`Log duplicado ignorado: ${logHash}`);
           return;
         }
 
-        // Adicionar ao cache
+        // Adiciona ao cache
         this.recentLogs.push(logEntry);
         if (this.recentLogs.length > this.MAX_CACHE_SIZE) {
-          // Remover o log mais antigo do cache
-          this.recentLogs.shift();
+          this.recentLogs.shift(); // Remove o log mais antigo
         }
 
         logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
@@ -88,4 +88,5 @@ class LogParser extends EventEmitter {
     return this.recentLogs;
   }
 }
+
 export default LogParser;
