@@ -211,6 +211,9 @@ class MailerService {
       const processedRecipients = sendData.results.filter((r: RecipientStatus) => r.success !== undefined).length;
   
       if (processedRecipients === totalRecipients) {
+        // Exibir os dados consolidados antes de removê-los de pendingSends
+        logger.info(`Dados consolidados para queueId=${logEntry.queueId}:`, sendData.results);
+  
         // Consumir o array de resultados antes de removê-lo de pendingSends
         const resultsToConsolidate = [...sendData.results];
         this.stateManager.deletePendingSend(logEntry.queueId); // Remover o queueId da lista de pendentes
