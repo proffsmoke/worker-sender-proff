@@ -235,6 +235,7 @@ class MailerService {
         const successCount = consolidatedMessage.filter(r => r.success).length;
         const failureCount = consolidatedMessage.filter(r => !r.success).length;
   
+        // Log somente após todos os destinatários terem sido processados
         logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Resultados consolidados:`, consolidatedMessage);
         logger.info(`Resumo para queueId=${logEntry.queueId}:`);
         logger.info(`Emails enviados com sucesso: ${successCount}`);
@@ -252,6 +253,7 @@ class MailerService {
   }
   
   
+  
 
   private async sendConsolidatedResults(results: any[]): Promise<void> {
     // Exemplo de como você pode enviar esses resultados a uma API ou outro serviço
@@ -264,14 +266,15 @@ class MailerService {
         logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 60 segundos.`);
         resolve(null);
       }, 60000);
-
+  
       this.logParser.once('log', (logEntry: LogEntry) => {
         if (logEntry.queueId === queueId) {
           clearTimeout(timeout);
           resolve(logEntry);
         }
       });
-
+  
+      // Verificar se o log já existe para o queueId
       const logEntry = this.getLogEntryByQueueId(queueId);
       if (logEntry) {
         clearTimeout(timeout);
@@ -279,6 +282,7 @@ class MailerService {
       }
     });
   }
+  
 
   private getLogEntryByQueueId(queueId: string): LogEntry | null {
     logger.info(`Verificando log para queueId=${queueId}`);
