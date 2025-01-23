@@ -10,6 +10,7 @@ export interface LogEntry {
   email: string;
   result: string;
   success: boolean;
+  mailId?: string; 
 }
 
 class LogParser extends EventEmitter {

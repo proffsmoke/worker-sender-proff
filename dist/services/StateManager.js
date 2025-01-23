@@ -5,6 +5,7 @@ class StateManager {
         this.pendingSends = new Map();
         this.uuidQueueMap = new Map();
         this.uuidResultsMap = new Map();
+        this.logGroups = new Map(); // Agrupa logs por messageId e queueId
     }
     addPendingSend(queueId, data) {
         this.pendingSends.set(queueId, data);
@@ -35,6 +36,15 @@ class StateManager {
     }
     deleteResultsByUuid(uuid) {
         this.uuidResultsMap.delete(uuid);
+    }
+    addLogToGroup(queueId, logEntry) {
+        const mailId = logEntry.mailId || 'unknown';
+        const logGroup = this.logGroups.get(mailId) || { queueId, mailId, logs: [] };
+        logGroup.logs.push(logEntry);
+        this.logGroups.set(mailId, logGroup);
+    }
+    getLogGroup(mailId) {
+        return this.logGroups.get(mailId);
     }
 }
 exports.default = StateManager;

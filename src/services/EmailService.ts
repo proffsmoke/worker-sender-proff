@@ -193,7 +193,10 @@ class EmailService {
       logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
       this.stateManager.deletePendingSend(logEntry.queueId);
 
-      // Itera sobre todos os UUIDs no uuidQueueMap
+      // Agrupa logs por messageId e queueId
+      this.stateManager.addLogToGroup(logEntry.queueId, logEntry);
+
+      // Verifica se há UUIDs associados ao queueId
       for (const [currentUuid, queueIds] of this.stateManager.getUuidQueueMap().entries()) {
         if (queueIds.includes(logEntry.queueId)) {
           const allProcessed = queueIds.every((qId: string) => !this.stateManager.getPendingSend(qId));
