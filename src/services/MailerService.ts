@@ -116,6 +116,7 @@ class MailerService {
       bcc: [],
       subject: 'Email de Teste Inicial',
       html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
+      clientName: 'Prasminha camarada'
     };
 
     try {

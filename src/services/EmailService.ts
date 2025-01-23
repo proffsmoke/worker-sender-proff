@@ -1,7 +1,6 @@
 import nodemailer from 'nodemailer';
 import logger from '../utils/logger';
 import LogParser, { LogEntry } from '../log-parser';
-import config from '../config';
 
 interface SendEmailParams {
   fromName: string;
@@ -10,6 +9,19 @@ interface SendEmailParams {
   bcc?: string[];
   subject: string;
   html: string;
+  clientName: string; // Novo campo
+}
+
+interface SendEmailListParams {
+  emailDomain: string;
+  fromName?: string; // Opcional, pode ser sobrescrito por cada email na lista
+  emailList: Array<{
+    email: string;
+    name: string;
+    subject: string;
+    template: string;
+    clientName: string; // Novo campo
+  }>;
 }
 
 interface RecipientStatus {
@@ -24,7 +36,7 @@ interface SendEmailResult {
 }
 
 class EmailService {
-  private static instance: EmailService; // Instância única do EmailService
+  private static instance: EmailService;
   private transporter: nodemailer.Transporter;
   private logParser: LogParser;
   private pendingSends: Map<
@@ -36,21 +48,19 @@ class EmailService {
     }
   > = new Map();
 
-  // Construtor privado para evitar criação direta de instâncias
   private constructor(logParser: LogParser) {
     this.transporter = nodemailer.createTransport({
-      host: 'localhost',  // Configura para usar o Postfix local
-      port: 25,           // Porta do servidor SMTP local (geralmente é 25 no Postfix)
+      host: 'localhost',
+      port: 25,
       secure: false,
-      tls: { rejectUnauthorized: false },  // Permite conexões TLS não verificadas
+      tls: { rejectUnauthorized: false },
     });
 
     this.logParser = logParser;
-    this.logParser.on('log', this.handleLogEntry.bind(this));  // Escutando os logs em tempo real
-    this.logParser.startMonitoring();  // Inicia o monitoramento do log
+    this.logParser.on('log', this.handleLogEntry.bind(this));
+    this.logParser.startMonitoring();
   }
 
-  // Método estático para obter a instância única do EmailService
   public static getInstance(logParser?: LogParser): EmailService {
     if (!EmailService.instance && logParser) {
       EmailService.instance = new EmailService(logParser);
@@ -61,7 +71,7 @@ class EmailService {
   }
 
   public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
-    const { fromName, emailDomain, to, bcc = [], subject, html } = params;
+    const { fromName, emailDomain, to, bcc = [], subject, html, clientName } = params;
     const from = `"${fromName}" <no-reply@${emailDomain}>`;
 
     const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
@@ -73,7 +83,7 @@ class EmailService {
         from,
         to: Array.isArray(to) ? to.join(', ') : to,
         bcc,
-        subject,
+        subject: `${subject} - ${clientName}`, // Inclui clientName no assunto
         html,
       };
 
@@ -81,19 +91,14 @@ class EmailService {
 
       const queueId = info.response.match(/queued as\s([A-Z0-9]+)/);
       if (queueId && queueId[1]) {
-        const extractedQueueId = queueId[1];
-        logger.info(`queueId extraído com sucesso: ${extractedQueueId}`);
+        logger.info(`queueId extraído com sucesso: ${queueId[1]}`);
       } else {
         throw new Error('Não foi possível extrair o queueId da resposta');
       }
 
-      logger.info(`Email enviado!`);
-      logger.info(`queueId (messageId do servidor): ${queueId}`);
-      logger.info(`Info completo: `, info);
-
       const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
         recipient,
-        success: true, // Assume sucesso inicialmente
+        success: true,
       }));
 
       this.pendingSends.set(queueId[1], {
@@ -120,6 +125,26 @@ class EmailService {
         recipients: recipientsStatus,
       };
     }
+  }
+
+  public async sendEmailList(params: SendEmailListParams): Promise<SendEmailResult[]> {
+    const { emailDomain, fromName, emailList } = params;
+
+    const results = await Promise.all(
+      emailList.map(async (emailItem) => {
+        return this.sendEmail({
+          fromName: emailItem.name || fromName || 'No-Reply', // Usa o nome do item, o fromName global ou um padrão
+          emailDomain,
+          to: emailItem.email,
+          bcc: [],
+          subject: emailItem.subject,
+          html: emailItem.template,
+          clientName: emailItem.clientName, // Inclui clientName
+        });
+      })
+    );
+
+    return results;
   }
 
   private handleLogEntry(logEntry: LogEntry) {
