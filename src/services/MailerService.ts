@@ -114,11 +114,11 @@ class MailerService {
   private handleLogEntry(logEntry: LogEntry) {
     // Log detalhado do que está sendo processado
     logger.info(`Log recebido para queueId=${logEntry.queueId}: ${JSON.stringify(logEntry)}`);
-
+  
     // Empurrando o log imediatamente para o processamento
     this.processLogEntry(logEntry);
   }
-
+  
   private processLogEntry(logEntry: LogEntry) {
     logger.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
     if (logEntry.success) {
@@ -129,14 +129,14 @@ class MailerService {
       this.blockMailer('blocked_temporary', `Falha no envio para queueId=${logEntry.queueId}`);
     }
   }
-
+  
   private waitForLogEntry(queueId: string): Promise<LogEntry | null> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 60 segundos.`);
         resolve(null); // Timeout após 60 segundos
       }, 60000); // Alterado para 60 segundos
-
+  
       // Verificando se já existe o log para o queueId
       const logEntry = this.getLogEntryByQueueId(queueId);
       if (logEntry) {
@@ -144,6 +144,7 @@ class MailerService {
         resolve(logEntry);
       } else {
         this.logParser.once('log', (logEntry: LogEntry) => {
+          logger.info(`Aguardando log para queueId=${queueId}...`);
           if (logEntry.queueId === queueId) {
             clearTimeout(timeout);
             resolve(logEntry);
@@ -152,6 +153,7 @@ class MailerService {
       }
     });
   }
+  
 
   private getLogEntryByQueueId(queueId: string): LogEntry | null {
     // Verifica se o log já foi emitido para o queueId
