@@ -45,44 +45,31 @@ class LogParser extends EventEmitter {
     try {
       const logEntry = this.parseLogLine(line);
       if (logEntry) {
-        // Log analisado em tempo real
-        logger.info(`Log analisado com sucesso: ${JSON.stringify(logEntry)}`);
-  
+        // Adiciona um log para verificar o conteúdo completo do log
+        logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
+
         // Emite o log para que o MailerService possa processá-lo
         this.emit('log', logEntry);
-      } else {
-        logger.warn(`Formato de linha de log não reconhecido: ${line}`);
       }
     } catch (error) {
-      logger.error(`Erro ao processar linha de log: ${line}`, error);
+      logger.error(`Erro ao processar a linha do log: ${line}`, error);
     }
   }
-  
+
   private parseLogLine(line: string): LogEntry | null {
-    // Regex aprimorado para capturar diferentes variações de log
-    const match = line.match(/postfix\/([a-z]+)\[[0-9]+\]: ([A-Z0-9]+): (.*?)(status=[^,]+)?/);
-    if (!match) {
-      logger.warn(`Formato de linha de log não reconhecido: ${line}`);
-      return null;
-    }
-  
-    const [, process, queueId, details, status] = match;
-    let result = details;
-  
-    // Caso tenha a parte do status, tenta capturar e usar como resultado
-    if (status) {
-      result = status.split('=')[1].trim();
-    }
-  
+    const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
+    if (!match) return null;
+
+    const [, queueId, email, result] = match;
+
     return {
       timestamp: new Date().toISOString(),
       queueId,
-      email: result.includes('to=') ? result.split('to=')[1].split(',')[0].trim() : '',
+      email: email.trim(),
       result,
-      success: result.startsWith('sent') || result.includes('queued'), // Considera 'sent' ou 'queued' como sucesso
+      success: result.startsWith('sent'), // Sucesso se o resultado começar com "sent"
     };
   }
-  
 }
 
 export default LogParser;
