@@ -197,7 +197,7 @@ class MailerService {
     this.processLogEntry(logEntry);
   }
 
-  private processLogEntry(logEntry: LogEntry) {
+  private async processLogEntry(logEntry: LogEntry) {
     if (this.getStatus() !== 'health') {
       logger.info(`Ignorando logEntry porque o Mailer está bloqueado. Status atual: ${this.getStatus()}`);
       return;
@@ -219,46 +219,41 @@ class MailerService {
         const resultsToConsolidate = [...sendData.results];
         this.stateManager.deletePendingSend(logEntry.queueId); // Remover o queueId da lista de pendentes
   
-        // Gerar a mensagem consolidada
-        const consolidatedMessage = resultsToConsolidate.map((r: RecipientStatus) => {
-          return {
-            email: r.recipient,
-            name: r.name || 'Desconhecido',
-            result: r.success
-              ? 'Sucesso'
-              : `Falha: ${r.error || 'Erro desconhecido'}`,
-            success: r.success
-          };
-        });
-  
-        // Gerando log final com sucesso ou falha para todos os destinatários
-        const successCount = consolidatedMessage.filter(r => r.success).length;
-        const failureCount = consolidatedMessage.filter(r => !r.success).length;
-  
-        // Log somente após todos os destinatários terem sido processados
-        logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Resultados consolidados:`, consolidatedMessage);
-        logger.info(`Resumo para queueId=${logEntry.queueId}:`);
-        logger.info(`Emails enviados com sucesso: ${successCount}`);
-        logger.info(`Emails com falha: ${failureCount}`);
-  
-        // Se houver falhas, logar os detalhes
-        if (failureCount > 0) {
-          logger.error(`Falha no envio de ${failureCount} emails para queueId=${logEntry.queueId}. Detalhes:`, consolidatedMessage.filter(r => !r.success));
-        }
-  
-        // Enviar os resultados consolidados, se necessário (para uma API, email, etc.)
-        this.sendConsolidatedResults(consolidatedMessage);
+        // Gerar a mensagem consolidada de forma assíncrona, esperando todos os logs
+        await this.sendConsolidatedResults(resultsToConsolidate, logEntry.queueId);
       }
     }
   }
   
   
   
+  
 
-  private async sendConsolidatedResults(results: any[]): Promise<void> {
-    // Exemplo de como você pode enviar esses resultados a uma API ou outro serviço
-    logger.info('Enviando resultados consolidados para API ou outro serviço:', results);
+  private async sendConsolidatedResults(results: any[], queueId: string): Promise<void> {
+    logger.info(`Aguardando todos os logs para a consolidação de resultados para queueId=${queueId}`);
+  
+    // Você pode aqui implementar uma lógica que espera até que todos os logs para este `queueId` sejam processados
+    // Espera todos os resultados para um determinado `uuid` (exemplo: esperar até todos os logs estarem processados)
+  
+    // Vamos agora consolidar os resultados
+    const successCount = results.filter(r => r.success).length;
+    const failureCount = results.filter(r => !r.success).length;
+  
+    logger.info(`Todos os recipients processados para queueId=${queueId}. Resultados consolidados:`);
+    logger.info(`Resumo para queueId=${queueId}:`);
+    logger.info(`Emails enviados com sucesso: ${successCount}`);
+    logger.info(`Emails com falha: ${failureCount}`);
+  
+    // Se houver falhas, logar os detalhes
+    if (failureCount > 0) {
+      logger.error(`Falha no envio de ${failureCount} emails para queueId=${queueId}. Detalhes:`, results.filter(r => !r.success));
+    }
+  
+    // Aqui você pode enviar os resultados consolidados para uma API, email ou qualquer outro serviço
+    // Exemplo:
+    // await this.sendResultsToApi(queueId, results);
   }
+  
 
   private async waitForLogEntry(queueId: string): Promise<LogEntry | null> {
     return new Promise((resolve, reject) => {
@@ -282,6 +277,7 @@ class MailerService {
       }
     });
   }
+  
   
 
   private getLogEntryByQueueId(queueId: string): LogEntry | null {
