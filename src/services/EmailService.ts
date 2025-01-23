@@ -1,8 +1,6 @@
 import nodemailer from 'nodemailer';
-import EmailLog from '../models/EmailLog';
 import logger from '../utils/logger';
 import LogParser, { LogEntry } from '../log-parser';
-import { v4 as uuidv4 } from 'uuid';
 import config from '../config';
 
 interface SendEmailParams {
@@ -37,11 +35,6 @@ class EmailService {
     }
   > = new Map();
 
-  private version: string = '1.0.0'; // Versão do serviço
-  private createdAt: Date = new Date(); // Data de criação do serviço
-  private status: string = 'health'; // Status do serviço
-  private blockReason: string | null = null; // Razão do bloqueio, se houver
-
   constructor(logParser: LogParser) {
     this.transporter = nodemailer.createTransport({
       host: 'localhost',  // Configura para usar o Postfix local
@@ -51,50 +44,77 @@ class EmailService {
     });
 
     this.logParser = logParser;
-    this.logParser.on('log', this.handleLogEntry.bind(this));
+    this.logParser.on('log', this.handleLogEntry.bind(this));  // Escuta os logs em tempo real
+    this.logParser.startMonitoring();  // Inicia o monitoramento do log
   }
 
-  public getVersion(): string {
-    return this.version;
+  public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
+    const { fromName, emailDomain, to, bcc = [], subject, html } = params;
+    const from = `"${fromName}" <no-reply@${emailDomain}>`;
+
+    const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
+    const bccRecipients: string[] = bcc.map((r) => r.toLowerCase());
+    const allRecipients: string[] = [...toRecipients, ...bccRecipients];
+
+    try {
+      const mailOptions = {
+        from,
+        to: Array.isArray(to) ? to.join(', ') : to,
+        bcc,
+        subject,
+        html,
+      };
+
+      // Envia o email
+      const info = await this.transporter.sendMail(mailOptions);
+
+      // Extrai o queueId da resposta do servidor
+      const queueId = info.response.match(/queued as\s([A-Z0-9]+)/);
+      if (queueId && queueId[1]) {
+        const extractedQueueId = queueId[1];
+        logger.info(`queueId extraído com sucesso: ${extractedQueueId}`);
+      } else {
+        throw new Error('Não foi possível extrair o queueId da resposta');
+      }
+
+      // Log de depuração
+      logger.info(`Email enviado!`);
+      logger.info(`queueId (messageId do servidor): ${queueId}`);
+      logger.info(`Info completo: `, info);
+
+      const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
+        recipient,
+        success: true, // Assume sucesso inicialmente
+      }));
+
+      // Armazena o queueId para monitoramento
+      this.pendingSends.set(queueId[1], {
+        toRecipients,
+        bccRecipients,
+        results: recipientsStatus,
+      });
+
+      return {
+        queueId: queueId[1],
+        recipients: recipientsStatus,
+      };
+    } catch (error: any) {
+      logger.error(`Erro ao enviar email: ${error.message}`, error);
+
+      const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
+        recipient,
+        success: false,
+        error: error.message,
+      }));
+
+      return {
+        queueId: '',
+        recipients: recipientsStatus,
+      };
+    }
   }
 
-  public getCreatedAt(): Date {
-    return this.createdAt;
-  }
-
-  public getStatus(): string {
-    return this.status;
-  }
-
-  public getBlockReason(): string | null {
-    return this.blockReason;
-  }
-
-  public blockMailer(blockType: 'blocked_temporary' | 'blocked_permanently', reason: string): void {
-    this.status = blockType;
-    this.blockReason = reason;
-    logger.warn(`Mailer bloqueado com status: ${blockType}. Razão: ${reason}`);
-  }
-
-  public unblockMailer(): void {
-    this.status = 'health';
-    this.blockReason = null;
-    logger.info('Mailer desbloqueado.');
-  }
-
-  public async sendInitialTestEmail(): Promise<SendEmailResult> {
-    const testEmailParams: SendEmailParams = {
-      fromName: 'Mailer Test',
-      emailDomain: 'outlook.com',
-      to: 'no-reply@outlook.com',
-      subject: 'Email de Teste Inicial',
-      html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
-    };
-
-    return this.sendEmail(testEmailParams);
-  }
-
-  private async handleLogEntry(logEntry: LogEntry) {
+  private handleLogEntry(logEntry: LogEntry) {
     const sendData = this.pendingSends.get(logEntry.queueId);
     if (!sendData) {
       return;
@@ -121,87 +141,32 @@ class EmailService {
     }
   }
 
-  public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
-    const { fromName, emailDomain, to, bcc = [], subject, html } = params;
-    const from = `"${fromName}" <no-reply@${emailDomain}>`;
+  public async sendInitialTestEmail(): Promise<SendEmailResult> {
+    const testEmailParams: SendEmailParams = {
+      fromName: 'Mailer Test',
+      emailDomain: 'outlook.com',
+      to: 'no-reply@outlook.com',
+      subject: 'Email de Teste Inicial',
+      html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
+    };
 
-    const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
-    const bccRecipients: string[] = bcc.map((r) => r.toLowerCase());
-    const allRecipients: string[] = [...toRecipients, ...bccRecipients];
-
-    try {
-      const mailOptions = {
-        from,
-        to: Array.isArray(to) ? to.join(', ') : to,
-        bcc,
-        subject,
-        html,
-      };
-
-      // Envia o email
-      const info = await this.transporter.sendMail(mailOptions);
-
-      // Extrai o queueId da resposta do servidor
-      const queueId = info.response.match(/queued as\s([A-Z0-9]+)/);
-      if (queueId && queueId[1]) {
-        // Extrai o queueId corretamente
-        const extractedQueueId = queueId[1];
-        logger.info(`queueId extraído com sucesso: ${extractedQueueId}`);
-      } else {
-        throw new Error('Não foi possível extrair o queueId da resposta');
-      }
-
-      // Log de depuração
-      console.log(`Email enviado!`);
-      console.log(`queueId (messageId do servidor): ${queueId}`);
-      console.log(`info completo: `, info);
-
-      const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
-        recipient,
-        success: true, // Assume sucesso inicialmente
-      }));
-
-      // Armazena o queueId para monitoramento
-      this.pendingSends.set(queueId[1], {
-        toRecipients,
-        bccRecipients,
-        results: recipientsStatus,
-      });
-
-      return {
-        queueId: queueId[1],
-        recipients: recipientsStatus,
-      };
-    } catch (error: any) {
-      logger.error(`Error sending email: ${error.message}`, error);
-
-      const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
-        recipient,
-        success: false,
-        error: error.message,
-      }));
-
-      return {
-        queueId: '',
-        recipients: recipientsStatus,
-      };
-    }
+    return this.sendEmail(testEmailParams);
   }
 
   public async awaitEmailResults(queueId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error(`Timeout exceeded for queueId ${queueId}`));
+        reject(new Error(`Timeout excedido para queueId ${queueId}`));
       }, 60000); // Timeout de 60 segundos
 
       this.logParser.once('log', (logEntry) => {
-        console.log(`Comparando queueId recebido: ${logEntry.queueId} com ${queueId}`);
+        logger.info(`Comparando queueId recebido: ${logEntry.queueId} com ${queueId}`);
         if (logEntry.queueId === queueId) {
-          console.log('Correspondência encontrada, resolvendo...');
+          logger.info('Correspondência encontrada, resolvendo...');
           clearTimeout(timeout);
           resolve();
         } else {
-          console.log(`QueueId não corresponde: ${logEntry.queueId} != ${queueId}`);
+          logger.info(`QueueId não corresponde: ${logEntry.queueId} != ${queueId}`);
         }
       });
     });
