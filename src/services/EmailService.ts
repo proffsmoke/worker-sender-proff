@@ -54,7 +54,6 @@ class EmailService {
 
     this.logParser = logParser;
     this.logParser.on('log', this.handleLogEntry.bind(this));
-    this.logParser.startMonitoring();
   }
 
   public static getInstance(logParser?: LogParser): EmailService {
