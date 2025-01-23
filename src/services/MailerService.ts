@@ -111,11 +111,11 @@ class MailerService {
 
   public async sendInitialTestEmail(): Promise<{ success: boolean; recipients: RecipientStatus[] }> {
     // Verifica se o Mailer está bloqueado antes de enviar o email
-    if (this.getStatus() !== 'health') {
-      logger.warn(`Mailer está bloqueado, não será possível enviar o email de teste.`);
-      return { success: false, recipients: [] };
+    if (this.getStatus() === 'health') {
+      logger.info("Mailer está em estado 'health', não enviando email de teste.");
+      return { success: true, recipients: [] };  // Retorna sem enviar o email
     }
-  
+    
     const testEmailParams = {
       fromName: 'Mailer Test',
       emailDomain: config.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
@@ -125,17 +125,15 @@ class MailerService {
       html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
       clientName: 'Prasminha camarada'
     };
-  
+    
     try {
       const result = await this.emailService.sendEmail(testEmailParams);
   
       logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
   
-      // Criando um UUID para a solicitação de teste
       const requestUuid = uuidv4(); // Gerando um UUID único
       logger.info(`UUID gerado para o teste: ${requestUuid}`);
   
-      // Associe o queueId com o UUID usando o stateManager
       this.stateManager.addQueueIdToUuid(requestUuid, result.queueId);
       logger.info(`Associado queueId ${result.queueId} ao UUID ${requestUuid}`);
   
@@ -157,6 +155,7 @@ class MailerService {
       return { success: false, recipients: [] };
     }
   }
+  
   
   
 

@@ -55,9 +55,16 @@ class StateManager {
     if (!this.uuidQueueMap.has(uuid)) {
       this.uuidQueueMap.set(uuid, []);
     }
-    this.uuidQueueMap.get(uuid)?.push(queueId);
-    logger.info(`Associado queueId ${queueId} ao uuid ${uuid}`); // Log para depuração
+    
+    // Verifica se o queueId já está associado ao uuid
+    if (!this.uuidQueueMap.get(uuid)?.includes(queueId)) {
+      this.uuidQueueMap.get(uuid)?.push(queueId);
+      logger.info(`Associado queueId ${queueId} ao uuid ${uuid}`);
+    } else {
+      logger.info(`queueId ${queueId} já está associado ao uuid ${uuid}`);
+    }
   }
+  
 
   public getQueueIdsByUuid(uuid: string): string[] | undefined {
     return this.uuidQueueMap.get(uuid);
