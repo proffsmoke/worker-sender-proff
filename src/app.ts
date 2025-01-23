@@ -6,9 +6,6 @@ import config from './config';
 import MailerService from './services/MailerService';
 
 
-import BlockManagerService from './services/BlockManagerService'; 
-import CleanlogsService from './services/CleanlogsService'; 
-
 const app = express();
 
 // Conectar ao MongoDB
@@ -24,7 +21,7 @@ mongoose
 
 // logParser.startMonitoring();
 MailerService;
-BlockManagerService;
+
 // CleanlogsService;
 
 app.use(express.json());

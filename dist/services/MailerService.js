@@ -5,27 +5,28 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const logger_1 = __importDefault(require("../utils/logger"));
 const config_1 = __importDefault(require("../config"));
-const EmailService_1 = __importDefault(require("./EmailService")); // Importando corretamente o EmailService
+const EmailService_1 = __importDefault(require("./EmailService"));
 const log_parser_1 = __importDefault(require("../log-parser"));
+const BlockManagerService_1 = __importDefault(require("./BlockManagerService"));
 class MailerService {
     constructor() {
         this.isBlocked = false;
         this.isBlockedPermanently = false;
         this.blockReason = null;
-        this.version = '4.3.26-1'; // Versão do MailerService
+        this.version = '4.3.26-1';
         this.retryIntervalId = null;
         this.createdAt = new Date();
         this.logParser = new log_parser_1.default('/var/log/mail.log');
         this.logParser.on('log', this.handleLogEntry.bind(this));
         this.logParser.startMonitoring();
-        // Inicializa o EmailService com o LogParser
         this.emailService = EmailService_1.default.getInstance(this.logParser);
+        this.blockManagerService = new BlockManagerService_1.default(this.logParser, this);
         this.initialize();
     }
     initialize() {
         this.sendInitialTestEmail();
     }
-    // Métodos adicionais para checar o status e outros
+    // Métodos públicos para checar o status e outros
     getVersion() {
         return this.version;
     }
@@ -74,6 +75,7 @@ class MailerService {
             this.clearRetryInterval();
         }
     }
+    // Método público para enviar email de teste
     async sendInitialTestEmail() {
         const testEmailParams = {
             fromName: 'Mailer Test',
@@ -84,27 +86,25 @@ class MailerService {
             html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
         };
         try {
-            // Usa a instância de EmailService criada no construtor
             const result = await this.emailService.sendEmail(testEmailParams);
             logger_1.default.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
-            // Aguarda o resultado do LogParser para verificar o sucesso
             const logEntry = await this.waitForLogEntry(result.queueId);
             logger_1.default.info(`Esperando log para queueId=${result.queueId}. Conteúdo aguardado: ${JSON.stringify(logEntry)}`);
             if (logEntry && logEntry.success) {
                 logger_1.default.info(`Email de teste enviado com sucesso. Status do Mailer: health`);
                 this.unblockMailer();
-                return { success: true };
+                return { success: true, recipients: result.recipients };
             }
             else {
                 logger_1.default.warn(`Falha ao enviar email de teste. LogEntry: ${JSON.stringify(logEntry)}`);
                 this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
-                return { success: false };
+                return { success: false, recipients: result.recipients };
             }
         }
         catch (error) {
             logger_1.default.error(`Erro ao enviar email de teste: ${error.message}`, error);
             this.blockMailer('blocked_temporary', `Erro ao enviar email de teste: ${error.message}`);
-            return { success: false };
+            return { success: false, recipients: [] };
         }
     }
     handleLogEntry(logEntry) {
@@ -112,6 +112,10 @@ class MailerService {
         this.processLogEntry(logEntry);
     }
     processLogEntry(logEntry) {
+        if (this.getStatus() !== 'health') {
+            logger_1.default.info(`Ignorando logEntry porque o Mailer está bloqueado. Status atual: ${this.getStatus()}`);
+            return;
+        }
         logger_1.default.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
         if (logEntry.success) {
             logger_1.default.info(`Email com queueId=${logEntry.queueId} foi enviado com sucesso.`);
@@ -126,9 +130,8 @@ class MailerService {
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 logger_1.default.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 60 segundos.`);
-                resolve(null); // Timeout após 60 segundos
-            }, 60000); // Alterado para 60 segundos
-            // Verificando se já existe o log para o queueId
+                resolve(null);
+            }, 60000);
             const logEntry = this.getLogEntryByQueueId(queueId);
             if (logEntry) {
                 clearTimeout(timeout);
@@ -150,7 +153,7 @@ class MailerService {
     }
     getLogEntryByQueueId(queueId) {
         logger_1.default.info(`Verificando log para queueId=${queueId}`);
-        return null; // Retorne o log se já foi encontrado
+        return null;
     }
     scheduleRetry() {
         if (this.isBlockedPermanently) {
@@ -161,7 +164,7 @@ class MailerService {
             return;
         }
         logger_1.default.info('Agendando tentativa de reenviar email de teste a cada 4 minutos.');
-        this.retryIntervalId = setInterval(() => this.retrySendEmail(), 4 * 60 * 1000); // 4 minutos
+        this.retryIntervalId = setInterval(() => this.retrySendEmail(), 4 * 60 * 1000);
     }
     async retrySendEmail() {
         if (!this.isBlocked || this.isBlockedPermanently) {
@@ -183,7 +186,6 @@ class MailerService {
             logger_1.default.info('Intervalo de tentativa de reenvio cancelado.');
         }
     }
-    // Método para expor a instância do EmailService
     getEmailService() {
         return this.emailService;
     }
