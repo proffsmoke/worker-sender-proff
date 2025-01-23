@@ -132,11 +132,11 @@ class MailerService {
         logger_1.default.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
         if (logEntry.success) {
             logger_1.default.info(`Email com queueId=${logEntry.queueId} foi enviado com sucesso.`);
-            this.unblockMailer();
+            // this.unblockMailer();
         }
         else {
             logger_1.default.warn(`Falha no envio para queueId=${logEntry.queueId}: ${logEntry.result}`);
-            this.blockMailer('blocked_temporary', `Falha no envio para queueId=${logEntry.queueId}`);
+            // this.blockMailer('blocked_temporary', `Falha no envio para queueId=${logEntry.queueId}`);
         }
         // Notifica o BlockManagerService sobre o log
         this.blockManagerService.handleLogEntry(logEntry);

@@ -2,6 +2,9 @@ import nodemailer from 'nodemailer';
 import logger from '../utils/logger';
 import LogParser, { LogEntry } from '../log-parser';
 import axios from 'axios';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 interface SendEmailParams {
   fromName?: string;
@@ -61,9 +64,7 @@ class EmailService {
     this.logParser.on('log', this.handleLogEntry.bind(this));
 
     // Envia um email de teste ao iniciar
-    this.sendTestEmailIfBlocked().catch((error) => {
-      logger.error(`Erro ao enviar email de teste: ${error.message}`);
-    });
+    this.sendTestEmailIfBlocked();
   }
 
   public static getInstance(logParser?: LogParser): EmailService {
@@ -75,9 +76,52 @@ class EmailService {
     return EmailService.instance;
   }
 
+  public async sendEmailList(params: { emailDomain: string; emailList: EmailListItem[] }, uuid?: string): Promise<SendEmailResult[]> {
+    const { emailDomain, emailList } = params;
+  
+    const results = await Promise.all(
+      emailList.map(async (emailItem) => {
+        return this.sendEmail(
+          {
+            fromName: emailItem.name || 'No-Reply',
+            emailDomain,
+            to: emailItem.email,
+            bcc: [],
+            subject: emailItem.subject,
+            html: emailItem.template,
+            clientName: emailItem.clientName,
+          },
+          uuid
+        );
+      })
+    );
+  
+    return results;
+  }
+  
+  private async sendTestEmailIfBlocked() {
+    const now = Date.now();
+    if (now - this.lastTestEmailTime >= 240000) { // 4 minutos em milissegundos
+      try {
+        const testEmail = process.env.MAILER_NOREPLY_EMAIL || 'no-reply@outlook.com';
+        await this.sendEmail({
+          emailDomain: 'test.com',
+          to: testEmail,
+          subject: 'Test Email',
+          html: '<p>This is a test email.</p>',
+        });
+
+        logger.info('Email de teste enviado com sucesso.');
+        this.lastTestEmailTime = now;
+      } catch (error) {
+        logger.error('Erro ao enviar email de teste:', error);
+      }
+    }
+  }
+
   public async sendEmail(params: SendEmailParams, uuid?: string): Promise<SendEmailResult> {
     const { fromName = 'No-Reply', emailDomain, to, bcc = [], subject, html, clientName } = params;
-    const from = `"${fromName}" <no-reply@${emailDomain}>`;
+    const from = `"${fromName}" <${process.env.MAILER_NOREPLY_EMAIL || 'no-reply@outlook.com'}>`;
 
     const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
     const bccRecipients: string[] = bcc.map((r) => r.toLowerCase());
@@ -100,22 +144,9 @@ class EmailService {
       }
 
       const queueId = queueIdMatch[1];
-
-      // Verifica se o queueId já existe no pendingSends
-      if (this.pendingSends.has(queueId)) {
-        logger.warn(`queueId duplicado detectado: ${queueId}`);
-        return {
-          queueId,
-          recipients: allRecipients.map((recipient) => ({
-            recipient,
-            success: false,
-            error: 'queueId duplicado',
-          })),
-        };
-      }
-
+      logger.info(`queueId extraído com sucesso: ${queueId}`);
       logger.info(`Email enviado!`);
-      logger.info(`queueId (messageId do servidor): ${queueId}`);
+      logger.info(`queueId (messageId do servidor): queued as ${queueId}`);
       logger.info(`Info completo: `, info);
 
       const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
@@ -156,111 +187,6 @@ class EmailService {
     }
   }
 
-  public async sendEmailList(params: { emailDomain: string; emailList: EmailListItem[] }, uuid?: string): Promise<SendEmailResult[]> {
-    const { emailDomain, emailList } = params;
-
-    const results = await Promise.all(
-      emailList.map(async (emailItem) => {
-        return this.sendEmail({
-          fromName: emailItem.name || 'No-Reply',
-          emailDomain,
-          to: emailItem.email,
-          bcc: [],
-          subject: emailItem.subject,
-          html: emailItem.template,
-          clientName: emailItem.clientName,
-        }, uuid);
-      })
-    );
-
-    return results;
-  }
-
-  private async checkAndSendResults(uuid: string, mockMode: boolean = true) {
-    const queueIds = this.uuidQueueMap.get(uuid) || [];
-    const allResults: RecipientStatus[] = [];
-
-    // Verificar se há queueIds associados ao UUID
-    if (queueIds.length === 0) {
-      logger.warn(`Nenhum queueId encontrado para o UUID: ${uuid}`);
-      return null;
-    }
-
-    // Coletar todos os resultados associados ao UUID
-    for (const queueId of queueIds) {
-      const sendData = this.pendingSends.get(queueId);
-      if (sendData) {
-        logger.info(`Resultados encontrados para queueId=${queueId}:`, JSON.stringify(sendData.results, null, 2));
-        allResults.push(...sendData.results);
-      } else {
-        logger.debug(`Nenhum resultado encontrado para queueId=${queueId}`);
-      }
-    }
-
-    // Verificar se há resultados para enviar
-    if (allResults.length > 0) {
-      logger.info(`Dados de resultado para o UUID ${uuid}:`, JSON.stringify(allResults, null, 2));
-
-      if (mockMode) {
-        // Modo mock: exibir os resultados e simular uma resposta
-        logger.info('Modo mock ativado. Resultados não serão enviados para a API.');
-
-        // Simular uma resposta bem-sucedida
-        const mockResponse = {
-          status: 200,
-          data: {
-            success: true,
-            message: 'Resultados recebidos com sucesso (modo mock).',
-            results: allResults,
-          },
-        };
-
-        logger.info('Resposta simulada:', JSON.stringify(mockResponse.data, null, 2));
-
-        // Limpar os dados associados ao UUID após o mock
-        this.uuidQueueMap.delete(uuid);
-        for (const queueId of queueIds) {
-          this.pendingSends.delete(queueId);
-        }
-
-        return mockResponse;
-      } else {
-        // Modo real: enviar os resultados para a API
-        try {
-          const response = await axios.post(
-            'https://result.com/api/results',
-            {
-              uuid,
-              results: allResults,
-            },
-            {
-              timeout: 10000, // Timeout de 10 segundos
-            }
-          );
-
-          logger.info(`Resultados enviados para o UUID: ${uuid}`, response.data);
-
-          // Limpar os dados associados ao UUID após o envio bem-sucedido
-          this.uuidQueueMap.delete(uuid);
-          for (const queueId of queueIds) {
-            this.pendingSends.delete(queueId);
-          }
-
-          return response;
-        } catch (error: any) {
-          logger.error(`Erro ao enviar resultados para o UUID: ${uuid}`, error.message);
-          if (error.response) {
-            logger.error(`Resposta da API: ${JSON.stringify(error.response.data)}`);
-          }
-          throw error; // Lançar o erro para ser tratado externamente, se necessário
-        }
-      }
-    } else {
-      logger.warn(`Nenhum resultado encontrado para o UUID: ${uuid}`);
-      return null; // Retornar null se não houver resultados
-    }
-  }
-
   private handleLogEntry(logEntry: LogEntry) {
     const sendData = this.pendingSends.get(logEntry.queueId);
     if (!sendData) {
@@ -282,9 +208,6 @@ class EmailService {
       logger.warn(`Recipient ${recipient} não encontrado nos resultados para queueId=${logEntry.queueId}`);
     }
 
-    // Log imediato dos resultados atualizados
-    logger.info(`Resultados atuais para queueId=${logEntry.queueId}:`, JSON.stringify(sendData.results, null, 2));
-
     const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
     const processedRecipients = sendData.results.length;
 
@@ -292,10 +215,8 @@ class EmailService {
       logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
       this.pendingSends.delete(logEntry.queueId);
 
-      // Verifica se todos os emails de um UUID foram processados
       for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
         if (queueIds.includes(logEntry.queueId)) {
-          // Verifica se todos os queueIds associados ao UUID foram processados
           const allProcessed = queueIds.every((qId) => !this.pendingSends.has(qId));
           if (allProcessed) {
             logger.info(`Chamando checkAndSendResults para UUID=${uuid}`);
@@ -306,27 +227,54 @@ class EmailService {
     }
   }
 
-  private async sendTestEmailIfBlocked() {
-    const now = Date.now();
-    if (now - this.lastTestEmailTime >= 240000) { // 4 minutos em milissegundos
-      try {
-        const testEmailResult = await this.sendEmail({
-          emailDomain: 'seu-dominio.com',
-          to: 'test@example.com',
-          subject: 'Teste de bloqueio temporário',
-          html: '<p>Este é um email de teste.</p>',
-        });
+  private async checkAndSendResults(uuid: string, mockMode: boolean = true) {
+    const queueIds = this.uuidQueueMap.get(uuid) || [];
+    const allResults: RecipientStatus[] = [];
 
-        if (testEmailResult.recipients.some((r) => !r.success)) {
-          logger.warn('Servidor de email pode estar temporariamente bloqueado.');
-        } else {
-          logger.info('Email de teste enviado com sucesso.');
-        }
-
-        this.lastTestEmailTime = now;
-      } catch (error: any) {
-        logger.error(`Erro ao enviar email de teste: ${error.message}`);
+    for (const queueId of queueIds) {
+      const sendData = this.pendingSends.get(queueId);
+      if (sendData) {
+        allResults.push(...sendData.results);
       }
+    }
+
+    if (allResults.length > 0) {
+      logger.info(`Dados de resultado para o UUID ${uuid}:`, JSON.stringify(allResults, null, 2));
+
+      if (mockMode) {
+        logger.info('Modo mock ativado. Resultados não serão enviados para a API.');
+        const mockResponse = {
+          status: 200,
+          data: {
+            success: true,
+            message: 'Resultados recebidos com sucesso (modo mock).',
+            results: allResults,
+          },
+        };
+        logger.info('Resposta simulada:', JSON.stringify(mockResponse.data, null, 2));
+        return mockResponse;
+      } else {
+        try {
+          const response = await axios.post(
+            'https://result.com/api/results',
+            {
+              uuid,
+              results: allResults,
+            },
+            {
+              timeout: 10000,
+            }
+          );
+          logger.info(`Resultados enviados para o UUID: ${uuid}`, response.data);
+          return response;
+        } catch (error: any) {
+          logger.error(`Erro ao enviar resultados para o UUID: ${uuid}`, error.message);
+          throw error;
+        }
+      }
+    } else {
+      logger.warn(`Nenhum resultado encontrado para o UUID: ${uuid}`);
+      return null;
     }
   }
 }
