@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const logger_1 = __importDefault(require("../utils/logger"));
 class EmailService {
+    // Construtor privado para evitar criação direta de instâncias
     constructor(logParser) {
         this.pendingSends = new Map();
         this.transporter = nodemailer_1.default.createTransport({
@@ -17,6 +18,16 @@ class EmailService {
         this.logParser = logParser;
         this.logParser.on('log', this.handleLogEntry.bind(this)); // Escutando os logs em tempo real
         this.logParser.startMonitoring(); // Inicia o monitoramento do log
+    }
+    // Método estático para obter a instância única do EmailService
+    static getInstance(logParser) {
+        if (!EmailService.instance && logParser) {
+            EmailService.instance = new EmailService(logParser);
+        }
+        else if (!EmailService.instance) {
+            throw new Error('EmailService não foi inicializado. Forneça um LogParser.');
+        }
+        return EmailService.instance;
     }
     async sendEmail(params) {
         const { fromName, emailDomain, to, bcc = [], subject, html } = params;

@@ -24,6 +24,7 @@ interface SendEmailResult {
 }
 
 class EmailService {
+  private static instance: EmailService; // Instância única do EmailService
   private transporter: nodemailer.Transporter;
   private logParser: LogParser;
   private pendingSends: Map<
@@ -35,7 +36,8 @@ class EmailService {
     }
   > = new Map();
 
-  constructor(logParser: LogParser) {
+  // Construtor privado para evitar criação direta de instâncias
+  private constructor(logParser: LogParser) {
     this.transporter = nodemailer.createTransport({
       host: 'localhost',  // Configura para usar o Postfix local
       port: 25,           // Porta do servidor SMTP local (geralmente é 25 no Postfix)
@@ -46,6 +48,16 @@ class EmailService {
     this.logParser = logParser;
     this.logParser.on('log', this.handleLogEntry.bind(this));  // Escutando os logs em tempo real
     this.logParser.startMonitoring();  // Inicia o monitoramento do log
+  }
+
+  // Método estático para obter a instância única do EmailService
+  public static getInstance(logParser?: LogParser): EmailService {
+    if (!EmailService.instance && logParser) {
+      EmailService.instance = new EmailService(logParser);
+    } else if (!EmailService.instance) {
+      throw new Error('EmailService não foi inicializado. Forneça um LogParser.');
+    }
+    return EmailService.instance;
   }
 
   public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {

@@ -5,7 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const logger_1 = __importDefault(require("../utils/logger"));
 const config_1 = __importDefault(require("../config"));
-const EmailService_1 = __importDefault(require("./EmailService")); // Agora importando corretamente o EmailService
+const EmailService_1 = __importDefault(require("./EmailService")); // Importando corretamente o EmailService
 const log_parser_1 = __importDefault(require("../log-parser"));
 class MailerService {
     constructor() {
@@ -15,9 +15,11 @@ class MailerService {
         this.version = '4.3.26-1'; // Versão do MailerService
         this.retryIntervalId = null;
         this.createdAt = new Date();
-        this.logParser = new log_parser_1.default('/var/log/mail.log'); // LogParser compartilhado
-        this.logParser.on('log', this.handleLogEntry.bind(this)); // Escutando os logs em tempo real
-        this.logParser.startMonitoring(); // Iniciando o monitoramento
+        this.logParser = new log_parser_1.default('/var/log/mail.log');
+        this.logParser.on('log', this.handleLogEntry.bind(this));
+        this.logParser.startMonitoring();
+        // Inicializa o EmailService com o LogParser
+        this.emailService = EmailService_1.default.getInstance(this.logParser);
         this.initialize();
     }
     initialize() {
@@ -82,8 +84,8 @@ class MailerService {
             html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
         };
         try {
-            const emailService = new EmailService_1.default(this.logParser); // Instanciando EmailService com o mesmo LogParser
-            const result = await emailService.sendEmail(testEmailParams); // Usando o método sendEmail
+            // Usa a instância de EmailService criada no construtor
+            const result = await this.emailService.sendEmail(testEmailParams);
             logger_1.default.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
             // Aguarda o resultado do LogParser para verificar o sucesso
             const logEntry = await this.waitForLogEntry(result.queueId);
@@ -180,6 +182,10 @@ class MailerService {
             this.retryIntervalId = null;
             logger_1.default.info('Intervalo de tentativa de reenvio cancelado.');
         }
+    }
+    // Método para expor a instância do EmailService
+    getEmailService() {
+        return this.emailService;
     }
 }
 exports.default = new MailerService();

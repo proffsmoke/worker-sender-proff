@@ -1,6 +1,6 @@
 import logger from '../utils/logger';
 import config from '../config';
-import EmailService from './EmailService';  // Agora importando corretamente o EmailService
+import EmailService from './EmailService';  // Importando corretamente o EmailService
 import LogParser, { LogEntry } from '../log-parser';
 
 class MailerService {
@@ -11,12 +11,16 @@ class MailerService {
   private version: string = '4.3.26-1';  // Versão do MailerService
   private retryIntervalId: NodeJS.Timeout | null = null;
   private logParser: LogParser;
+  private emailService: EmailService; // Adicione esta linha
 
   constructor() {
     this.createdAt = new Date();
-    this.logParser = new LogParser('/var/log/mail.log');  // LogParser compartilhado
-    this.logParser.on('log', this.handleLogEntry.bind(this)); // Escutando os logs em tempo real
-    this.logParser.startMonitoring();  // Iniciando o monitoramento
+    this.logParser = new LogParser('/var/log/mail.log');
+    this.logParser.on('log', this.handleLogEntry.bind(this));
+    this.logParser.startMonitoring();
+
+    // Inicializa o EmailService com o LogParser
+    this.emailService = EmailService.getInstance(this.logParser);
 
     this.initialize();
   }
@@ -92,8 +96,8 @@ class MailerService {
     };
 
     try {
-      const emailService = new EmailService(this.logParser); // Instanciando EmailService com o mesmo LogParser
-      const result = await emailService.sendEmail(testEmailParams);  // Usando o método sendEmail
+      // Usa a instância de EmailService criada no construtor
+      const result = await this.emailService.sendEmail(testEmailParams);
 
       logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
 
@@ -200,6 +204,11 @@ class MailerService {
       this.retryIntervalId = null;
       logger.info('Intervalo de tentativa de reenvio cancelado.');
     }
+  }
+
+  // Método para expor a instância do EmailService
+  public getEmailService(): EmailService {
+    return this.emailService;
   }
 }
 
