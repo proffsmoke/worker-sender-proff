@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import EmailService from '../services/EmailService'; // Importe o EmailService
+import EmailService from '../services/EmailService';
 import logger from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -49,6 +49,8 @@ class EmailController {
           success: true,
           uuid: requestUuid,
           queueId: result.queueId,
+          mailId: result.mailId,
+          recipients: result.recipients,
         });
       }
     } catch (error) {
