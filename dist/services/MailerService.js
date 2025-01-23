@@ -136,24 +136,22 @@ class MailerService {
         // Notifica o BlockManagerService sobre o log
         this.blockManagerService.handleLogEntry(logEntry);
     }
-    waitForLogEntry(queueId) {
+    async waitForLogEntry(queueId) {
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 logger_1.default.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 60 segundos.`);
                 resolve(null);
             }, 60000);
+            this.logParser.once('log', (logEntry) => {
+                if (logEntry.queueId === queueId) {
+                    clearTimeout(timeout);
+                    resolve(logEntry);
+                }
+            });
             const logEntry = this.getLogEntryByQueueId(queueId);
             if (logEntry) {
                 clearTimeout(timeout);
                 resolve(logEntry);
-            }
-            else {
-                this.logParser.once('log', (logEntry) => {
-                    if (logEntry.queueId === queueId) {
-                        clearTimeout(timeout);
-                        resolve(logEntry);
-                    }
-                });
             }
         });
     }

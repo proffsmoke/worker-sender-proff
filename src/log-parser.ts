@@ -14,6 +14,8 @@ export interface LogEntry {
 class LogParser extends EventEmitter {
   private logFilePath: string;
   private tail: Tail | null = null;
+  private recentLogs: Set<string> = new Set(); // Cache para evitar duplicados
+  private MAX_CACHE_SIZE = 100; // Limite do cache
 
   constructor(logFilePath: string = '/var/log/mail.log') {
     super();
@@ -45,10 +47,21 @@ class LogParser extends EventEmitter {
     try {
       const logEntry = this.parseLogLine(line);
       if (logEntry) {
-        // Adiciona um log para verificar o conteúdo completo do log
-        logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
+        const logHash = `${logEntry.timestamp}-${logEntry.queueId}-${logEntry.result}`;
+        if (this.recentLogs.has(logHash)) {
+          // Ignorar logs duplicados
+          logger.info(`Log duplicado ignorado: ${logHash}`);
+          return;
+        }
 
-        // Emite o log para que o MailerService possa processá-lo
+        // Adicionar ao cache
+        this.recentLogs.add(logHash);
+        if (this.recentLogs.size > this.MAX_CACHE_SIZE) {
+          // Remover o log mais antigo do cache
+          this.recentLogs.delete([...this.recentLogs][0]);
+        }
+
+        logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
         this.emit('log', logEntry);
       }
     } catch (error) {
@@ -71,5 +84,4 @@ class LogParser extends EventEmitter {
     };
   }
 }
-
 export default LogParser;

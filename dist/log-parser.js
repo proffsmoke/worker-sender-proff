@@ -11,6 +11,8 @@ class LogParser extends events_1.default {
     constructor(logFilePath = '/var/log/mail.log') {
         super();
         this.tail = null;
+        this.recentLogs = new Set(); // Cache para evitar duplicados
+        this.MAX_CACHE_SIZE = 100; // Limite do cache
         this.logFilePath = logFilePath;
         if (!fs_1.default.existsSync(this.logFilePath)) {
             logger_1.default.error(`Log file not found at path: ${this.logFilePath}`);
@@ -33,9 +35,19 @@ class LogParser extends events_1.default {
         try {
             const logEntry = this.parseLogLine(line);
             if (logEntry) {
-                // Adiciona um log para verificar o conteúdo completo do log
+                const logHash = `${logEntry.timestamp}-${logEntry.queueId}-${logEntry.result}`;
+                if (this.recentLogs.has(logHash)) {
+                    // Ignorar logs duplicados
+                    logger_1.default.info(`Log duplicado ignorado: ${logHash}`);
+                    return;
+                }
+                // Adicionar ao cache
+                this.recentLogs.add(logHash);
+                if (this.recentLogs.size > this.MAX_CACHE_SIZE) {
+                    // Remover o log mais antigo do cache
+                    this.recentLogs.delete([...this.recentLogs][0]);
+                }
                 logger_1.default.info(`Log analisado: ${JSON.stringify(logEntry)}`);
-                // Emite o log para que o MailerService possa processá-lo
                 this.emit('log', logEntry);
             }
         }
