@@ -7,13 +7,10 @@ const nodemailer_1 = __importDefault(require("nodemailer"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const axios_1 = __importDefault(require("axios"));
 const dotenv_1 = __importDefault(require("dotenv"));
+const StateManager_1 = __importDefault(require("./StateManager"));
 dotenv_1.default.config();
 class EmailService {
     constructor(logParser) {
-        this.pendingSends = new Map();
-        this.uuidQueueMap = new Map(); // Mapeia UUIDs para queueIds
-        this.uuidResultsMap = new Map(); // Mapeia UUIDs para resultados
-        this.lastTestEmailTime = 0; // Timestamp do último email de teste enviado
         this.transporter = nodemailer_1.default.createTransport({
             host: 'localhost',
             port: 25,
@@ -21,9 +18,8 @@ class EmailService {
             tls: { rejectUnauthorized: false },
         });
         this.logParser = logParser;
+        this.stateManager = new StateManager_1.default();
         this.logParser.on('log', this.handleLogEntry.bind(this));
-        // Envia um email de teste ao iniciar
-        this.sendTestEmailIfBlocked();
     }
     static getInstance(logParser) {
         if (!EmailService.instance && logParser) {
@@ -33,40 +29,6 @@ class EmailService {
             throw new Error('EmailService não foi inicializado. Forneça um LogParser.');
         }
         return EmailService.instance;
-    }
-    async sendEmailList(params, uuid) {
-        const { emailDomain, emailList } = params;
-        const results = await Promise.all(emailList.map(async (emailItem) => {
-            return this.sendEmail({
-                fromName: emailItem.name || 'No-Reply',
-                emailDomain,
-                to: emailItem.email,
-                bcc: [],
-                subject: emailItem.subject,
-                html: emailItem.template,
-                clientName: emailItem.clientName,
-            }, uuid);
-        }));
-        return results;
-    }
-    async sendTestEmailIfBlocked() {
-        const now = Date.now();
-        if (now - this.lastTestEmailTime >= 240000) { // 4 minutos em milissegundos
-            try {
-                const testEmail = process.env.MAILER_NOREPLY_EMAIL || 'no-reply@outlook.com';
-                await this.sendEmail({
-                    emailDomain: 'test.com',
-                    to: testEmail,
-                    subject: 'Test Email',
-                    html: '<p>This is a test email.</p>',
-                });
-                logger_1.default.info('Email de teste enviado com sucesso.');
-                this.lastTestEmailTime = now;
-            }
-            catch (error) {
-                logger_1.default.error('Erro ao enviar email de teste:', error);
-            }
-        }
     }
     async sendEmail(params, uuid) {
         const { fromName = 'No-Reply', emailDomain, to, bcc = [], subject, html, clientName } = params;
@@ -88,6 +50,7 @@ class EmailService {
                 throw new Error('Não foi possível extrair o queueId da resposta');
             }
             const queueId = queueIdMatch[1];
+            const mailId = info.messageId;
             logger_1.default.info(`queueId extraído com sucesso: ${queueId}`);
             logger_1.default.info(`Email enviado!`);
             logger_1.default.info(`queueId (messageId do servidor): queued as ${queueId}`);
@@ -95,20 +58,20 @@ class EmailService {
             const recipientsStatus = allRecipients.map((recipient) => ({
                 recipient,
                 success: true,
+                queueId,
+                mailId,
             }));
-            this.pendingSends.set(queueId, {
+            this.stateManager.addPendingSend(queueId, {
                 toRecipients,
                 bccRecipients,
                 results: recipientsStatus,
             });
             if (uuid) {
-                if (!this.uuidQueueMap.has(uuid)) {
-                    this.uuidQueueMap.set(uuid, []);
-                }
-                this.uuidQueueMap.get(uuid)?.push(queueId);
+                this.stateManager.addQueueIdToUuid(uuid, queueId);
             }
             return {
                 queueId,
+                mailId,
                 recipients: recipientsStatus,
             };
         }
@@ -121,12 +84,28 @@ class EmailService {
             }));
             return {
                 queueId: '',
+                mailId: '',
                 recipients: recipientsStatus,
             };
         }
     }
+    async sendEmailList(params, uuid) {
+        const { emailDomain, emailList } = params;
+        const results = await Promise.all(emailList.map(async (emailItem) => {
+            return this.sendEmail({
+                fromName: emailItem.name || 'No-Reply',
+                emailDomain,
+                to: emailItem.email,
+                bcc: [],
+                subject: emailItem.subject,
+                html: emailItem.template,
+                clientName: emailItem.clientName,
+            }, uuid);
+        }));
+        return results;
+    }
     handleLogEntry(logEntry) {
-        const sendData = this.pendingSends.get(logEntry.queueId);
+        const sendData = this.stateManager.getPendingSend(logEntry.queueId);
         if (!sendData) {
             logger_1.default.warn(`Nenhum dado encontrado no pendingSends para queueId=${logEntry.queueId}`);
             return;
@@ -148,23 +127,24 @@ class EmailService {
         const processedRecipients = sendData.results.length;
         if (processedRecipients >= totalRecipients) {
             logger_1.default.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
-            this.pendingSends.delete(logEntry.queueId);
-            for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
+            this.stateManager.deletePendingSend(logEntry.queueId);
+            // Itera sobre todos os UUIDs no uuidQueueMap
+            for (const [currentUuid, queueIds] of this.stateManager.getUuidQueueMap().entries()) {
                 if (queueIds.includes(logEntry.queueId)) {
-                    const allProcessed = queueIds.every((qId) => !this.pendingSends.has(qId));
+                    const allProcessed = queueIds.every((qId) => !this.stateManager.getPendingSend(qId));
                     if (allProcessed) {
-                        logger_1.default.info(`Chamando checkAndSendResults para UUID=${uuid}`);
-                        this.checkAndSendResults(uuid);
+                        logger_1.default.info(`Chamando checkAndSendResults para UUID=${currentUuid}`);
+                        this.checkAndSendResults(currentUuid);
                     }
                 }
             }
         }
     }
     async checkAndSendResults(uuid, mockMode = true) {
-        const queueIds = this.uuidQueueMap.get(uuid) || [];
+        const queueIds = this.stateManager.getQueueIdsByUuid(uuid) || [];
         const allResults = [];
         for (const queueId of queueIds) {
-            const sendData = this.pendingSends.get(queueId);
+            const sendData = this.stateManager.getPendingSend(queueId);
             if (sendData) {
                 allResults.push(...sendData.results);
             }

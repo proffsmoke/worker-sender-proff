@@ -3,7 +3,7 @@ import config from '../config';
 import EmailService from './EmailService';
 import LogParser, { LogEntry } from '../log-parser';
 import BlockManagerService from './BlockManagerService';
-//perfect
+
 interface RecipientStatus {
   recipient: string;
   success: boolean;
@@ -11,7 +11,7 @@ interface RecipientStatus {
 }
 
 class MailerService {
-  private static instance: MailerService; // Singleton instance
+  private static instance: MailerService;
   private isBlocked: boolean = false;
   private isBlockedPermanently: boolean = false;
   private blockReason: string | null = null;
@@ -21,7 +21,7 @@ class MailerService {
   private logParser: LogParser;
   private emailService: EmailService;
   private blockManagerService: BlockManagerService;
-  private isMonitoringStarted: boolean = false; // Flag para controlar a inicialização
+  private isMonitoringStarted: boolean = false;
 
   private constructor() {
     this.createdAt = new Date();
@@ -29,17 +29,15 @@ class MailerService {
     this.emailService = EmailService.getInstance(this.logParser);
     this.blockManagerService = BlockManagerService.getInstance(this);
 
-    // Inicia o monitoramento de logs apenas uma vez
     if (!this.isMonitoringStarted) {
       this.logParser.on('log', this.handleLogEntry.bind(this));
       this.logParser.startMonitoring();
-      this.isMonitoringStarted = true; // Marca como inicializado
+      this.isMonitoringStarted = true;
     }
 
     this.initialize();
   }
 
-  // Método estático para obter a instância única do MailerService
   public static getInstance(): MailerService {
     if (!MailerService.instance) {
       MailerService.instance = new MailerService();
@@ -51,7 +49,6 @@ class MailerService {
     this.sendInitialTestEmail();
   }
 
-  // Métodos públicos para checar o status e outros
   getVersion(): string {
     return this.version;
   }
@@ -107,7 +104,6 @@ class MailerService {
     }
   }
 
-  // Método público para enviar email de teste
   public async sendInitialTestEmail(): Promise<{ success: boolean; recipients: RecipientStatus[] }> {
     const testEmailParams = {
       fromName: 'Mailer Test',
@@ -157,13 +153,10 @@ class MailerService {
     logger.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
     if (logEntry.success) {
       logger.info(`Email com queueId=${logEntry.queueId} foi enviado com sucesso.`);
-      // this.unblockMailer();
     } else {
       logger.warn(`Falha no envio para queueId=${logEntry.queueId}: ${logEntry.result}`);
-      // this.blockMailer('blocked_temporary', `Falha no envio para queueId=${logEntry.queueId}`);
     }
 
-    // Notifica o BlockManagerService sobre o log
     this.blockManagerService.handleLogEntry(logEntry);
   }
 

@@ -15,20 +15,18 @@ class MailerService {
         this.blockReason = null;
         this.version = '4.3.26-1';
         this.retryIntervalId = null;
-        this.isMonitoringStarted = false; // Flag para controlar a inicialização
+        this.isMonitoringStarted = false;
         this.createdAt = new Date();
         this.logParser = new log_parser_1.default('/var/log/mail.log');
         this.emailService = EmailService_1.default.getInstance(this.logParser);
         this.blockManagerService = BlockManagerService_1.default.getInstance(this);
-        // Inicia o monitoramento de logs apenas uma vez
         if (!this.isMonitoringStarted) {
             this.logParser.on('log', this.handleLogEntry.bind(this));
             this.logParser.startMonitoring();
-            this.isMonitoringStarted = true; // Marca como inicializado
+            this.isMonitoringStarted = true;
         }
         this.initialize();
     }
-    // Método estático para obter a instância única do MailerService
     static getInstance() {
         if (!MailerService.instance) {
             MailerService.instance = new MailerService();
@@ -38,7 +36,6 @@ class MailerService {
     initialize() {
         this.sendInitialTestEmail();
     }
-    // Métodos públicos para checar o status e outros
     getVersion() {
         return this.version;
     }
@@ -87,7 +84,6 @@ class MailerService {
             this.clearRetryInterval();
         }
     }
-    // Método público para enviar email de teste
     async sendInitialTestEmail() {
         const testEmailParams = {
             fromName: 'Mailer Test',
@@ -132,13 +128,10 @@ class MailerService {
         logger_1.default.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
         if (logEntry.success) {
             logger_1.default.info(`Email com queueId=${logEntry.queueId} foi enviado com sucesso.`);
-            // this.unblockMailer();
         }
         else {
             logger_1.default.warn(`Falha no envio para queueId=${logEntry.queueId}: ${logEntry.result}`);
-            // this.blockMailer('blocked_temporary', `Falha no envio para queueId=${logEntry.queueId}`);
         }
-        // Notifica o BlockManagerService sobre o log
         this.blockManagerService.handleLogEntry(logEntry);
     }
     async waitForLogEntry(queueId) {

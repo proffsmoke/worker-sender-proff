@@ -8,7 +8,6 @@ class BlockManagerService {
     constructor(mailerService) {
         this.mailerService = mailerService;
     }
-    // Método estático para obter a instância única do BlockManagerService
     static getInstance(mailerService) {
         if (!BlockManagerService.instance) {
             BlockManagerService.instance = new BlockManagerService(mailerService);
@@ -20,12 +19,10 @@ class BlockManagerService {
             logger_1.default.info(`Ignorando logEntry porque o Mailer está bloqueado. Status atual: ${this.mailerService.getStatus()}`);
             return;
         }
-        // Verifica se o logEntry é válido
         if (!logEntry || typeof logEntry !== 'object' || !logEntry.queueId || !logEntry.result) {
             logger_1.default.warn('Log entry missing or invalid:', logEntry);
             return;
         }
-        // Verifica se o erro é permanente ou temporário e aplica o bloqueio correspondente
         if (this.isPermanentError(logEntry.result)) {
             this.applyBlock('permanent', logEntry.result);
             logger_1.default.info(`Bloqueio permanente aplicado devido à linha de log: "${logEntry.result}"`);
@@ -36,11 +33,9 @@ class BlockManagerService {
         }
     }
     isPermanentError(message) {
-        // Lógica para identificar erros permanentes
         return message.includes('permanent');
     }
     isTemporaryError(message) {
-        // Lógica para identificar erros temporários
         return message.includes('temporary');
     }
     applyBlock(type, reason) {

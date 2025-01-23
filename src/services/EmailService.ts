@@ -3,6 +3,7 @@ import logger from '../utils/logger';
 import LogParser, { LogEntry } from '../log-parser';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import StateManager from './StateManager';
 
 dotenv.config();
 
@@ -43,17 +44,7 @@ class EmailService {
   private static instance: EmailService;
   private transporter: nodemailer.Transporter;
   private logParser: LogParser;
-  private pendingSends: Map<
-    string,
-    {
-      toRecipients: string[];
-      bccRecipients: string[];
-      results: RecipientStatus[];
-    }
-  > = new Map();
-
-  private uuidQueueMap: Map<string, string[]> = new Map(); // Mapeia UUIDs para queueIds
-  private uuidResultsMap: Map<string, RecipientStatus[]> = new Map(); // Mapeia UUIDs para resultados
+  private stateManager: StateManager;
 
   private constructor(logParser: LogParser) {
     this.transporter = nodemailer.createTransport({
@@ -64,6 +55,7 @@ class EmailService {
     });
 
     this.logParser = logParser;
+    this.stateManager = new StateManager();
     this.logParser.on('log', this.handleLogEntry.bind(this));
   }
 
@@ -115,17 +107,14 @@ class EmailService {
         mailId,
       }));
 
-      this.pendingSends.set(queueId, {
+      this.stateManager.addPendingSend(queueId, {
         toRecipients,
         bccRecipients,
         results: recipientsStatus,
       });
 
       if (uuid) {
-        if (!this.uuidQueueMap.has(uuid)) {
-          this.uuidQueueMap.set(uuid, []);
-        }
-        this.uuidQueueMap.get(uuid)?.push(queueId);
+        this.stateManager.addQueueIdToUuid(uuid, queueId);
       }
 
       return {
@@ -150,7 +139,10 @@ class EmailService {
     }
   }
 
-  public async sendEmailList(params: { emailDomain: string; emailList: EmailListItem[] }, uuid?: string): Promise<SendEmailResult[]> {
+  public async sendEmailList(
+    params: { emailDomain: string; emailList: EmailListItem[] },
+    uuid?: string
+  ): Promise<SendEmailResult[]> {
     const { emailDomain, emailList } = params;
 
     const results = await Promise.all(
@@ -173,8 +165,8 @@ class EmailService {
     return results;
   }
 
-  private handleLogEntry(logEntry: LogEntry) {
-    const sendData = this.pendingSends.get(logEntry.queueId);
+  private handleLogEntry(logEntry: LogEntry): void {
+    const sendData = this.stateManager.getPendingSend(logEntry.queueId);
     if (!sendData) {
       logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${logEntry.queueId}`);
       return;
@@ -199,26 +191,27 @@ class EmailService {
 
     if (processedRecipients >= totalRecipients) {
       logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
-      this.pendingSends.delete(logEntry.queueId);
+      this.stateManager.deletePendingSend(logEntry.queueId);
 
-      for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
+      // Itera sobre todos os UUIDs no uuidQueueMap
+      for (const [currentUuid, queueIds] of this.stateManager.getUuidQueueMap().entries()) {
         if (queueIds.includes(logEntry.queueId)) {
-          const allProcessed = queueIds.every((qId) => !this.pendingSends.has(qId));
+          const allProcessed = queueIds.every((qId: string) => !this.stateManager.getPendingSend(qId));
           if (allProcessed) {
-            logger.info(`Chamando checkAndSendResults para UUID=${uuid}`);
-            this.checkAndSendResults(uuid);
+            logger.info(`Chamando checkAndSendResults para UUID=${currentUuid}`);
+            this.checkAndSendResults(currentUuid);
           }
         }
       }
     }
   }
 
-  private async checkAndSendResults(uuid: string, mockMode: boolean = true) {
-    const queueIds = this.uuidQueueMap.get(uuid) || [];
+  private async checkAndSendResults(uuid: string, mockMode: boolean = true): Promise<any> {
+    const queueIds = this.stateManager.getQueueIdsByUuid(uuid) || [];
     const allResults: RecipientStatus[] = [];
 
     for (const queueId of queueIds) {
-      const sendData = this.pendingSends.get(queueId);
+      const sendData = this.stateManager.getPendingSend(queueId);
       if (sendData) {
         allResults.push(...sendData.results);
       }

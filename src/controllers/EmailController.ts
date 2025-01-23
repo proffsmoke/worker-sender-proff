@@ -9,10 +9,9 @@ class EmailController {
 
     try {
       const emailService = EmailService.getInstance();
-      const requestUuid = uuid || uuidv4(); // Gera um UUID se não for fornecido
+      const requestUuid = uuid || uuidv4();
 
       if (emailList) {
-        // Se emailList for fornecido, enviar um email para cada item da lista
         const results = await emailService.sendEmailList(
           {
             emailDomain,
@@ -27,7 +26,6 @@ class EmailController {
           results,
         });
       } else {
-        // Caso contrário, enviar um único email
         if (!to || !subject || !html) {
           throw new Error('Parâmetros "to", "subject" e "html" são obrigatórios para envio de email único.');
         }
@@ -54,7 +52,6 @@ class EmailController {
         });
       }
     } catch (error) {
-      // Verifica se o erro é uma instância de Error antes de acessar a propriedade 'message'
       if (error instanceof Error) {
         logger.error(`Erro ao enviar email normal:`, error);
         res.status(500).json({ success: false, message: 'Erro ao enviar email.', error: error.message });
