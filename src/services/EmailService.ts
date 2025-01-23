@@ -160,13 +160,13 @@ class EmailService {
   private async checkAndSendResults(uuid: string, mockMode: boolean = true) {
     const queueIds = this.uuidQueueMap.get(uuid) || [];
     const allResults: RecipientStatus[] = [];
-  
+
     // Verificar se há queueIds associados ao UUID
     if (queueIds.length === 0) {
       logger.warn(`Nenhum queueId encontrado para o UUID: ${uuid}`);
       return null;
     }
-  
+
     // Coletar todos os resultados associados ao UUID
     for (const queueId of queueIds) {
       const sendData = this.pendingSends.get(queueId);
@@ -174,18 +174,18 @@ class EmailService {
         logger.info(`Resultados encontrados para queueId=${queueId}:`, JSON.stringify(sendData.results, null, 2));
         allResults.push(...sendData.results);
       } else {
-        logger.warn(`Nenhum resultado encontrado para queueId=${queueId}`);
+        logger.debug(`Nenhum resultado encontrado para queueId=${queueId}`); // Alterado para debug
       }
     }
-  
+
     // Verificar se há resultados para enviar
     if (allResults.length > 0) {
       logger.info(`Dados de resultado para o UUID ${uuid}:`, JSON.stringify(allResults, null, 2));
-  
+
       if (mockMode) {
         // Modo mock: exibir os resultados e simular uma resposta
         logger.info('Modo mock ativado. Resultados não serão enviados para a API.');
-  
+
         // Simular uma resposta bem-sucedida
         const mockResponse = {
           status: 200,
@@ -195,15 +195,15 @@ class EmailService {
             results: allResults,
           },
         };
-  
+
         logger.info('Resposta simulada:', JSON.stringify(mockResponse.data, null, 2));
-  
+
         // Limpar os dados associados ao UUID após o mock
         this.uuidQueueMap.delete(uuid);
         for (const queueId of queueIds) {
           this.pendingSends.delete(queueId);
         }
-  
+
         return mockResponse;
       } else {
         // Modo real: enviar os resultados para a API
@@ -218,15 +218,15 @@ class EmailService {
               timeout: 10000, // Timeout de 10 segundos
             }
           );
-  
+
           logger.info(`Resultados enviados para o UUID: ${uuid}`, response.data);
-  
+
           // Limpar os dados associados ao UUID após o envio bem-sucedido
           this.uuidQueueMap.delete(uuid);
           for (const queueId of queueIds) {
             this.pendingSends.delete(queueId);
           }
-  
+
           return response;
         } catch (error: any) {
           logger.error(`Erro ao enviar resultados para o UUID: ${uuid}`, error.message);
@@ -241,17 +241,17 @@ class EmailService {
       return null; // Retornar null se não houver resultados
     }
   }
-  
+
   private handleLogEntry(logEntry: LogEntry) {
     const sendData = this.pendingSends.get(logEntry.queueId);
     if (!sendData) {
       logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${logEntry.queueId}`);
       return;
     }
-  
+
     const success = logEntry.success;
     const recipient = logEntry.email.toLowerCase();
-  
+
     const recipientIndex = sendData.results.findIndex((r) => r.recipient === recipient);
     if (recipientIndex !== -1) {
       sendData.results[recipientIndex].success = success;
@@ -262,14 +262,17 @@ class EmailService {
     } else {
       logger.warn(`Recipient ${recipient} não encontrado nos resultados para queueId=${logEntry.queueId}`);
     }
-  
+
+    // Log imediato dos resultados atualizados
+    logger.info(`Resultados atuais para queueId=${logEntry.queueId}:`, JSON.stringify(sendData.results, null, 2));
+
     const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
     const processedRecipients = sendData.results.length;
-  
+
     if (processedRecipients >= totalRecipients) {
       logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
       this.pendingSends.delete(logEntry.queueId);
-  
+
       // Verifica se todos os emails de um UUID foram processados
       for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
         if (queueIds.includes(logEntry.queueId)) {
