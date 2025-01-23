@@ -276,8 +276,12 @@ class EmailService {
       // Verifica se todos os emails de um UUID foram processados
       for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
         if (queueIds.includes(logEntry.queueId)) {
-          logger.info(`Chamando checkAndSendResults para UUID=${uuid}`);
-          this.checkAndSendResults(uuid);
+          // Verifica se todos os queueIds associados ao UUID foram processados
+          const allProcessed = queueIds.every((qId) => !this.pendingSends.has(qId));
+          if (allProcessed) {
+            logger.info(`Chamando checkAndSendResults para UUID=${uuid}`);
+            this.checkAndSendResults(uuid);
+          }
         }
       }
     }
