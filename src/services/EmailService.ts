@@ -26,12 +26,16 @@ interface EmailListItem {
 
 interface RecipientStatus {
   recipient: string;
+  name?: string;
   success: boolean;
   error?: string;
+  queueId?: string;
+  mailId?: string;
 }
 
 interface SendEmailResult {
   queueId: string;
+  mailId: string;
   recipients: RecipientStatus[];
 }
 
@@ -50,7 +54,6 @@ class EmailService {
 
   private uuidQueueMap: Map<string, string[]> = new Map(); // Mapeia UUIDs para queueIds
   private uuidResultsMap: Map<string, RecipientStatus[]> = new Map(); // Mapeia UUIDs para resultados
-  private lastTestEmailTime: number = 0; // Timestamp do último email de teste enviado
 
   private constructor(logParser: LogParser) {
     this.transporter = nodemailer.createTransport({
@@ -62,9 +65,6 @@ class EmailService {
 
     this.logParser = logParser;
     this.logParser.on('log', this.handleLogEntry.bind(this));
-
-    // Envia um email de teste ao iniciar
-    this.sendTestEmailIfBlocked();
   }
 
   public static getInstance(logParser?: LogParser): EmailService {
@@ -74,49 +74,6 @@ class EmailService {
       throw new Error('EmailService não foi inicializado. Forneça um LogParser.');
     }
     return EmailService.instance;
-  }
-
-  public async sendEmailList(params: { emailDomain: string; emailList: EmailListItem[] }, uuid?: string): Promise<SendEmailResult[]> {
-    const { emailDomain, emailList } = params;
-  
-    const results = await Promise.all(
-      emailList.map(async (emailItem) => {
-        return this.sendEmail(
-          {
-            fromName: emailItem.name || 'No-Reply',
-            emailDomain,
-            to: emailItem.email,
-            bcc: [],
-            subject: emailItem.subject,
-            html: emailItem.template,
-            clientName: emailItem.clientName,
-          },
-          uuid
-        );
-      })
-    );
-  
-    return results;
-  }
-  
-  private async sendTestEmailIfBlocked() {
-    const now = Date.now();
-    if (now - this.lastTestEmailTime >= 240000) { // 4 minutos em milissegundos
-      try {
-        const testEmail = process.env.MAILER_NOREPLY_EMAIL || 'no-reply@outlook.com';
-        await this.sendEmail({
-          emailDomain: 'test.com',
-          to: testEmail,
-          subject: 'Test Email',
-          html: '<p>This is a test email.</p>',
-        });
-
-        logger.info('Email de teste enviado com sucesso.');
-        this.lastTestEmailTime = now;
-      } catch (error) {
-        logger.error('Erro ao enviar email de teste:', error);
-      }
-    }
   }
 
   public async sendEmail(params: SendEmailParams, uuid?: string): Promise<SendEmailResult> {
@@ -144,6 +101,8 @@ class EmailService {
       }
 
       const queueId = queueIdMatch[1];
+      const mailId = info.messageId;
+
       logger.info(`queueId extraído com sucesso: ${queueId}`);
       logger.info(`Email enviado!`);
       logger.info(`queueId (messageId do servidor): queued as ${queueId}`);
@@ -152,6 +111,8 @@ class EmailService {
       const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
         recipient,
         success: true,
+        queueId,
+        mailId,
       }));
 
       this.pendingSends.set(queueId, {
@@ -169,6 +130,7 @@ class EmailService {
 
       return {
         queueId,
+        mailId,
         recipients: recipientsStatus,
       };
     } catch (error: any) {
@@ -182,9 +144,33 @@ class EmailService {
 
       return {
         queueId: '',
+        mailId: '',
         recipients: recipientsStatus,
       };
     }
+  }
+
+  public async sendEmailList(params: { emailDomain: string; emailList: EmailListItem[] }, uuid?: string): Promise<SendEmailResult[]> {
+    const { emailDomain, emailList } = params;
+
+    const results = await Promise.all(
+      emailList.map(async (emailItem) => {
+        return this.sendEmail(
+          {
+            fromName: emailItem.name || 'No-Reply',
+            emailDomain,
+            to: emailItem.email,
+            bcc: [],
+            subject: emailItem.subject,
+            html: emailItem.template,
+            clientName: emailItem.clientName,
+          },
+          uuid
+        );
+      })
+    );
+
+    return results;
   }
 
   private handleLogEntry(logEntry: LogEntry) {
