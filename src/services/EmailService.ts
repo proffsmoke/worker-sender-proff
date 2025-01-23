@@ -47,6 +47,7 @@ class EmailService {
 
   private uuidQueueMap: Map<string, string[]> = new Map(); // Mapeia UUIDs para queueIds
   private uuidResultsMap: Map<string, RecipientStatus[]> = new Map(); // Mapeia UUIDs para resultados
+  private lastTestEmailTime: number = 0; // Timestamp do último email de teste enviado
 
   private constructor(logParser: LogParser) {
     this.transporter = nodemailer.createTransport({
@@ -58,6 +59,11 @@ class EmailService {
 
     this.logParser = logParser;
     this.logParser.on('log', this.handleLogEntry.bind(this));
+
+    // Envia um email de teste ao iniciar
+    this.sendTestEmailIfBlocked().catch((error) => {
+      logger.error(`Erro ao enviar email de teste: ${error.message}`);
+    });
   }
 
   public static getInstance(logParser?: LogParser): EmailService {
@@ -88,11 +94,24 @@ class EmailService {
 
       const info = await this.transporter.sendMail(mailOptions);
 
-      const queueId = info.response.match(/queued as\s([A-Z0-9]+)/);
-      if (queueId && queueId[1]) {
-        logger.info(`queueId extraído com sucesso: ${queueId[1]}`);
-      } else {
+      const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
+      if (!queueIdMatch || !queueIdMatch[1]) {
         throw new Error('Não foi possível extrair o queueId da resposta');
+      }
+
+      const queueId = queueIdMatch[1];
+
+      // Verifica se o queueId já existe no pendingSends
+      if (this.pendingSends.has(queueId)) {
+        logger.warn(`queueId duplicado detectado: ${queueId}`);
+        return {
+          queueId,
+          recipients: allRecipients.map((recipient) => ({
+            recipient,
+            success: false,
+            error: 'queueId duplicado',
+          })),
+        };
       }
 
       logger.info(`Email enviado!`);
@@ -104,7 +123,7 @@ class EmailService {
         success: true,
       }));
 
-      this.pendingSends.set(queueId[1], {
+      this.pendingSends.set(queueId, {
         toRecipients,
         bccRecipients,
         results: recipientsStatus,
@@ -114,11 +133,11 @@ class EmailService {
         if (!this.uuidQueueMap.has(uuid)) {
           this.uuidQueueMap.set(uuid, []);
         }
-        this.uuidQueueMap.get(uuid)?.push(queueId[1]);
+        this.uuidQueueMap.get(uuid)?.push(queueId);
       }
 
       return {
-        queueId: queueId[1],
+        queueId,
         recipients: recipientsStatus,
       };
     } catch (error: any) {
@@ -174,7 +193,7 @@ class EmailService {
         logger.info(`Resultados encontrados para queueId=${queueId}:`, JSON.stringify(sendData.results, null, 2));
         allResults.push(...sendData.results);
       } else {
-        logger.debug(`Nenhum resultado encontrado para queueId=${queueId}`); // Alterado para debug
+        logger.debug(`Nenhum resultado encontrado para queueId=${queueId}`);
       }
     }
 
@@ -283,6 +302,30 @@ class EmailService {
             this.checkAndSendResults(uuid);
           }
         }
+      }
+    }
+  }
+
+  private async sendTestEmailIfBlocked() {
+    const now = Date.now();
+    if (now - this.lastTestEmailTime >= 240000) { // 4 minutos em milissegundos
+      try {
+        const testEmailResult = await this.sendEmail({
+          emailDomain: 'seu-dominio.com',
+          to: 'test@example.com',
+          subject: 'Teste de bloqueio temporário',
+          html: '<p>Este é um email de teste.</p>',
+        });
+
+        if (testEmailResult.recipients.some((r) => !r.success)) {
+          logger.warn('Servidor de email pode estar temporariamente bloqueado.');
+        } else {
+          logger.info('Email de teste enviado com sucesso.');
+        }
+
+        this.lastTestEmailTime = now;
+      } catch (error: any) {
+        logger.error(`Erro ao enviar email de teste: ${error.message}`);
       }
     }
   }
