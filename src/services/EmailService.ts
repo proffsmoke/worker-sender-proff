@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import logger from '../utils/logger';
 import LogParser, { LogEntry } from '../log-parser';
+import axios from 'axios';
 
 interface SendEmailParams {
   fromName?: string;
@@ -44,6 +45,9 @@ class EmailService {
     }
   > = new Map();
 
+  private uuidQueueMap: Map<string, string[]> = new Map(); // Mapeia UUIDs para queueIds
+  private uuidResultsMap: Map<string, RecipientStatus[]> = new Map(); // Mapeia UUIDs para resultados
+
   private constructor(logParser: LogParser) {
     this.transporter = nodemailer.createTransport({
       host: 'localhost',
@@ -65,7 +69,7 @@ class EmailService {
     return EmailService.instance;
   }
 
-  public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
+  public async sendEmail(params: SendEmailParams, uuid?: string): Promise<SendEmailResult> {
     const { fromName = 'No-Reply', emailDomain, to, bcc = [], subject, html, clientName } = params;
     const from = `"${fromName}" <no-reply@${emailDomain}>`;
 
@@ -106,6 +110,13 @@ class EmailService {
         results: recipientsStatus,
       });
 
+      if (uuid) {
+        if (!this.uuidQueueMap.has(uuid)) {
+          this.uuidQueueMap.set(uuid, []);
+        }
+        this.uuidQueueMap.get(uuid)?.push(queueId[1]);
+      }
+
       return {
         queueId: queueId[1],
         recipients: recipientsStatus,
@@ -126,7 +137,7 @@ class EmailService {
     }
   }
 
-  public async sendEmailList(params: { emailDomain: string; emailList: EmailListItem[] }): Promise<SendEmailResult[]> {
+  public async sendEmailList(params: { emailDomain: string; emailList: EmailListItem[] }, uuid?: string): Promise<SendEmailResult[]> {
     const { emailDomain, emailList } = params;
 
     const results = await Promise.all(
@@ -139,11 +150,43 @@ class EmailService {
           subject: emailItem.subject,
           html: emailItem.template,
           clientName: emailItem.clientName,
-        });
+        }, uuid);
       })
     );
 
     return results;
+  }
+
+  private async checkAndSendResults(uuid: string) {
+    const queueIds = this.uuidQueueMap.get(uuid) || [];
+    const allResults: RecipientStatus[] = [];
+
+    for (const queueId of queueIds) {
+      const sendData = this.pendingSends.get(queueId);
+      if (sendData) {
+        allResults.push(...sendData.results);
+      }
+    }
+
+    if (allResults.length > 0) {
+      logger.info(`Dados de resultado para o UUID ${uuid}:`, JSON.stringify(allResults, null, 2));
+
+      try {
+        const response = await axios.post('https://result.com/api/results', {
+          uuid,
+          results: allResults,
+        }, {
+          timeout: 10000, // Timeout de 10 segundos
+        });
+
+        logger.info(`Resultados enviados para o UUID: ${uuid}`, response.data);
+      } catch (error: any) {
+        logger.error(`Erro ao enviar resultados para o UUID: ${uuid}`, error.message);
+        if (error.response) {
+          logger.error(`Resposta da API: ${JSON.stringify(error.response.data)}`);
+        }
+      }
+    }
   }
 
   private handleLogEntry(logEntry: LogEntry) {
@@ -168,6 +211,13 @@ class EmailService {
 
     if (processedRecipients >= totalRecipients) {
       this.pendingSends.delete(logEntry.queueId);
+
+      // Verifica se todos os emails de um UUID foram processados
+      for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
+        if (queueIds.includes(logEntry.queueId)) {
+          this.checkAndSendResults(uuid);
+        }
+      }
     }
   }
 }

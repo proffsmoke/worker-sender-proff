@@ -15,13 +15,17 @@ class MailerService {
         this.blockReason = null;
         this.version = '4.3.26-1';
         this.retryIntervalId = null;
+        this.isMonitoringStarted = false; // Flag para controlar a inicialização
         this.createdAt = new Date();
         this.logParser = new log_parser_1.default('/var/log/mail.log');
         this.emailService = EmailService_1.default.getInstance(this.logParser);
         this.blockManagerService = BlockManagerService_1.default.getInstance(this);
-        // Inicia o monitoramento de logs
-        this.logParser.on('log', this.handleLogEntry.bind(this));
-        this.logParser.startMonitoring();
+        // Inicia o monitoramento de logs apenas uma vez
+        if (!this.isMonitoringStarted) {
+            this.logParser.on('log', this.handleLogEntry.bind(this));
+            this.logParser.startMonitoring();
+            this.isMonitoringStarted = true; // Marca como inicializado
+        }
         this.initialize();
     }
     // Método estático para obter a instância única do MailerService
@@ -92,6 +96,7 @@ class MailerService {
             bcc: [],
             subject: 'Email de Teste Inicial',
             html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
+            clientName: 'Prasminha camarada'
         };
         try {
             const result = await this.emailService.sendEmail(testEmailParams);
@@ -157,7 +162,8 @@ class MailerService {
     }
     getLogEntryByQueueId(queueId) {
         logger_1.default.info(`Verificando log para queueId=${queueId}`);
-        return null;
+        const recentLogs = this.logParser.getRecentLogs();
+        return recentLogs.find(log => log.queueId === queueId) || null;
     }
     scheduleRetry() {
         if (this.isBlockedPermanently) {

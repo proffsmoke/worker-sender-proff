@@ -5,31 +5,42 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const EmailService_1 = __importDefault(require("../services/EmailService")); // Importe o EmailService
 const logger_1 = __importDefault(require("../utils/logger"));
+const uuid_1 = require("uuid");
 class EmailController {
     async sendNormal(req, res, next) {
-        const { fromName, emailDomain, to, subject, html } = req.body;
-        if (!fromName || !emailDomain || !to || !subject || !html) {
-            res.status(400).json({
-                success: false,
-                message: 'Dados inválidos. "fromName", "emailDomain", "to", "subject" e "html" são obrigatórios.',
-            });
-            return;
-        }
+        const { emailDomain, emailList, to, subject, html, fromName, clientName, uuid } = req.body;
         try {
-            // Usa o Singleton do EmailService
-            const emailService = EmailService_1.default.getInstance(); // Corrigido aqui
-            const result = await emailService.sendEmail({
-                fromName,
-                emailDomain,
-                to,
-                bcc: [],
-                subject,
-                html,
-            });
-            res.json({
-                success: true,
-                queueId: result.queueId,
-            });
+            const emailService = EmailService_1.default.getInstance();
+            const requestUuid = uuid || (0, uuid_1.v4)(); // Gera um UUID se não for fornecido
+            if (emailList) {
+                // Se emailList for fornecido, enviar um email para cada item da lista
+                const results = await emailService.sendEmailList({
+                    emailDomain,
+                    emailList,
+                }, requestUuid);
+                res.json({
+                    success: true,
+                    uuid: requestUuid,
+                    results,
+                });
+            }
+            else {
+                // Caso contrário, enviar um único email
+                const result = await emailService.sendEmail({
+                    fromName,
+                    emailDomain,
+                    to,
+                    bcc: [],
+                    subject,
+                    html,
+                    clientName,
+                }, requestUuid);
+                res.json({
+                    success: true,
+                    uuid: requestUuid,
+                    queueId: result.queueId,
+                });
+            }
         }
         catch (error) {
             logger_1.default.error(`Erro ao enviar email normal:`, error);

@@ -19,7 +19,6 @@ mongoose_1.default
     process.exit(1);
 });
 // Inicializar MailerService
-// logParser.startMonitoring();
 MailerService_1.default;
 // CleanlogsService;
 app.use(express_1.default.json());
