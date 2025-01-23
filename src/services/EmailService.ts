@@ -3,25 +3,21 @@ import logger from '../utils/logger';
 import LogParser, { LogEntry } from '../log-parser';
 
 interface SendEmailParams {
-  fromName: string;
+  fromName?: string;
   emailDomain: string;
   to: string | string[];
   bcc?: string[];
   subject: string;
   html: string;
-  clientName: string; // Novo campo
+  clientName?: string;
 }
 
-interface SendEmailListParams {
-  emailDomain: string;
-  fromName?: string; // Opcional, pode ser sobrescrito por cada email na lista
-  emailList: Array<{
-    email: string;
-    name: string;
-    subject: string;
-    template: string;
-    clientName: string; // Novo campo
-  }>;
+interface EmailListItem {
+  email: string;
+  name?: string;
+  subject: string;
+  template: string;
+  clientName?: string;
 }
 
 interface RecipientStatus {
@@ -71,7 +67,7 @@ class EmailService {
   }
 
   public async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
-    const { fromName, emailDomain, to, bcc = [], subject, html, clientName } = params;
+    const { fromName = 'No-Reply', emailDomain, to, bcc = [], subject, html, clientName } = params;
     const from = `"${fromName}" <no-reply@${emailDomain}>`;
 
     const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
@@ -83,7 +79,7 @@ class EmailService {
         from,
         to: Array.isArray(to) ? to.join(', ') : to,
         bcc,
-        subject: `${subject} - ${clientName}`, // Inclui clientName no assunto
+        subject: clientName ? `[${clientName}] ${subject}` : subject,
         html,
       };
 
@@ -95,6 +91,10 @@ class EmailService {
       } else {
         throw new Error('Não foi possível extrair o queueId da resposta');
       }
+
+      logger.info(`Email enviado!`);
+      logger.info(`queueId (messageId do servidor): ${queueId}`);
+      logger.info(`Info completo: `, info);
 
       const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
         recipient,
@@ -127,19 +127,19 @@ class EmailService {
     }
   }
 
-  public async sendEmailList(params: SendEmailListParams): Promise<SendEmailResult[]> {
-    const { emailDomain, fromName, emailList } = params;
+  public async sendEmailList(params: { emailDomain: string; emailList: EmailListItem[] }): Promise<SendEmailResult[]> {
+    const { emailDomain, emailList } = params;
 
     const results = await Promise.all(
       emailList.map(async (emailItem) => {
         return this.sendEmail({
-          fromName: emailItem.name || fromName || 'No-Reply', // Usa o nome do item, o fromName global ou um padrão
+          fromName: emailItem.name || 'No-Reply',
           emailDomain,
           to: emailItem.email,
           bcc: [],
           subject: emailItem.subject,
           html: emailItem.template,
-          clientName: emailItem.clientName, // Inclui clientName
+          clientName: emailItem.clientName,
         });
       })
     );
