@@ -171,17 +171,11 @@ class MailerService {
     }
   
     logger.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
-    
-    if (logEntry.success) {
-      logger.info(`Email com queueId=${logEntry.queueId} foi enviado com sucesso.`);
-    } else {
-      logger.warn(`Falha no envio para queueId=${logEntry.queueId}: ${logEntry.result}`);
-    }
   
-    // Processar status de todos os destinatários
+    // Atualiza o status de cada destinatário
     this.blockManagerService.handleLogEntry(logEntry);
   
-    // Verificar se todos os destinatários de um e-mail ou lista de e-mails foram processados
+    // Verifica se todos os destinatários de um e-mail ou lista de e-mails foram processados
     const sendData = this.stateManager.getPendingSend(logEntry.queueId);
     if (sendData) {
       const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
