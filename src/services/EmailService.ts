@@ -157,36 +157,81 @@ class EmailService {
     return results;
   }
 
-  private async checkAndSendResults(uuid: string) {
+  private async checkAndSendResults(uuid: string, mockMode: boolean = true) {
     const queueIds = this.uuidQueueMap.get(uuid) || [];
     const allResults: RecipientStatus[] = [];
-
+  
+    // Coletar todos os resultados associados ao UUID
     for (const queueId of queueIds) {
       const sendData = this.pendingSends.get(queueId);
       if (sendData) {
         allResults.push(...sendData.results);
       }
     }
-
+  
+    // Verificar se há resultados para enviar
     if (allResults.length > 0) {
       logger.info(`Dados de resultado para o UUID ${uuid}:`, JSON.stringify(allResults, null, 2));
-
-      try {
-        const response = await axios.post('https://result.com/api/results', {
-          uuid,
-          results: allResults,
-        }, {
-          timeout: 10000, // Timeout de 10 segundos
-        });
-
-        logger.info(`Resultados enviados para o UUID: ${uuid}`, response.data);
-      } catch (error: any) {
-        logger.error(`Erro ao enviar resultados para o UUID: ${uuid}`, error.message);
-        if (error.response) {
-          logger.error(`Resposta da API: ${JSON.stringify(error.response.data)}`);
+  
+      if (mockMode) {
+        // Modo mock: exibir os resultados e simular uma resposta
+        logger.info('Modo mock ativado. Resultados não serão enviados para a API.');
+  
+        // Simular uma resposta bem-sucedida
+        const mockResponse = {
+          status: 200,
+          data: {
+            success: true,
+            message: 'Resultados recebidos com sucesso (modo mock).',
+            results: allResults,
+          },
+        };
+  
+        logger.info('Resposta simulada:', JSON.stringify(mockResponse.data, null, 2));
+  
+        // Limpar os dados associados ao UUID após o mock
+        this.uuidQueueMap.delete(uuid);
+        for (const queueId of queueIds) {
+          this.pendingSends.delete(queueId);
+        }
+  
+        return mockResponse;
+      } else {
+        // Modo real: enviar os resultados para a API
+        try {
+          const response = await axios.post(
+            'https://result.com/api/results',
+            {
+              uuid,
+              results: allResults,
+            },
+            {
+              timeout: 10000, // Timeout de 10 segundos
+            }
+          );
+  
+          logger.info(`Resultados enviados para o UUID: ${uuid}`, response.data);
+  
+          // Limpar os dados associados ao UUID após o envio bem-sucedido
+          this.uuidQueueMap.delete(uuid);
+          for (const queueId of queueIds) {
+            this.pendingSends.delete(queueId);
+          }
+  
+          return response;
+        } catch (error: any) {
+          logger.error(`Erro ao enviar resultados para o UUID: ${uuid}`, error.message);
+          if (error.response) {
+            logger.error(`Resposta da API: ${JSON.stringify(error.response.data)}`);
+          }
+          throw error; // Lançar o erro para ser tratado externamente, se necessário
         }
       }
+    } else {
+      logger.warn(`Nenhum resultado encontrado para o UUID: ${uuid}`);
+      return null; // Retornar null se não houver resultados
     }
+
   }
 
   private handleLogEntry(logEntry: LogEntry) {
