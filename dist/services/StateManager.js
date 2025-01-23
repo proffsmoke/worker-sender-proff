@@ -1,5 +1,9 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
+const logger_1 = __importDefault(require("../utils/logger"));
 class StateManager {
     constructor() {
         this.pendingSends = new Map();
@@ -21,7 +25,14 @@ class StateManager {
         if (!this.uuidQueueMap.has(uuid)) {
             this.uuidQueueMap.set(uuid, []);
         }
-        this.uuidQueueMap.get(uuid)?.push(queueId);
+        // Verifica se o queueId já está associado ao uuid
+        if (!this.uuidQueueMap.get(uuid)?.includes(queueId)) {
+            this.uuidQueueMap.get(uuid)?.push(queueId);
+            logger_1.default.info(`Associado queueId ${queueId} ao uuid ${uuid}`);
+        }
+        else {
+            logger_1.default.info(`queueId ${queueId} já está associado ao uuid ${uuid}`);
+        }
     }
     getQueueIdsByUuid(uuid) {
         return this.uuidQueueMap.get(uuid);
@@ -52,6 +63,7 @@ class StateManager {
             this.mailIdQueueMap.set(mailId, []);
         }
         this.mailIdQueueMap.get(mailId)?.push(queueId);
+        logger_1.default.info(`Associado queueId ${queueId} ao mailId ${mailId}`); // Log para depuração
     }
     getQueueIdsByMailId(mailId) {
         return this.mailIdQueueMap.get(mailId);
