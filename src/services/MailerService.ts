@@ -155,9 +155,6 @@ class MailerService {
       return { success: false, recipients: [] };
     }
   }
-  
-  
-  
 
   private handleLogEntry(logEntry: LogEntry) {
     logger.info(`Log recebido para queueId=${logEntry.queueId}: ${JSON.stringify(logEntry)}`);
@@ -201,7 +198,6 @@ class MailerService {
       }
     }
   }
-  
 
   private async sendConsolidatedResults(results: any[]): Promise<void> {
     // Exemplo de como você pode enviar esses resultados a uma API ou outro serviço
@@ -277,6 +273,52 @@ class MailerService {
 
   public getEmailService(): EmailService {
     return this.emailService;
+  }
+
+  // Método adicionado para consolidar os resultados associados a um UUID
+  public async getResultsByUuid(uuid: string): Promise<RecipientStatus[]> {
+    const queueIds = this.stateManager.getQueueIdsByUuid(uuid);
+    if (!queueIds) {
+      logger.warn(`Nenhum queueId encontrado para UUID: ${uuid}`);
+      return [];
+    }
+
+    let allResults: RecipientStatus[] = [];
+
+    // Buscar os resultados de todos os queueIds associados ao UUID
+    for (const queueId of queueIds) {
+      const sendData = this.stateManager.getPendingSend(queueId);
+      if (sendData) {
+        allResults = [...allResults, ...sendData.results];
+      }
+    }
+
+    // Resumo do que foi enviado, com status de sucesso ou falha para cada email
+    const consolidatedResults = allResults.map((r: RecipientStatus) => {
+      return {
+        email: r.recipient,
+        result: r.success ? 'Sucesso' : `Falha: ${r.error || 'Erro desconhecido'}`,
+        success: r.success
+      };
+    });
+
+    // Log dos resultados consolidados
+    logger.info(`Resultados consolidados para UUID=${uuid}:`, consolidatedResults);
+
+    // Resumo final com todos os resultados
+    const successCount = consolidatedResults.filter(r => r.success).length;
+    const failureCount = consolidatedResults.filter(r => !r.success).length;
+
+    logger.info(`Resumo para UUID=${uuid}:`);
+    logger.info(`Emails enviados com sucesso: ${successCount}`);
+    logger.info(`Emails com falha: ${failureCount}`);
+
+    // Se algum erro ocorrer, a mensagem completa será exibida no log
+    if (failureCount > 0) {
+      logger.error(`Falha no envio de ${failureCount} emails para UUID=${uuid}. Detalhes:`, consolidatedResults.filter(r => !r.success));
+    }
+
+    return allResults;
   }
 }
 
