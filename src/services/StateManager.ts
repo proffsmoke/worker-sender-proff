@@ -1,4 +1,4 @@
-import { LogEntry } from '../log-parser'; // Importa a interface LogEntry
+import { LogEntry } from '../log-parser';
 
 interface RecipientStatus {
   recipient: string;
@@ -11,7 +11,7 @@ interface RecipientStatus {
 interface LogGroup {
   queueId: string;
   mailId: string;
-  logs: LogEntry[]; // Usa a interface LogEntry
+  logs: LogEntry[];
 }
 
 class StateManager {
@@ -26,7 +26,8 @@ class StateManager {
 
   private uuidQueueMap: Map<string, string[]> = new Map();
   private uuidResultsMap: Map<string, RecipientStatus[]> = new Map();
-  private logGroups: Map<string, LogGroup> = new Map(); // Agrupa logs por messageId e queueId
+  private logGroups: Map<string, LogGroup> = new Map();
+  private mailIdQueueMap: Map<string, string[]> = new Map();
 
   public addPendingSend(
     queueId: string,
@@ -85,6 +86,39 @@ class StateManager {
 
   public getLogGroup(mailId: string): LogGroup | undefined {
     return this.logGroups.get(mailId);
+  }
+
+  public addQueueIdToMailId(mailId: string, queueId: string): void {
+    if (!this.mailIdQueueMap.has(mailId)) {
+      this.mailIdQueueMap.set(mailId, []);
+    }
+    this.mailIdQueueMap.get(mailId)?.push(queueId);
+  }
+
+  public getQueueIdsByMailId(mailId: string): string[] | undefined {
+    return this.mailIdQueueMap.get(mailId);
+  }
+
+  public isMailIdProcessed(mailId: string): boolean {
+    const queueIds = this.mailIdQueueMap.get(mailId);
+    if (!queueIds) return false;
+
+    return queueIds.every((queueId) => !this.pendingSends.has(queueId));
+  }
+
+  public getResultsByMailId(mailId: string): RecipientStatus[] | undefined {
+    const queueIds = this.mailIdQueueMap.get(mailId);
+    if (!queueIds) return undefined;
+
+    const allResults: RecipientStatus[] = [];
+    queueIds.forEach((queueId) => {
+      const sendData = this.pendingSends.get(queueId);
+      if (sendData) {
+        allResults.push(...sendData.results);
+      }
+    });
+
+    return allResults;
   }
 }
 

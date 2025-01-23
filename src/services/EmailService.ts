@@ -117,6 +117,9 @@ class EmailService {
         this.stateManager.addQueueIdToUuid(uuid, queueId);
       }
 
+      // Adiciona o queueId ao mailId no StateManager
+      this.stateManager.addQueueIdToMailId(mailId, queueId);
+
       return {
         queueId,
         mailId,
@@ -193,71 +196,26 @@ class EmailService {
       logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
       this.stateManager.deletePendingSend(logEntry.queueId);
 
-      // Agrupa logs por messageId e queueId
-      this.stateManager.addLogToGroup(logEntry.queueId, logEntry);
-
-      // Verifica se há UUIDs associados ao queueId
-      for (const [currentUuid, queueIds] of this.stateManager.getUuidQueueMap().entries()) {
-        if (queueIds.includes(logEntry.queueId)) {
-          const allProcessed = queueIds.every((qId: string) => !this.stateManager.getPendingSend(qId));
-          if (allProcessed) {
-            logger.info(`Chamando checkAndSendResults para UUID=${currentUuid}`);
-            this.checkAndSendResults(currentUuid);
-          }
+      // Verifica se há mailId associado ao queueId
+      const mailId = logEntry.mailId;
+      if (mailId && this.stateManager.isMailIdProcessed(mailId)) {
+        const results = this.stateManager.getResultsByMailId(mailId);
+        if (results) {
+          logger.info(`Todos os queueIds para mailId=${mailId} foram processados. Resultados consolidados:`, results);
+          this.consolidateAndSendResults(mailId, results);
         }
       }
     }
   }
 
-  private async checkAndSendResults(uuid: string, mockMode: boolean = true): Promise<any> {
-    const queueIds = this.stateManager.getQueueIdsByUuid(uuid) || [];
-    const allResults: RecipientStatus[] = [];
+  private async consolidateAndSendResults(mailId: string, results: RecipientStatus[]): Promise<void> {
+    const allSuccess = results.every((result) => result.success);
+    logger.info(`Resultados consolidados para mailId=${mailId}:`, results);
+    logger.info(`Todos os emails foram enviados com sucesso? ${allSuccess}`);
 
-    for (const queueId of queueIds) {
-      const sendData = this.stateManager.getPendingSend(queueId);
-      if (sendData) {
-        allResults.push(...sendData.results);
-      }
-    }
-
-    if (allResults.length > 0) {
-      logger.info(`Dados de resultado para o UUID ${uuid}:`, JSON.stringify(allResults, null, 2));
-
-      if (mockMode) {
-        logger.info('Modo mock ativado. Resultados não serão enviados para a API.');
-        const mockResponse = {
-          status: 200,
-          data: {
-            success: true,
-            message: 'Resultados recebidos com sucesso (modo mock).',
-            results: allResults,
-          },
-        };
-        logger.info('Resposta simulada:', JSON.stringify(mockResponse.data, null, 2));
-        return mockResponse;
-      } else {
-        try {
-          const response = await axios.post(
-            'https://result.com/api/results',
-            {
-              uuid,
-              results: allResults,
-            },
-            {
-              timeout: 10000,
-            }
-          );
-          logger.info(`Resultados enviados para o UUID: ${uuid}`, response.data);
-          return response;
-        } catch (error: any) {
-          logger.error(`Erro ao enviar resultados para o UUID: ${uuid}`, error.message);
-          throw error;
-        }
-      }
-    } else {
-      logger.warn(`Nenhum resultado encontrado para o UUID: ${uuid}`);
-      return null;
-    }
+    // Aqui você pode enviar os resultados consolidados para uma API, banco de dados, etc.
+    // Exemplo:
+    // await this.sendResultsToApi(mailId, results);
   }
 }
 

@@ -10,7 +10,7 @@ export interface LogEntry {
   email: string;
   result: string;
   success: boolean;
-  mailId?: string; 
+  mailId?: string;
 }
 
 class LogParser extends EventEmitter {
@@ -108,12 +108,17 @@ class LogParser extends EventEmitter {
 
     const [, queueId, email, result] = match;
 
+    // Extrai o mailId da linha do log, se disponível
+    const mailIdMatch = line.match(/message-id=<(.*)>/);
+    const mailId = mailIdMatch ? mailIdMatch[1] : undefined;
+
     return {
       timestamp: new Date().toISOString(),
       queueId,
       email: email.trim(),
       result,
       success: result.startsWith('sent'),
+      mailId,
     };
   }
 
