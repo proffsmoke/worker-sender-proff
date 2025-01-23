@@ -4,7 +4,6 @@ import EmailService from './EmailService';
 import LogParser, { LogEntry } from '../log-parser';
 import BlockManagerService from './BlockManagerService';
 
-// Definir a interface RecipientStatus
 interface RecipientStatus {
   recipient: string;
   success: boolean;
@@ -12,6 +11,7 @@ interface RecipientStatus {
 }
 
 class MailerService {
+  private static instance: MailerService; // Singleton instance
   private isBlocked: boolean = false;
   private isBlockedPermanently: boolean = false;
   private blockReason: string | null = null;
@@ -22,16 +22,25 @@ class MailerService {
   private emailService: EmailService;
   private blockManagerService: BlockManagerService;
 
-  constructor() {
+  private constructor() {
     this.createdAt = new Date();
     this.logParser = new LogParser('/var/log/mail.log');
+    this.emailService = EmailService.getInstance(this.logParser);
+    this.blockManagerService = BlockManagerService.getInstance(this);
+
+    // Inicia o monitoramento de logs
     this.logParser.on('log', this.handleLogEntry.bind(this));
     this.logParser.startMonitoring();
 
-    this.emailService = EmailService.getInstance(this.logParser);
-    this.blockManagerService = new BlockManagerService(this.logParser, this);
-
     this.initialize();
+  }
+
+  // Método estático para obter a instância única do MailerService
+  public static getInstance(): MailerService {
+    if (!MailerService.instance) {
+      MailerService.instance = new MailerService();
+    }
+    return MailerService.instance;
   }
 
   initialize() {
@@ -148,6 +157,9 @@ class MailerService {
       logger.warn(`Falha no envio para queueId=${logEntry.queueId}: ${logEntry.result}`);
       this.blockMailer('blocked_temporary', `Falha no envio para queueId=${logEntry.queueId}`);
     }
+
+    // Notifica o BlockManagerService sobre o log
+    this.blockManagerService.handleLogEntry(logEntry);
   }
 
   private waitForLogEntry(queueId: string): Promise<LogEntry | null> {
@@ -163,12 +175,9 @@ class MailerService {
         resolve(logEntry);
       } else {
         this.logParser.once('log', (logEntry: LogEntry) => {
-          logger.info(`Esperando log para queueId=${queueId}. Conteúdo que foi processado: ${JSON.stringify(logEntry)}`);
           if (logEntry.queueId === queueId) {
             clearTimeout(timeout);
             resolve(logEntry);
-          } else {
-            logger.info(`QueueId não corresponde. Log recebido: ${JSON.stringify(logEntry)}`);
           }
         });
       }
@@ -223,4 +232,4 @@ class MailerService {
   }
 }
 
-export default new MailerService();
+export default MailerService.getInstance();

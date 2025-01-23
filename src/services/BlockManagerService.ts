@@ -1,31 +1,23 @@
-import LogParser from '../log-parser';
-import BlockService from './BlockService';
-import MailerService from './MailerService';
-import config from '../config';
 import logger from '../utils/logger';
-
-// Definir a interface RecipientStatus
-interface RecipientStatus {
-  recipient: string;
-  success: boolean;
-  error?: string;
-}
+import MailerService from './MailerService'; // Importando o MailerService
 
 class BlockManagerService {
-  private logParser: LogParser;
-  private blockService: typeof BlockService;
-  private mailerService: typeof MailerService;
+  private static instance: BlockManagerService; // Singleton instance
+  private mailerService: typeof MailerService; // Usando typeof para referenciar o tipo da classe
 
-  constructor(logParser: LogParser, mailerService: typeof MailerService) {
-    this.logParser = logParser;
-    this.blockService = BlockService;
+  private constructor(mailerService: typeof MailerService) {
     this.mailerService = mailerService;
-
-    this.logParser.on('log', this.handleLogEntry.bind(this));
-    this.logParser.startMonitoring();
   }
 
-  private handleLogEntry(logEntry: any) {
+  // Método estático para obter a instância única do BlockManagerService
+  public static getInstance(mailerService: typeof MailerService): BlockManagerService {
+    if (!BlockManagerService.instance) {
+      BlockManagerService.instance = new BlockManagerService(mailerService);
+    }
+    return BlockManagerService.instance;
+  }
+
+  public handleLogEntry(logEntry: any) {
     if (this.mailerService.getStatus() !== 'health') {
       logger.info(`Ignorando logEntry porque o Mailer está bloqueado. Status atual: ${this.mailerService.getStatus()}`);
       return;
@@ -38,13 +30,24 @@ class BlockManagerService {
       return;
     }
 
-    if (this.blockService.isPermanentError(message)) {
+    // Verifica se o erro é permanente ou temporário e aplica o bloqueio correspondente
+    if (this.isPermanentError(message)) {
       this.applyBlock('permanent', message);
       logger.info(`Bloqueio permanente aplicado devido à linha de log: "${message}"`);
-    } else if (this.blockService.isTemporaryError(message)) {
+    } else if (this.isTemporaryError(message)) {
       this.applyBlock('temporary', message);
       logger.info(`Bloqueio temporário aplicado devido à linha de log: "${message}"`);
     }
+  }
+
+  private isPermanentError(message: string): boolean {
+    // Lógica para identificar erros permanentes
+    return message.includes('permanent');
+  }
+
+  private isTemporaryError(message: string): boolean {
+    // Lógica para identificar erros temporários
+    return message.includes('temporary');
   }
 
   private applyBlock(type: 'permanent' | 'temporary', reason: string) {
@@ -52,26 +55,6 @@ class BlockManagerService {
       this.mailerService.blockMailer('blocked_permanently', reason);
     } else {
       this.mailerService.blockMailer('blocked_temporary', reason);
-
-      setTimeout(() => {
-        this.checkAndUnblock();
-      }, config.mailer.temporaryBlockDuration);
-    }
-  }
-
-  private async checkAndUnblock() {
-    try {
-      const testResult = await this.mailerService.sendInitialTestEmail();
-  
-      // Verifica se todos os destinatários receberam o email com sucesso
-      if (testResult.recipients.every((r: RecipientStatus) => r.success)) {
-        this.mailerService.unblockMailer();
-        logger.info('Bloqueio temporário removido após sucesso no email de teste.');
-      } else {
-        logger.warn('Falha no email de teste. Bloqueio temporário permanece.');
-      }
-    } catch (error) {
-      logger.error('Erro ao realizar o email de teste para desbloqueio:', error);
     }
   }
 }

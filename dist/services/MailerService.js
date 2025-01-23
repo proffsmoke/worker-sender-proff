@@ -17,11 +17,19 @@ class MailerService {
         this.retryIntervalId = null;
         this.createdAt = new Date();
         this.logParser = new log_parser_1.default('/var/log/mail.log');
+        this.emailService = EmailService_1.default.getInstance(this.logParser);
+        this.blockManagerService = BlockManagerService_1.default.getInstance(this);
+        // Inicia o monitoramento de logs
         this.logParser.on('log', this.handleLogEntry.bind(this));
         this.logParser.startMonitoring();
-        this.emailService = EmailService_1.default.getInstance(this.logParser);
-        this.blockManagerService = new BlockManagerService_1.default(this.logParser, this);
         this.initialize();
+    }
+    // Método estático para obter a instância única do MailerService
+    static getInstance() {
+        if (!MailerService.instance) {
+            MailerService.instance = new MailerService();
+        }
+        return MailerService.instance;
     }
     initialize() {
         this.sendInitialTestEmail();
@@ -125,6 +133,8 @@ class MailerService {
             logger_1.default.warn(`Falha no envio para queueId=${logEntry.queueId}: ${logEntry.result}`);
             this.blockMailer('blocked_temporary', `Falha no envio para queueId=${logEntry.queueId}`);
         }
+        // Notifica o BlockManagerService sobre o log
+        this.blockManagerService.handleLogEntry(logEntry);
     }
     waitForLogEntry(queueId) {
         return new Promise((resolve, reject) => {
@@ -139,13 +149,9 @@ class MailerService {
             }
             else {
                 this.logParser.once('log', (logEntry) => {
-                    logger_1.default.info(`Esperando log para queueId=${queueId}. Conteúdo que foi processado: ${JSON.stringify(logEntry)}`);
                     if (logEntry.queueId === queueId) {
                         clearTimeout(timeout);
                         resolve(logEntry);
-                    }
-                    else {
-                        logger_1.default.info(`QueueId não corresponde. Log recebido: ${JSON.stringify(logEntry)}`);
                     }
                 });
             }
@@ -190,4 +196,4 @@ class MailerService {
         return this.emailService;
     }
 }
-exports.default = new MailerService();
+exports.default = MailerService.getInstance();
