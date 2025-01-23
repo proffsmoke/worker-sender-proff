@@ -48,7 +48,7 @@ class LogParser extends EventEmitter {
         // Log analisado em tempo real
         logger.info('Log analisado:', logEntry);
 
-        // Emite o log para que o MailerService possa processá-lo imediatamente
+        // Emite o log para que o MailerService possa processá-lo
         this.emit('log', logEntry);
       }
     } catch (error) {
