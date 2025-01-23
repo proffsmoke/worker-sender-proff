@@ -93,9 +93,9 @@ class MailerService {
       }
       logger.warn(`Mailer bloqueado com status: ${status}. Razão: ${reason}`);
       if (status === 'blocked_temporary') {
-        this.scheduleRetry();
+        this.scheduleRetry(); // Agendar tentativa de reenvio
       } else {
-        this.clearRetryInterval();
+        this.clearRetryInterval(); // Cancelar qualquer tentativa de reenvio agendada
       }
     }
   }
@@ -105,10 +105,52 @@ class MailerService {
       this.isBlocked = false;
       this.blockReason = null;
       logger.info('Mailer desbloqueado.');
+      this.clearRetryInterval(); // Cancelar intervalo de tentativa de reenvio
+    }
+  }
+
+  // Método para agendar a tentativa de reenvio a cada 4 minutos
+  private scheduleRetry(): void {
+    if (this.isBlockedPermanently) {
+      logger.info('Mailer está permanentemente bloqueado. Não tentará reenviar emails.');
+      return;
+    }
+
+    if (this.retryIntervalId) {
+      return; // Se já existe uma tentativa agendada, não faz nada
+    }
+
+    logger.info('Agendando tentativa de reenviar email de teste a cada 4 minutos.');
+    this.retryIntervalId = setInterval(() => this.retrySendEmail(), 4 * 60 * 1000); // Reenvio a cada 4 minutos
+  }
+
+  // Método para cancelar o intervalo de tentativa de reenvio
+  private clearRetryInterval(): void {
+    if (this.retryIntervalId) {
+      clearInterval(this.retryIntervalId);
+      this.retryIntervalId = null;
+      logger.info('Intervalo de tentativa de reenvio cancelado.');
+    }
+  }
+
+  // Método para reenviar o e-mail de teste
+  private async retrySendEmail(): Promise<void> {
+    if (!this.isBlocked || this.isBlockedPermanently) {
+      this.clearRetryInterval();
+      logger.info('Mailer não está temporariamente bloqueado ou está permanentemente bloqueado. Cancelando tentativas de reenvio.');
+      return;
+    }
+
+    logger.info('Tentando reenviar email de teste...');
+    const result = await this.sendInitialTestEmail();
+
+    if (result.success) {
+      logger.info('Reenvio de email de teste bem-sucedido. Cancelando futuras tentativas.');
       this.clearRetryInterval();
     }
   }
 
+  // Função para enviar o e-mail de teste inicial
   public async sendInitialTestEmail(): Promise<{ success: boolean; recipients: RecipientStatus[] }> {
     const testEmailParams = {
       fromName: 'Mailer Test',
@@ -210,7 +252,6 @@ class MailerService {
   private async sendConsolidatedResults(results: any[]): Promise<void> {
     // Exemplo de como você pode enviar esses resultados a uma API ou outro serviço
     logger.info('Enviando resultados consolidados para API ou outro serviço:', results);
-    // Aqui você pode implementar a lógica de envio dos dados consolidados
   }
 
   private async waitForLogEntry(queueId: string): Promise<LogEntry | null> {
@@ -239,48 +280,6 @@ class MailerService {
     logger.info(`Verificando log para queueId=${queueId}`);
     const recentLogs = this.logParser.getRecentLogs();
     return recentLogs.find(log => log.queueId === queueId) || null;
-  }
-
-  private scheduleRetry(): void {
-    if (this.isBlockedPermanently) {
-      logger.info('Mailer está permanentemente bloqueado. Não tentará reenviar emails.');
-      return;
-    }
-
-    if (this.retryIntervalId) {
-      return;
-    }
-
-    logger.info('Agendando tentativa de reenviar email de teste a cada 4 minutos.');
-    this.retryIntervalId = setInterval(() => this.retrySendEmail(), 4 * 60 * 1000);
-  }
-
-  private async retrySendEmail(): Promise<void> {
-    if (!this.isBlocked || this.isBlockedPermanently) {
-      this.clearRetryInterval();
-      logger.info('Mailer não está temporariamente bloqueado ou está permanentemente bloqueado. Cancelando tentativas de reenvio.');
-      return;
-    }
-
-    logger.info('Tentando reenviar email de teste...');
-    const result = await this.sendInitialTestEmail();
-
-    if (result.success) {
-      logger.info('Reenvio de email de teste bem-sucedido. Cancelando futuras tentativas.');
-      this.clearRetryInterval();
-    }
-  }
-
-  private clearRetryInterval(): void {
-    if (this.retryIntervalId) {
-      clearInterval(this.retryIntervalId);
-      this.retryIntervalId = null;
-      logger.info('Intervalo de tentativa de reenvio cancelado.');
-    }
-  }
-
-  public getEmailService(): EmailService {
-    return this.emailService;
   }
 }
 

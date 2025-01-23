@@ -56,7 +56,7 @@ class StateManager {
       this.uuidQueueMap.set(uuid, []);
     }
 
-    // Verifica se o queueId já está associado ao uuid
+    // Verifique se o queueId já está associado ao uuid
     if (!this.uuidQueueMap.get(uuid)?.includes(queueId)) {
       this.uuidQueueMap.get(uuid)?.push(queueId);
       logger.info(`Associado queueId ${queueId} ao uuid ${uuid}`);

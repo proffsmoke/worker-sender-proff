@@ -25,7 +25,7 @@ class StateManager {
         if (!this.uuidQueueMap.has(uuid)) {
             this.uuidQueueMap.set(uuid, []);
         }
-        // Verifica se o queueId já está associado ao uuid
+        // Verifique se o queueId já está associado ao uuid
         if (!this.uuidQueueMap.get(uuid)?.includes(queueId)) {
             this.uuidQueueMap.get(uuid)?.push(queueId);
             logger_1.default.info(`Associado queueId ${queueId} ao uuid ${uuid}`);
@@ -63,7 +63,7 @@ class StateManager {
             this.mailIdQueueMap.set(mailId, []);
         }
         this.mailIdQueueMap.get(mailId)?.push(queueId);
-        logger_1.default.info(`Associado queueId ${queueId} ao mailId ${mailId}`); // Log para depuração
+        logger_1.default.info(`Associado queueId ${queueId} ao mailId ${mailId}`);
     }
     getQueueIdsByMailId(mailId) {
         return this.mailIdQueueMap.get(mailId);
@@ -86,6 +86,33 @@ class StateManager {
             }
         });
         return allResults;
+    }
+    consolidateResultsByUuid(uuid) {
+        const queueIds = this.uuidQueueMap.get(uuid);
+        if (!queueIds)
+            return undefined;
+        const allResults = [];
+        queueIds.forEach((queueId) => {
+            const sendData = this.pendingSends.get(queueId);
+            if (sendData) {
+                allResults.push(...sendData.results);
+            }
+        });
+        return allResults;
+    }
+    isUuidProcessed(uuid) {
+        const queueIds = this.uuidQueueMap.get(uuid);
+        if (!queueIds)
+            return false;
+        return queueIds.every((queueId) => !this.pendingSends.has(queueId));
+    }
+    getUuidByQueueId(queueId) {
+        for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
+            if (queueIds.includes(queueId)) {
+                return uuid;
+            }
+        }
+        return undefined;
     }
 }
 exports.default = StateManager;

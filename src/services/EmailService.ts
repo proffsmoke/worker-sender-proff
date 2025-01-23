@@ -90,13 +90,11 @@ class EmailService {
 
       // Associar imediatamente o queueId ao UUID
       if (uuid) {
-        this.stateManager.addQueueIdToUuid(uuid, queueId);
+        this.stateManager.addQueueIdToUuid(uuid, queueId); // Garante que o queueId seja associado corretamente
         logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
       }
 
-      // Exibindo que está aguardando os logs
-      logger.info(`Aguardando log para o queueId=${queueId}. Este email está pendente de logs.`);
-
+      // Adicionar o queueId no pendingSends
       const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
         recipient,
         success: true,
@@ -104,7 +102,6 @@ class EmailService {
         mailId,
       }));
 
-      // Adicionar a associação no stateManager
       this.stateManager.addPendingSend(queueId, {
         toRecipients,
         bccRecipients,
@@ -183,5 +180,6 @@ class EmailService {
     // await this.sendResultsToApi(uuid, results);
   }
 }
+
 
 export default EmailService;

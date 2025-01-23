@@ -54,18 +54,16 @@ class EmailService {
             logger_1.default.info(`Email enviado!`);
             // Associar imediatamente o queueId ao UUID
             if (uuid) {
-                this.stateManager.addQueueIdToUuid(uuid, queueId); // Associando uuid ao queueId
+                this.stateManager.addQueueIdToUuid(uuid, queueId); // Garante que o queueId seja associado corretamente
                 logger_1.default.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
             }
-            // Exibindo que está aguardando os logs
-            logger_1.default.info(`Aguardando log para o queueId=${queueId}. Este email está pendente de logs.`);
+            // Adicionar o queueId no pendingSends
             const recipientsStatus = allRecipients.map((recipient) => ({
                 recipient,
                 success: true,
                 queueId,
-                mailId, // Associando o mailId a cada destinatário
+                mailId,
             }));
-            // Adicionar a associação no stateManager
             this.stateManager.addPendingSend(queueId, {
                 toRecipients,
                 bccRecipients,
@@ -91,21 +89,6 @@ class EmailService {
             };
         }
     }
-    async sendEmailList(params, uuid) {
-        const { emailDomain, emailList } = params;
-        const results = await Promise.all(emailList.map(async (emailItem) => {
-            return this.sendEmail({
-                fromName: emailItem.name || 'No-Reply',
-                emailDomain,
-                to: emailItem.email,
-                bcc: [],
-                subject: emailItem.subject,
-                html: emailItem.template,
-                clientName: emailItem.clientName,
-            }, uuid);
-        }));
-        return results;
-    }
     handleLogEntry(logEntry) {
         const sendData = this.stateManager.getPendingSend(logEntry.queueId);
         if (!sendData) {
@@ -130,24 +113,24 @@ class EmailService {
         if (processedRecipients >= totalRecipients) {
             logger_1.default.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
             this.stateManager.deletePendingSend(logEntry.queueId);
-            // Verifica se há mailId associado ao queueId
-            const mailId = logEntry.mailId;
-            if (mailId && this.stateManager.isMailIdProcessed(mailId)) {
-                const results = this.stateManager.getResultsByMailId(mailId);
+            // Verifica se há uuid associado ao queueId
+            const uuid = this.stateManager.getUuidByQueueId(logEntry.queueId);
+            if (uuid && this.stateManager.isUuidProcessed(uuid)) {
+                const results = this.stateManager.consolidateResultsByUuid(uuid);
                 if (results) {
-                    logger_1.default.info(`Todos os queueIds para mailId=${mailId} foram processados. Resultados consolidados:`, results);
-                    this.consolidateAndSendResults(mailId, results);
+                    logger_1.default.info(`Todos os queueIds para uuid=${uuid} foram processados. Resultados consolidados:`, results);
+                    this.consolidateAndSendResults(uuid, results);
                 }
             }
         }
     }
-    async consolidateAndSendResults(mailId, results) {
+    async consolidateAndSendResults(uuid, results) {
         const allSuccess = results.every((result) => result.success);
-        logger_1.default.info(`Resultados consolidados para mailId=${mailId}:`, results);
+        logger_1.default.info(`Resultados consolidados para uuid=${uuid}:`, results);
         logger_1.default.info(`Todos os emails foram enviados com sucesso? ${allSuccess}`);
         // Aqui você pode enviar os resultados consolidados para uma API, banco de dados, etc.
         // Exemplo:
-        // await this.sendResultsToApi(mailId, results);
+        // await this.sendResultsToApi(uuid, results);
     }
 }
 exports.default = EmailService;
