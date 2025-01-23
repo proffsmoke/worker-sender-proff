@@ -110,6 +110,12 @@ class MailerService {
   }
 
   public async sendInitialTestEmail(): Promise<{ success: boolean; recipients: RecipientStatus[] }> {
+    // Verifica se o Mailer está bloqueado antes de enviar o email
+    if (this.getStatus() !== 'health') {
+      logger.warn(`Mailer está bloqueado, não será possível enviar o email de teste.`);
+      return { success: false, recipients: [] };
+    }
+  
     const testEmailParams = {
       fromName: 'Mailer Test',
       emailDomain: config.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
@@ -151,6 +157,7 @@ class MailerService {
       return { success: false, recipients: [] };
     }
   }
+  
   
 
   private handleLogEntry(logEntry: LogEntry) {
