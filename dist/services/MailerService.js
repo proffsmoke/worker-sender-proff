@@ -8,6 +8,7 @@ const config_1 = __importDefault(require("../config"));
 const EmailService_1 = __importDefault(require("./EmailService"));
 const log_parser_1 = __importDefault(require("../log-parser"));
 const BlockManagerService_1 = __importDefault(require("./BlockManagerService"));
+const StateManager_1 = __importDefault(require("./StateManager")); // Importando o StateManager
 class MailerService {
     constructor() {
         this.isBlocked = false;
@@ -20,6 +21,7 @@ class MailerService {
         this.logParser = new log_parser_1.default('/var/log/mail.log');
         this.emailService = EmailService_1.default.getInstance(this.logParser);
         this.blockManagerService = BlockManagerService_1.default.getInstance(this);
+        this.stateManager = new StateManager_1.default(); // Inicializando o stateManager
         if (!this.isMonitoringStarted) {
             this.logParser.on('log', this.handleLogEntry.bind(this));
             this.logParser.startMonitoring();
@@ -132,7 +134,33 @@ class MailerService {
         else {
             logger_1.default.warn(`Falha no envio para queueId=${logEntry.queueId}: ${logEntry.result}`);
         }
+        // Processar status de todos os destinatários
         this.blockManagerService.handleLogEntry(logEntry);
+        // Verificar se todos os destinatários de um e-mail ou lista de e-mails foram processados
+        const sendData = this.stateManager.getPendingSend(logEntry.queueId);
+        if (sendData) {
+            const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
+            const processedRecipients = sendData.results.filter((r) => r.success !== undefined).length;
+            if (processedRecipients === totalRecipients) {
+                // Todos os destinatários foram processados, gerar a mensagem consolidada
+                const consolidatedMessage = sendData.results.map((r) => {
+                    return {
+                        email: r.recipient,
+                        name: r.name || 'Desconhecido',
+                        result: r.success ? 'Sucesso' : `Falha: ${r.error || 'Erro desconhecido'}`
+                    };
+                });
+                logger_1.default.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Resultados consolidados:`, consolidatedMessage);
+                this.stateManager.deletePendingSend(logEntry.queueId); // Remover da lista de pendentes
+                // Enviar os resultados consolidados, se necessário (para uma API, email, etc.)
+                this.sendConsolidatedResults(consolidatedMessage);
+            }
+        }
+    }
+    async sendConsolidatedResults(results) {
+        // Exemplo de como você pode enviar esses resultados a uma API ou outro serviço
+        logger_1.default.info('Enviando resultados consolidados para API ou outro serviço:', results);
+        // Aqui você pode implementar a lógica de envio dos dados consolidados
     }
     async waitForLogEntry(queueId) {
         return new Promise((resolve, reject) => {

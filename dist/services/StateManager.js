@@ -5,7 +5,8 @@ class StateManager {
         this.pendingSends = new Map();
         this.uuidQueueMap = new Map();
         this.uuidResultsMap = new Map();
-        this.logGroups = new Map(); // Agrupa logs por messageId e queueId
+        this.logGroups = new Map();
+        this.mailIdQueueMap = new Map();
     }
     addPendingSend(queueId, data) {
         this.pendingSends.set(queueId, data);
@@ -45,6 +46,34 @@ class StateManager {
     }
     getLogGroup(mailId) {
         return this.logGroups.get(mailId);
+    }
+    addQueueIdToMailId(mailId, queueId) {
+        if (!this.mailIdQueueMap.has(mailId)) {
+            this.mailIdQueueMap.set(mailId, []);
+        }
+        this.mailIdQueueMap.get(mailId)?.push(queueId);
+    }
+    getQueueIdsByMailId(mailId) {
+        return this.mailIdQueueMap.get(mailId);
+    }
+    isMailIdProcessed(mailId) {
+        const queueIds = this.mailIdQueueMap.get(mailId);
+        if (!queueIds)
+            return false;
+        return queueIds.every((queueId) => !this.pendingSends.has(queueId));
+    }
+    getResultsByMailId(mailId) {
+        const queueIds = this.mailIdQueueMap.get(mailId);
+        if (!queueIds)
+            return undefined;
+        const allResults = [];
+        queueIds.forEach((queueId) => {
+            const sendData = this.pendingSends.get(queueId);
+            if (sendData) {
+                allResults.push(...sendData.results);
+            }
+        });
+        return allResults;
     }
 }
 exports.default = StateManager;

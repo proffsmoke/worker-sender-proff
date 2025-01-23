@@ -13,6 +13,7 @@ class EmailController {
             const emailService = EmailService_1.default.getInstance();
             const requestUuid = uuid || (0, uuid_1.v4)();
             if (emailList) {
+                // Enviar a lista de e-mails
                 const results = await emailService.sendEmailList({
                     emailDomain,
                     emailList,
@@ -27,6 +28,7 @@ class EmailController {
                 if (!to || !subject || !html) {
                     throw new Error('Parâmetros "to", "subject" e "html" são obrigatórios para envio de email único.');
                 }
+                // Enviar um único e-mail
                 const result = await emailService.sendEmail({
                     fromName,
                     emailDomain,

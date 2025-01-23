@@ -117,9 +117,6 @@ class EmailService {
         this.stateManager.addQueueIdToUuid(uuid, queueId);
       }
 
-      // Adiciona o queueId ao mailId no StateManager
-      this.stateManager.addQueueIdToMailId(mailId, queueId);
-
       return {
         queueId,
         mailId,
