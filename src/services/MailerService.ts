@@ -3,7 +3,7 @@ import config from '../config';
 import EmailService from './EmailService';
 import LogParser, { LogEntry } from '../log-parser';
 import BlockManagerService from './BlockManagerService';
-
+//perfect
 interface RecipientStatus {
   recipient: string;
   success: boolean;
