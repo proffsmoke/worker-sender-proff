@@ -153,41 +153,45 @@ class MailerService {
       logger.info(`Ignorando logEntry porque o Mailer está bloqueado. Status atual: ${this.getStatus()}`);
       return;
     }
-
+  
     logger.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
+    
     if (logEntry.success) {
       logger.info(`Email com queueId=${logEntry.queueId} foi enviado com sucesso.`);
     } else {
       logger.warn(`Falha no envio para queueId=${logEntry.queueId}: ${logEntry.result}`);
     }
-
+  
     // Processar status de todos os destinatários
     this.blockManagerService.handleLogEntry(logEntry);
-
+  
     // Verificar se todos os destinatários de um e-mail ou lista de e-mails foram processados
     const sendData = this.stateManager.getPendingSend(logEntry.queueId);
     if (sendData) {
       const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
       const processedRecipients = sendData.results.filter((r: RecipientStatus) => r.success !== undefined).length;
-
+  
       if (processedRecipients === totalRecipients) {
         // Todos os destinatários foram processados, gerar a mensagem consolidada
         const consolidatedMessage = sendData.results.map((r: RecipientStatus) => {
           return {
             email: r.recipient,
-            name: r.name || 'Desconhecido',
-            result: r.success ? 'Sucesso' : `Falha: ${r.error || 'Erro desconhecido'}`
+            name: r.name || 'Desconhecido',  // Certificando-se que 'name' é tratado
+            result: r.success 
+              ? 'Sucesso' 
+              : `Falha: ${r.error || 'Erro desconhecido'}`  // Garantir que o erro seja incluído corretamente
           };
         });
-
+  
         logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Resultados consolidados:`, consolidatedMessage);
         this.stateManager.deletePendingSend(logEntry.queueId); // Remover da lista de pendentes
-
+  
         // Enviar os resultados consolidados, se necessário (para uma API, email, etc.)
         this.sendConsolidatedResults(consolidatedMessage);
       }
     }
   }
+  
 
   private async sendConsolidatedResults(results: any[]): Promise<void> {
     // Exemplo de como você pode enviar esses resultados a uma API ou outro serviço
