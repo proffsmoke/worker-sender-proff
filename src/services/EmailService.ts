@@ -161,11 +161,20 @@ class EmailService {
     const queueIds = this.uuidQueueMap.get(uuid) || [];
     const allResults: RecipientStatus[] = [];
   
+    // Verificar se há queueIds associados ao UUID
+    if (queueIds.length === 0) {
+      logger.warn(`Nenhum queueId encontrado para o UUID: ${uuid}`);
+      return null;
+    }
+  
     // Coletar todos os resultados associados ao UUID
     for (const queueId of queueIds) {
       const sendData = this.pendingSends.get(queueId);
       if (sendData) {
+        logger.info(`Resultados encontrados para queueId=${queueId}:`, JSON.stringify(sendData.results, null, 2));
         allResults.push(...sendData.results);
+      } else {
+        logger.warn(`Nenhum resultado encontrado para queueId=${queueId}`);
       }
     }
   
@@ -231,35 +240,40 @@ class EmailService {
       logger.warn(`Nenhum resultado encontrado para o UUID: ${uuid}`);
       return null; // Retornar null se não houver resultados
     }
-
   }
-
+  
   private handleLogEntry(logEntry: LogEntry) {
     const sendData = this.pendingSends.get(logEntry.queueId);
     if (!sendData) {
+      logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${logEntry.queueId}`);
       return;
     }
-
+  
     const success = logEntry.success;
     const recipient = logEntry.email.toLowerCase();
-
+  
     const recipientIndex = sendData.results.findIndex((r) => r.recipient === recipient);
     if (recipientIndex !== -1) {
       sendData.results[recipientIndex].success = success;
       if (!success) {
         sendData.results[recipientIndex].error = `Status: ${logEntry.result}`;
       }
+      logger.info(`Resultado atualizado para recipient=${recipient}:`, sendData.results[recipientIndex]);
+    } else {
+      logger.warn(`Recipient ${recipient} não encontrado nos resultados para queueId=${logEntry.queueId}`);
     }
-
+  
     const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
     const processedRecipients = sendData.results.length;
-
+  
     if (processedRecipients >= totalRecipients) {
+      logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
       this.pendingSends.delete(logEntry.queueId);
-
+  
       // Verifica se todos os emails de um UUID foram processados
       for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
         if (queueIds.includes(logEntry.queueId)) {
+          logger.info(`Chamando checkAndSendResults para UUID=${uuid}`);
           this.checkAndSendResults(uuid);
         }
       }
