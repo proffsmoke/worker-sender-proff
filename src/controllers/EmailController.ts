@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import EmailService from '../services/EmailService';
 import logger from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
+import StateManager from '../services/StateManager';
 
 class EmailController {
   async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -9,6 +10,7 @@ class EmailController {
 
     try {
       const emailService = EmailService.getInstance();
+      const stateManager = new StateManager();
       const requestUuid = uuid || uuidv4();
 
       if (emailList) {
@@ -21,11 +23,30 @@ class EmailController {
           requestUuid
         );
 
-        res.json({
-          success: true,
-          uuid: requestUuid,
-          results,
-        });
+        // Verifica se todos os emails da lista foram processados
+        if (stateManager.isUuidProcessed(requestUuid)) {
+          const consolidatedResults = stateManager.consolidateResultsByUuid(requestUuid);
+          if (consolidatedResults) {
+            logger.info(`Resultados consolidados para uuid=${requestUuid}:`, consolidatedResults);
+            res.json({
+              success: true,
+              uuid: requestUuid,
+              results: consolidatedResults,
+            });
+          } else {
+            res.json({
+              success: true,
+              uuid: requestUuid,
+              results,
+            });
+          }
+        } else {
+          res.json({
+            success: true,
+            uuid: requestUuid,
+            results,
+          });
+        }
       } else {
         if (!to || !subject || !html) {
           throw new Error('Parâmetros "to", "subject" e "html" são obrigatórios para envio de email único.');
@@ -45,13 +66,36 @@ class EmailController {
           requestUuid
         );
 
-        res.json({
-          success: true,
-          uuid: requestUuid,
-          queueId: result.queueId,
-          mailId: result.mailId,
-          recipients: result.recipients,
-        });
+        // Verifica se o email foi processado
+        if (stateManager.isUuidProcessed(requestUuid)) {
+          const consolidatedResults = stateManager.consolidateResultsByUuid(requestUuid);
+          if (consolidatedResults) {
+            logger.info(`Resultados consolidados para uuid=${requestUuid}:`, consolidatedResults);
+            res.json({
+              success: true,
+              uuid: requestUuid,
+              queueId: result.queueId,
+              mailId: result.mailId,
+              recipients: consolidatedResults,
+            });
+          } else {
+            res.json({
+              success: true,
+              uuid: requestUuid,
+              queueId: result.queueId,
+              mailId: result.mailId,
+              recipients: result.recipients,
+            });
+          }
+        } else {
+          res.json({
+            success: true,
+            uuid: requestUuid,
+            queueId: result.queueId,
+            mailId: result.mailId,
+            recipients: result.recipients,
+          });
+        }
       }
     } catch (error) {
       if (error instanceof Error) {

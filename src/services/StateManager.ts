@@ -55,7 +55,7 @@ class StateManager {
     if (!this.uuidQueueMap.has(uuid)) {
       this.uuidQueueMap.set(uuid, []);
     }
-    
+
     // Verifica se o queueId já está associado ao uuid
     if (!this.uuidQueueMap.get(uuid)?.includes(queueId)) {
       this.uuidQueueMap.get(uuid)?.push(queueId);
@@ -64,7 +64,6 @@ class StateManager {
       logger.info(`queueId ${queueId} já está associado ao uuid ${uuid}`);
     }
   }
-  
 
   public getQueueIdsByUuid(uuid: string): string[] | undefined {
     return this.uuidQueueMap.get(uuid);
@@ -102,7 +101,7 @@ class StateManager {
       this.mailIdQueueMap.set(mailId, []);
     }
     this.mailIdQueueMap.get(mailId)?.push(queueId);
-    logger.info(`Associado queueId ${queueId} ao mailId ${mailId}`); // Log para depuração
+    logger.info(`Associado queueId ${queueId} ao mailId ${mailId}`);
   }
 
   public getQueueIdsByMailId(mailId: string): string[] | undefined {
@@ -129,6 +128,37 @@ class StateManager {
     });
 
     return allResults;
+  }
+
+  public consolidateResultsByUuid(uuid: string): RecipientStatus[] | undefined {
+    const queueIds = this.uuidQueueMap.get(uuid);
+    if (!queueIds) return undefined;
+
+    const allResults: RecipientStatus[] = [];
+    queueIds.forEach((queueId) => {
+      const sendData = this.pendingSends.get(queueId);
+      if (sendData) {
+        allResults.push(...sendData.results);
+      }
+    });
+
+    return allResults;
+  }
+
+  public isUuidProcessed(uuid: string): boolean {
+    const queueIds = this.uuidQueueMap.get(uuid);
+    if (!queueIds) return false;
+
+    return queueIds.every((queueId) => !this.pendingSends.has(queueId));
+  }
+
+  public getUuidByQueueId(queueId: string): string | undefined {
+    for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
+      if (queueIds.includes(queueId)) {
+        return uuid;
+      }
+    }
+    return undefined;
   }
 }
 

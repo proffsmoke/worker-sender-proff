@@ -3,7 +3,7 @@ import config from '../config';
 import EmailService from './EmailService';
 import LogParser, { LogEntry } from '../log-parser';
 import BlockManagerService from './BlockManagerService';
-import StateManager from './StateManager';  // Importando o StateManager
+import StateManager from './StateManager';
 import { v4 as uuidv4 } from 'uuid';
 
 interface RecipientStatus {
@@ -24,7 +24,7 @@ class MailerService {
   private logParser: LogParser;
   private emailService: EmailService;
   private blockManagerService: BlockManagerService;
-  private stateManager: StateManager;  // Adicionando o stateManager
+  private stateManager: StateManager;
   private isMonitoringStarted: boolean = false;
 
   private constructor() {
@@ -32,7 +32,7 @@ class MailerService {
     this.logParser = new LogParser('/var/log/mail.log');
     this.emailService = EmailService.getInstance(this.logParser);
     this.blockManagerService = BlockManagerService.getInstance(this);
-    this.stateManager = new StateManager();  // Inicializando o stateManager
+    this.stateManager = new StateManager();
 
     if (!this.isMonitoringStarted) {
       this.logParser.on('log', this.handleLogEntry.bind(this));
@@ -110,12 +110,6 @@ class MailerService {
   }
 
   public async sendInitialTestEmail(): Promise<{ success: boolean; recipients: RecipientStatus[] }> {
-    // Verifica se o Mailer está em estado 'health' e se já não foi enviado um teste
-    if (this.getStatus() === 'health') {
-      logger.info("Mailer está em estado 'health', não enviando email de teste.");
-      return { success: true, recipients: [] };  // Retorna sem enviar o email
-    }
-
     const testEmailParams = {
       fromName: 'Mailer Test',
       emailDomain: config.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
@@ -128,18 +122,18 @@ class MailerService {
 
     try {
       const result = await this.emailService.sendEmail(testEmailParams);
-  
+
       logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
-  
+
       const requestUuid = uuidv4(); // Gerando um UUID único
       logger.info(`UUID gerado para o teste: ${requestUuid}`);
-  
+
       this.stateManager.addQueueIdToUuid(requestUuid, result.queueId);
       logger.info(`Associado queueId ${result.queueId} ao UUID ${requestUuid}`);
-  
+
       const logEntry = await this.waitForLogEntry(result.queueId);
       logger.info(`Esperando log para queueId=${result.queueId}. Conteúdo aguardado: ${JSON.stringify(logEntry)}`);
-  
+
       if (logEntry && logEntry.success) {
         logger.info(`Email de teste enviado com sucesso. Status do Mailer: health`);
         this.unblockMailer();
@@ -166,53 +160,52 @@ class MailerService {
       logger.info(`Ignorando logEntry porque o Mailer está bloqueado. Status atual: ${this.getStatus()}`);
       return;
     }
-  
+
     logger.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
-  
+
     // Atualiza o status de cada destinatário
     this.blockManagerService.handleLogEntry(logEntry);
-  
+
     // Verifica se todos os destinatários de um e-mail ou lista de e-mails foram processados
     const sendData = this.stateManager.getPendingSend(logEntry.queueId);
     if (sendData) {
       const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
       const processedRecipients = sendData.results.filter((r: RecipientStatus) => r.success !== undefined).length;
-  
+
       if (processedRecipients === totalRecipients) {
         // Todos os destinatários foram processados, gerar a mensagem consolidada
         const consolidatedMessage = sendData.results.map((r: RecipientStatus) => {
           return {
             email: r.recipient,
-            name: r.name || 'Desconhecido',  // Certificando-se que 'name' é tratado
+            name: r.name || 'Desconhecido',
             result: r.success 
               ? 'Sucesso' 
-              : `Falha: ${r.error || 'Erro desconhecido'}`,  // Garantir que o erro seja incluído corretamente
-            success: r.success  // Adicionando a propriedade 'success' para permitir o filtro
+              : `Falha: ${r.error || 'Erro desconhecido'}`,
+            success: r.success
           };
         });
-  
+
         // Gerando log final com sucesso ou falha para todos os destinatários
         const successCount = consolidatedMessage.filter(r => r.success).length;
         const failureCount = consolidatedMessage.filter(r => !r.success).length;
-  
+
         logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Resultados consolidados:`, consolidatedMessage);
         logger.info(`Resumo para queueId=${logEntry.queueId}:`);
         logger.info(`Emails enviados com sucesso: ${successCount}`);
         logger.info(`Emails com falha: ${failureCount}`);
-  
+
         // Se houver falhas, logar os detalhes
         if (failureCount > 0) {
           logger.error(`Falha no envio de ${failureCount} emails para queueId=${logEntry.queueId}. Detalhes:`, consolidatedMessage.filter(r => !r.success));
         }
-  
+
         this.stateManager.deletePendingSend(logEntry.queueId); // Remover da lista de pendentes
-  
+
         // Enviar os resultados consolidados, se necessário (para uma API, email, etc.)
         this.sendConsolidatedResults(consolidatedMessage);
       }
     }
   }
-  
 
   private async sendConsolidatedResults(results: any[]): Promise<void> {
     // Exemplo de como você pode enviar esses resultados a uma API ou outro serviço
