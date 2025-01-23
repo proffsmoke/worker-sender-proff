@@ -19,7 +19,7 @@ mongoose
 
 // Inicializar MailerService
 
-// logParser.startMonitoring();
+
 MailerService;
 
 // CleanlogsService;
