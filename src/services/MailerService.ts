@@ -215,13 +215,17 @@ class MailerService {
       const processedRecipients = sendData.results.filter((r: RecipientStatus) => r.success !== undefined).length;
 
       if (processedRecipients === totalRecipients) {
-        // Todos os destinatários foram processados, gerar a mensagem consolidada
-        const consolidatedMessage = sendData.results.map((r: RecipientStatus) => {
+        // Consumir o array de resultados antes de removê-lo de pendingSends
+        const resultsToConsolidate = [...sendData.results];
+        this.stateManager.deletePendingSend(logEntry.queueId);
+
+        // Gerando a mensagem consolidada
+        const consolidatedMessage = resultsToConsolidate.map((r: RecipientStatus) => {
           return {
             email: r.recipient,
             name: r.name || 'Desconhecido',
-            result: r.success 
-              ? 'Sucesso' 
+            result: r.success
+              ? 'Sucesso'
               : `Falha: ${r.error || 'Erro desconhecido'}`,
             success: r.success
           };
@@ -240,8 +244,6 @@ class MailerService {
         if (failureCount > 0) {
           logger.error(`Falha no envio de ${failureCount} emails para queueId=${logEntry.queueId}. Detalhes:`, consolidatedMessage.filter(r => !r.success));
         }
-
-        this.stateManager.deletePendingSend(logEntry.queueId); // Remover da lista de pendentes
 
         // Enviar os resultados consolidados, se necessário (para uma API, email, etc.)
         this.sendConsolidatedResults(consolidatedMessage);
@@ -282,5 +284,6 @@ class MailerService {
     return recentLogs.find(log => log.queueId === queueId) || null;
   }
 }
+
 
 export default MailerService.getInstance();
