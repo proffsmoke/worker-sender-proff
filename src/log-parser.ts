@@ -14,8 +14,8 @@ export interface LogEntry {
 class LogParser extends EventEmitter {
   private logFilePath: string;
   private tail: Tail | null = null;
-  private recentLogs: Set<string> = new Set(); // Cache para evitar duplicados
-  private MAX_CACHE_SIZE = 100; // Limite do cache
+  private recentLogs: LogEntry[] = []; // Cache para evitar duplicados
+  private MAX_CACHE_SIZE = 1000; // Aumentando o tamanho do cache
 
   constructor(logFilePath: string = '/var/log/mail.log') {
     super();
@@ -48,17 +48,17 @@ class LogParser extends EventEmitter {
       const logEntry = this.parseLogLine(line);
       if (logEntry) {
         const logHash = `${logEntry.timestamp}-${logEntry.queueId}-${logEntry.result}`;
-        if (this.recentLogs.has(logHash)) {
+        if (this.recentLogs.some(log => `${log.timestamp}-${log.queueId}-${log.result}` === logHash)) {
           // Ignorar logs duplicados
           logger.info(`Log duplicado ignorado: ${logHash}`);
           return;
         }
 
         // Adicionar ao cache
-        this.recentLogs.add(logHash);
-        if (this.recentLogs.size > this.MAX_CACHE_SIZE) {
+        this.recentLogs.push(logEntry);
+        if (this.recentLogs.length > this.MAX_CACHE_SIZE) {
           // Remover o log mais antigo do cache
-          this.recentLogs.delete([...this.recentLogs][0]);
+          this.recentLogs.shift();
         }
 
         logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
@@ -82,6 +82,10 @@ class LogParser extends EventEmitter {
       result,
       success: result.startsWith('sent'), // Sucesso se o resultado começar com "sent"
     };
+  }
+
+  public getRecentLogs(): LogEntry[] {
+    return this.recentLogs;
   }
 }
 export default LogParser;

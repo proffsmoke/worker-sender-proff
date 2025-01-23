@@ -187,7 +187,8 @@ class MailerService {
 
   private getLogEntryByQueueId(queueId: string): LogEntry | null {
     logger.info(`Verificando log para queueId=${queueId}`);
-    return null;
+    const recentLogs = this.logParser.getRecentLogs();
+    return recentLogs.find(log => log.queueId === queueId) || null;
   }
 
   private scheduleRetry(): void {
