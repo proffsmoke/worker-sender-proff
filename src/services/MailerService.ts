@@ -251,6 +251,7 @@ class MailerService {
     }
   }
   
+  
 
   private async sendConsolidatedResults(results: any[]): Promise<void> {
     // Exemplo de como você pode enviar esses resultados a uma API ou outro serviço

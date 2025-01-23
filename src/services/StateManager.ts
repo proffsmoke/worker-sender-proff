@@ -39,7 +39,9 @@ class StateManager {
     }
   ): void {
     this.pendingSends.set(queueId, data);
+    logger.info(`Dados de envio associados com sucesso para queueId=${queueId}.`);
   }
+  
 
   public getPendingSend(
     queueId: string
@@ -55,15 +57,16 @@ class StateManager {
     if (!this.uuidQueueMap.has(uuid)) {
       this.uuidQueueMap.set(uuid, []);
     }
-
+  
     // Verifique se o queueId já está associado ao uuid
     if (!this.uuidQueueMap.get(uuid)?.includes(queueId)) {
       this.uuidQueueMap.get(uuid)?.push(queueId);
       logger.info(`Associado queueId ${queueId} ao uuid ${uuid}`);
     } else {
-      logger.info(`queueId ${queueId} já está associado ao uuid ${uuid}`);
+      logger.info(`queueId ${queueId} já está associado ao uuid ${uuid}, não será associado novamente.`);
     }
   }
+  
 
   public getQueueIdsByUuid(uuid: string): string[] | undefined {
     return this.uuidQueueMap.get(uuid);
