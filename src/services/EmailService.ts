@@ -1,7 +1,6 @@
 import nodemailer from 'nodemailer';
 import logger from '../utils/logger';
 import LogParser, { LogEntry } from '../log-parser';
-import axios from 'axios';
 import dotenv from 'dotenv';
 import StateManager from './StateManager';
 
@@ -17,17 +16,8 @@ interface SendEmailParams {
   clientName?: string;
 }
 
-interface EmailListItem {
-  email: string;
-  name?: string;
-  subject: string;
-  template: string;
-  clientName?: string;
-}
-
 interface RecipientStatus {
   recipient: string;
-  name?: string;
   success: boolean;
   error?: string;
   queueId?: string;
@@ -141,32 +131,6 @@ class EmailService {
         recipients: recipientsStatus,
       };
     }
-  }
-
-  public async sendEmailList(
-    params: { emailDomain: string; emailList: EmailListItem[] },
-    uuid?: string
-  ): Promise<SendEmailResult[]> {
-    const { emailDomain, emailList } = params;
-
-    const results = await Promise.all(
-      emailList.map(async (emailItem) => {
-        return this.sendEmail(
-          {
-            fromName: emailItem.name || 'No-Reply',
-            emailDomain,
-            to: emailItem.email,
-            bcc: [],
-            subject: emailItem.subject,
-            html: emailItem.template,
-            clientName: emailItem.clientName,
-          },
-          uuid
-        );
-      })
-    );
-
-    return results;
   }
 
   private handleLogEntry(logEntry: LogEntry): void {

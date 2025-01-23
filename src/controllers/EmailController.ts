@@ -14,13 +14,22 @@ class EmailController {
       const requestUuid = uuid || uuidv4();
 
       if (emailList) {
-        // Enviar a lista de e-mails
-        const results = await emailService.sendEmailList(
-          {
-            emailDomain,
-            emailList,
-          },
-          requestUuid
+        // Enviar a lista de e-mails usando sendEmail
+        const results = await Promise.all(
+          emailList.map(async (emailItem: any) => {
+            return emailService.sendEmail(
+              {
+                fromName: emailItem.name || fromName || 'No-Reply',
+                emailDomain,
+                to: emailItem.email,
+                bcc: [],
+                subject: emailItem.subject,
+                html: emailItem.template,
+                clientName: emailItem.clientName || clientName,
+              },
+              requestUuid
+            );
+          })
         );
 
         // Verifica se todos os emails da lista foram processados
