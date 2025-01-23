@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import EmailService from '../services/EmailService';
+import EmailService from '../services/EmailService';  // Certifique-se de importar corretamente o EmailService
 import logger from '../utils/logger';
+import LogParser from '../log-parser';
 
 class EmailController {
   async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -16,7 +17,12 @@ class EmailController {
     }
 
     try {
-      const result = await EmailService.sendEmail({
+      // Instanciando EmailService com o logParser (caso necessário)
+      const logParser = new LogParser('/var/log/mail.log');  // Crie ou reutilize o LogParser que você já tem
+      const emailService = new EmailService(logParser);  // Instanciando a classe com o logParser
+
+      // Agora chamamos o método sendEmail na instância de EmailService
+      const result = await emailService.sendEmail({
         fromName,
         emailDomain,
         to,
