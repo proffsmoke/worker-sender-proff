@@ -4,6 +4,7 @@ import EmailService from './EmailService';
 import LogParser, { LogEntry } from '../log-parser';
 import BlockManagerService from './BlockManagerService';
 import StateManager from './StateManager';  // Importando o StateManager
+import { v4 as uuidv4 } from 'uuid';
 
 interface RecipientStatus {
   recipient: string;
@@ -118,15 +119,23 @@ class MailerService {
       html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
       clientName: 'Prasminha camarada'
     };
-
+  
     try {
       const result = await this.emailService.sendEmail(testEmailParams);
-
+  
       logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
-
+  
+      // Criando um UUID para a solicitação de teste
+      const requestUuid = uuidv4(); // Gerando um UUID único
+      logger.info(`UUID gerado para o teste: ${requestUuid}`);
+  
+      // Associe o queueId com o UUID usando o stateManager
+      this.stateManager.addQueueIdToUuid(requestUuid, result.queueId);
+      logger.info(`Associado queueId ${result.queueId} ao UUID ${requestUuid}`);
+  
       const logEntry = await this.waitForLogEntry(result.queueId);
       logger.info(`Esperando log para queueId=${result.queueId}. Conteúdo aguardado: ${JSON.stringify(logEntry)}`);
-
+  
       if (logEntry && logEntry.success) {
         logger.info(`Email de teste enviado com sucesso. Status do Mailer: health`);
         this.unblockMailer();
@@ -142,6 +151,7 @@ class MailerService {
       return { success: false, recipients: [] };
     }
   }
+  
 
   private handleLogEntry(logEntry: LogEntry) {
     logger.info(`Log recebido para queueId=${logEntry.queueId}: ${JSON.stringify(logEntry)}`);

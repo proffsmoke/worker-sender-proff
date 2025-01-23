@@ -1,4 +1,5 @@
 import { LogEntry } from '../log-parser';
+import logger from '../utils/logger';
 
 interface RecipientStatus {
   recipient: string;
@@ -55,6 +56,7 @@ class StateManager {
       this.uuidQueueMap.set(uuid, []);
     }
     this.uuidQueueMap.get(uuid)?.push(queueId);
+    logger.info(`Associado queueId ${queueId} ao uuid ${uuid}`); // Log para depuração
   }
 
   public getQueueIdsByUuid(uuid: string): string[] | undefined {
@@ -93,6 +95,7 @@ class StateManager {
       this.mailIdQueueMap.set(mailId, []);
     }
     this.mailIdQueueMap.get(mailId)?.push(queueId);
+    logger.info(`Associado queueId ${queueId} ao mailId ${mailId}`); // Log para depuração
   }
 
   public getQueueIdsByMailId(mailId: string): string[] | undefined {
