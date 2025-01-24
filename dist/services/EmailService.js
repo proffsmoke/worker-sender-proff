@@ -38,9 +38,9 @@ class EmailService {
         }));
     }
     async sendEmail(params, uuid) {
-        const { fromName = 'No-Reply', emailDomain, to, bcc = [], subject, html, clientName } = params;
-        // Construir o campo "from" usando o fromName e o emailDomain
-        const fromEmail = `no-reply@${emailDomain}`; // Usar o domínio fornecido
+        const { fromName, emailDomain, to, bcc = [], subject, html, clientName, mailerId } = params;
+        // Construir o campo "from" usando fromName e emailDomain
+        const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`; // Ex: "seu.nome@seu-dominio.com"
         const from = `"${fromName}" <${fromEmail}>`;
         const toRecipients = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
         const bccRecipients = bcc.map((r) => r.toLowerCase());
@@ -71,6 +71,11 @@ class EmailService {
             if (uuid) {
                 this.stateManager.addQueueIdToUuid(uuid, queueId);
                 logger_1.default.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
+            }
+            if (mailerId) {
+                // Associar o queueId ao mailerId, se fornecido
+                this.stateManager.addQueueIdToMailerId(mailerId, queueId);
+                logger_1.default.info(`Associado queueId ${queueId} ao mailerId ${mailerId}`);
             }
             const recipientsStatus = this.createRecipientsStatus(allRecipients, true, undefined, queueId);
             this.stateManager.addPendingSend(queueId, {

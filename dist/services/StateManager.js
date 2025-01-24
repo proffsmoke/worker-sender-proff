@@ -9,19 +9,24 @@ class StateManager {
     constructor() {
         this.pendingSends = new Map();
         this.uuidQueueMap = new Map();
+        this.mailerIdQueueMap = new Map(); // Novo mapa para mailerId
         this.uuidResultsMap = new Map();
         this.logGroups = new Map();
     }
+    // Adiciona dados de envio ao pendingSends
     addPendingSend(queueId, data) {
         this.pendingSends.set(queueId, data);
         logger_1.default.info(`Dados de envio associados com sucesso para queueId=${queueId}.`);
     }
+    // Obtém dados de envio do pendingSends
     getPendingSend(queueId) {
         return this.pendingSends.get(queueId);
     }
+    // Remove dados de envio do pendingSends
     deletePendingSend(queueId) {
         this.pendingSends.delete(queueId);
     }
+    // Associa queueId a um UUID
     addQueueIdToUuid(uuid, queueId) {
         if (!this.uuidQueueMap.has(uuid)) {
             this.uuidQueueMap.set(uuid, new Set());
@@ -34,6 +39,7 @@ class StateManager {
             logger_1.default.warn(`queueId ${queueId} já está associado ao UUID ${uuid}. Ignorando duplicação.`);
         }
     }
+    // Verifica se um queueId já está associado a algum UUID
     isQueueIdAssociated(queueId) {
         for (const queueIds of this.uuidQueueMap.values()) {
             if (queueIds.has(queueId)) {
@@ -42,10 +48,26 @@ class StateManager {
         }
         return false;
     }
+    // Obtém todos os queueIds associados a um UUID
     getQueueIdsByUuid(uuid) {
         const queueIds = this.uuidQueueMap.get(uuid);
         return queueIds ? Array.from(queueIds) : undefined;
     }
+    // Associa queueId a um mailerId
+    addQueueIdToMailerId(mailerId, queueId) {
+        if (!this.mailerIdQueueMap.has(mailerId)) {
+            this.mailerIdQueueMap.set(mailerId, new Set());
+        }
+        const queueIds = this.mailerIdQueueMap.get(mailerId);
+        if (queueIds && !queueIds.has(queueId)) {
+            queueIds.add(queueId);
+            logger_1.default.info(`Associado queueId ${queueId} ao mailerId ${mailerId}`);
+        }
+        else {
+            logger_1.default.warn(`queueId ${queueId} já está associado ao mailerId ${mailerId}. Ignorando duplicação.`);
+        }
+    }
+    // Consolida resultados de envio para um UUID
     async consolidateResultsByUuid(uuid) {
         const queueIds = this.uuidQueueMap.get(uuid);
         if (!queueIds)
@@ -65,6 +87,7 @@ class StateManager {
         });
         return allResults.length > 0 ? allResults : undefined;
     }
+    // Busca resultados do EmailLog para um UUID
     async getResultsFromEmailLog(uuid) {
         try {
             const emailLogs = await EmailLog_1.default.find({ mailId: uuid });
@@ -82,12 +105,14 @@ class StateManager {
             return undefined;
         }
     }
+    // Verifica se todos os queueIds de um UUID foram processados
     isUuidProcessed(uuid) {
         const queueIds = this.uuidQueueMap.get(uuid);
         if (!queueIds)
             return false;
         return [...queueIds].every((queueId) => !this.pendingSends.has(queueId));
     }
+    // Atualiza o status de um queueId no EmailLog
     async updateQueueIdStatus(queueId, success, mailId) {
         try {
             let emailLog = await EmailLog_1.default.findOne({ queueId });
@@ -118,14 +143,17 @@ class StateManager {
             logger_1.default.error(`Erro ao atualizar status do queueId=${queueId}:`, error);
         }
     }
+    // Adiciona uma entrada de log a um grupo de logs
     addLogToGroup(queueId, logEntry) {
         const logGroup = this.logGroups.get(queueId) || { queueId, logs: [] };
         logGroup.logs.push(logEntry);
         this.logGroups.set(queueId, logGroup);
     }
+    // Obtém um grupo de logs por queueId
     getLogGroup(queueId) {
         return this.logGroups.get(queueId);
     }
+    // Obtém o UUID associado a um queueId
     getUuidByQueueId(queueId) {
         for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
             if (queueIds.has(queueId)) {

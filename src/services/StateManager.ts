@@ -25,9 +25,11 @@ class StateManager {
   > = new Map();
 
   private uuidQueueMap: Map<string, Set<string>> = new Map();
+  private mailerIdQueueMap: Map<string, Set<string>> = new Map(); // Novo mapa para mailerId
   private uuidResultsMap: Map<string, RecipientStatus[]> = new Map();
   private logGroups: Map<string, LogGroup> = new Map();
 
+  // Adiciona dados de envio ao pendingSends
   public addPendingSend(
     queueId: string,
     data: {
@@ -40,16 +42,19 @@ class StateManager {
     logger.info(`Dados de envio associados com sucesso para queueId=${queueId}.`);
   }
 
+  // Obtém dados de envio do pendingSends
   public getPendingSend(
     queueId: string
   ): { toRecipients: string[]; bccRecipients: string[]; results: RecipientStatus[] } | undefined {
     return this.pendingSends.get(queueId);
   }
 
+  // Remove dados de envio do pendingSends
   public deletePendingSend(queueId: string): void {
     this.pendingSends.delete(queueId);
   }
 
+  // Associa queueId a um UUID
   public addQueueIdToUuid(uuid: string, queueId: string): void {
     if (!this.uuidQueueMap.has(uuid)) {
       this.uuidQueueMap.set(uuid, new Set());
@@ -63,6 +68,7 @@ class StateManager {
     }
   }
 
+  // Verifica se um queueId já está associado a algum UUID
   public isQueueIdAssociated(queueId: string): boolean {
     for (const queueIds of this.uuidQueueMap.values()) {
       if (queueIds.has(queueId)) {
@@ -72,11 +78,28 @@ class StateManager {
     return false;
   }
 
+  // Obtém todos os queueIds associados a um UUID
   public getQueueIdsByUuid(uuid: string): string[] | undefined {
     const queueIds = this.uuidQueueMap.get(uuid);
     return queueIds ? Array.from(queueIds) : undefined;
   }
 
+  // Associa queueId a um mailerId
+  public addQueueIdToMailerId(mailerId: string, queueId: string): void {
+    if (!this.mailerIdQueueMap.has(mailerId)) {
+      this.mailerIdQueueMap.set(mailerId, new Set());
+    }
+
+    const queueIds = this.mailerIdQueueMap.get(mailerId);
+    if (queueIds && !queueIds.has(queueId)) {
+      queueIds.add(queueId);
+      logger.info(`Associado queueId ${queueId} ao mailerId ${mailerId}`);
+    } else {
+      logger.warn(`queueId ${queueId} já está associado ao mailerId ${mailerId}. Ignorando duplicação.`);
+    }
+  }
+
+  // Consolida resultados de envio para um UUID
   public async consolidateResultsByUuid(uuid: string): Promise<RecipientStatus[] | undefined> {
     const queueIds = this.uuidQueueMap.get(uuid);
     if (!queueIds) return undefined;
@@ -99,6 +122,7 @@ class StateManager {
     return allResults.length > 0 ? allResults : undefined;
   }
 
+  // Busca resultados do EmailLog para um UUID
   private async getResultsFromEmailLog(uuid: string): Promise<RecipientStatus[] | undefined> {
     try {
       const emailLogs = await EmailLog.find({ mailId: uuid });
@@ -117,6 +141,7 @@ class StateManager {
     }
   }
 
+  // Verifica se todos os queueIds de um UUID foram processados
   public isUuidProcessed(uuid: string): boolean {
     const queueIds = this.uuidQueueMap.get(uuid);
     if (!queueIds) return false;
@@ -124,6 +149,7 @@ class StateManager {
     return [...queueIds].every((queueId: string) => !this.pendingSends.has(queueId));
   }
 
+  // Atualiza o status de um queueId no EmailLog
   public async updateQueueIdStatus(queueId: string, success: boolean, mailId: string): Promise<void> {
     try {
       let emailLog = await EmailLog.findOne({ queueId });
@@ -157,16 +183,19 @@ class StateManager {
     }
   }
 
+  // Adiciona uma entrada de log a um grupo de logs
   public addLogToGroup(queueId: string, logEntry: LogEntry): void {
     const logGroup = this.logGroups.get(queueId) || { queueId, logs: [] };
     logGroup.logs.push(logEntry);
     this.logGroups.set(queueId, logGroup);
   }
 
+  // Obtém um grupo de logs por queueId
   public getLogGroup(queueId: string): LogGroup | undefined {
     return this.logGroups.get(queueId);
   }
 
+  // Obtém o UUID associado a um queueId
   public getUuidByQueueId(queueId: string): string | undefined {
     for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
       if (queueIds.has(queueId)) {

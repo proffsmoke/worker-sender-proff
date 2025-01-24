@@ -7,13 +7,14 @@ import StateManager from './StateManager';
 dotenv.config();
 
 interface SendEmailParams {
-  fromName?: string;
+  fromName: string;
   emailDomain: string;
   to: string | string[];
   bcc?: string[];
   subject: string;
   html: string;
   clientName?: string;
+  mailerId?: string; // Adicionado mailerId
 }
 
 interface RecipientStatus {
@@ -66,10 +67,10 @@ class EmailService {
   }
 
   public async sendEmail(params: SendEmailParams, uuid?: string): Promise<SendEmailResult> {
-    const { fromName = 'No-Reply', emailDomain, to, bcc = [], subject, html, clientName } = params;
+    const { fromName, emailDomain, to, bcc = [], subject, html, clientName, mailerId } = params;
 
-    // Construir o campo "from" usando o fromName e o emailDomain
-    const fromEmail = `${fromName.replace(/\s+/g, '.')}@${emailDomain}`; // Formato: fromName@domain
+    // Construir o campo "from" usando fromName e emailDomain
+    const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`; // Ex: "seu.nome@seu-dominio.com"
     const from = `"${fromName}" <${fromEmail}>`;
 
     const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
@@ -107,6 +108,12 @@ class EmailService {
       if (uuid) {
         this.stateManager.addQueueIdToUuid(uuid, queueId);
         logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
+      }
+
+      if (mailerId) {
+        // Associar o queueId ao mailerId, se fornecido
+        this.stateManager.addQueueIdToMailerId(mailerId, queueId);
+        logger.info(`Associado queueId ${queueId} ao mailerId ${mailerId}`);
       }
 
       const recipientsStatus = this.createRecipientsStatus(allRecipients, true, undefined, queueId);
