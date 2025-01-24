@@ -10,56 +10,79 @@ class EmailController {
   }
 
   async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { mailerId, fromName, emailDomain, to, subject, html, templateId, uuid } = req.body;
+    const { mailerId, fromName, emailDomain, emailList, uuid } = req.body;
 
     try {
       // Validação básica dos parâmetros
-      const requiredParams = ['mailerId', 'fromName', 'emailDomain', 'to', 'subject', 'uuid'];
+      const requiredParams = ['mailerId', 'fromName', 'emailDomain', 'emailList', 'uuid'];
       const missingParams = requiredParams.filter(param => !(param in req.body));
 
       if (missingParams.length > 0) {
         throw new Error(`Parâmetros obrigatórios ausentes: ${missingParams.join(', ')}.`);
       }
 
-      // Verificar se pelo menos 'html' ou 'templateId' está presente
-      const isHtmlPresent = typeof html === 'string' && html.trim() !== '';
-      const isTemplateIdPresent = typeof templateId === 'string' && templateId.trim() !== '';
+      // Verificar se emailList é um array e contém pelo menos um item
+      if (!Array.isArray(emailList) || emailList.length === 0) {
+        throw new Error('O parâmetro "emailList" deve ser um array com pelo menos um e-mail.');
+      }
 
-      if (!isHtmlPresent && !isTemplateIdPresent) {
-        throw new Error('É necessário fornecer pelo menos "html" ou "templateId".');
+      // Validar cada e-mail na lista
+      for (const emailData of emailList) {
+        const { email, subject, templateId, html } = emailData;
+
+        if (!email || !subject) {
+          throw new Error('Cada objeto em "emailList" deve conter "email" e "subject".');
+        }
+
+        const isHtmlPresent = typeof html === 'string' && html.trim() !== '';
+        const isTemplateIdPresent = typeof templateId === 'string' && templateId.trim() !== '';
+
+        if (!isHtmlPresent && !isTemplateIdPresent) {
+          throw new Error('Cada objeto em "emailList" deve conter pelo menos "html" ou "templateId".');
+        }
       }
 
       const emailService = EmailService.getInstance();
       const stateManager = new StateManager();
 
-      // Enviar o e-mail
-      const result = await emailService.sendEmail(
-        {
-          mailerId,
-          fromName,
-          emailDomain,
-          to,
-          subject,
-          html: isTemplateIdPresent ? `<p>Template ID: ${templateId}</p>` : html, // Substituir pelo conteúdo real do template
-          clientName: fromName, // Usar o fromName como clientName
-        },
-        uuid
-      );
+      // Array para armazenar os resultados de cada e-mail enviado
+      const results = [];
 
-      // Atualiza o status do queueId com o mailId (uuid)
-      await stateManager.updateQueueIdStatus(result.queueId, true, uuid);
+      // Enviar cada e-mail da lista
+      for (const emailData of emailList) {
+        const { email, subject, templateId, html } = emailData;
 
-      // Verifica se o e-mail foi processado
+        const result = await emailService.sendEmail(
+          {
+            mailerId,
+            fromName,
+            emailDomain,
+            to: email,
+            subject,
+            html: templateId ? `<p>Template ID: ${templateId}</p>` : html, // Substituir pelo conteúdo real do template
+            clientName: fromName, // Usar o fromName como clientName
+          },
+          uuid
+        );
+
+        // Atualiza o status do queueId com o mailId (uuid)
+        await stateManager.updateQueueIdStatus(result.queueId, true, uuid);
+
+        // Adiciona o resultado ao array de resultados
+        results.push(result);
+      }
+
+      // Verifica se todos os e-mails foram processados
       if (stateManager.isUuidProcessed(uuid)) {
         const consolidatedResults = await stateManager.consolidateResultsByUuid(uuid);
         if (consolidatedResults) {
           logger.info(`Resultados consolidados para uuid=${uuid}:`, consolidatedResults);
           this.sendSuccessResponse(res, uuid, mailerId, consolidatedResults);
         } else {
-          this.sendSuccessResponse(res, uuid, mailerId, [result]);
+          this.sendSuccessResponse(res, uuid, mailerId, results);
         }
       } else {
-        this.sendSuccessResponse(res, uuid, mailerId, [result]);
+        this.sendSuccessResponse(res, uuid, mailerId, results);
       }
     } catch (error) {
       this.handleError(res, error);
