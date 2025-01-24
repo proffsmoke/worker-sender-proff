@@ -4,6 +4,11 @@ import logger from '../utils/logger';
 import StateManager from '../services/StateManager';
 
 class EmailController {
+  constructor() {
+    // Bind the method to the instance
+    this.sendNormal = this.sendNormal.bind(this);
+  }
+
   async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { mailerId, fromName, emailDomain, to, subject, html, templateId, uuid } = req.body;
 
