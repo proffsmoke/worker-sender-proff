@@ -59,8 +59,12 @@ class EmailService {
                 throw new Error('Não foi possível extrair o queueId da resposta');
             }
             const queueId = queueIdMatch[1];
-            logger_1.default.info(`extraído com sucesso de response:${info.response}, queueId: ${queueId}`);
-            logger_1.default.info(`Email enviado!`);
+            logger_1.default.info(`Email enviado com sucesso! Detalhes: 
+        - De: ${from}
+        - Para: ${toRecipients.join(', ')}
+        - Bcc: ${bccRecipients.join(', ')}
+        - QueueId: ${queueId}
+      `);
             if (this.stateManager.isQueueIdAssociated(queueId)) {
                 logger_1.default.warn(`queueId ${queueId} já foi processado. Ignorando duplicação.`);
                 return {

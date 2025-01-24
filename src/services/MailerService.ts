@@ -128,15 +128,18 @@ class MailerService {
   }
 
   private async retrySendEmail(): Promise<void> {
+    // Verifica se o Mailer está bloqueado e o bloqueio é temporário
     if (!this.isBlocked || this.isBlockedPermanently) {
       this.clearRetryInterval();
-      logger.info('Mailer não está temporariamente bloqueado ou está permanentemente bloqueado. Cancelando tentativas de reenvio.');
+      logger.info('Mailer não está bloqueado temporariamente. Cancelando tentativas de reenvio.');
       return;
     }
 
+    // Se estiver bloqueado temporariamente, tenta reenviar o email
     logger.info('Tentando reenviar email de teste...');
     const result = await this.sendInitialTestEmail();
 
+    // Se o reenvio for bem-sucedido, cancela as tentativas futuras
     if (result.success) {
       logger.info('Reenvio de email de teste bem-sucedido. Cancelando futuras tentativas.');
       this.clearRetryInterval();

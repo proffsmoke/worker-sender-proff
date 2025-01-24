@@ -12,10 +12,10 @@ class EmailController {
         this.sendNormal = this.sendNormal.bind(this);
     }
     async sendNormal(req, res, next) {
-        const { emailDomain, emailList, fromName, clientName, uuid } = req.body;
+        const { emailDomain, emailList, fromName, uuid } = req.body;
         try {
             // Validação básica dos parâmetros
-            const requiredParams = ['emailDomain', 'emailList', 'fromName', 'clientName', 'uuid'];
+            const requiredParams = ['emailDomain', 'emailList', 'fromName', 'uuid'];
             const missingParams = requiredParams.filter(param => !(param in req.body));
             if (missingParams.length > 0) {
                 throw new Error(`Parâmetros obrigatórios ausentes: ${missingParams.join(', ')}.`);
@@ -26,7 +26,7 @@ class EmailController {
             }
             // Validar cada e-mail na lista
             for (const emailData of emailList) {
-                const { email, subject, templateId, html } = emailData;
+                const { email, subject, templateId, html, clientName } = emailData;
                 if (!email || !subject) {
                     throw new Error('Cada objeto em "emailList" deve conter "email" e "subject".');
                 }
@@ -42,14 +42,14 @@ class EmailController {
             const results = [];
             // Enviar cada e-mail da lista
             for (const emailData of emailList) {
-                const { email, subject, templateId, html } = emailData;
+                const { email, subject, templateId, html, clientName } = emailData;
                 const result = await emailService.sendEmail({
                     emailDomain,
                     fromName,
                     to: email,
                     subject,
                     html: templateId ? `<p>Template ID: ${templateId}</p>` : html, // Substituir pelo conteúdo real do template
-                    clientName, // Usar o clientName fornecido
+                    clientName: clientName || fromName, // Usar clientName se estiver presente, caso contrário, usar fromName
                 }, uuid);
                 // Atualiza o status do queueId com o mailId (uuid)
                 await stateManager.updateQueueIdStatus(result.queueId, true, uuid);
