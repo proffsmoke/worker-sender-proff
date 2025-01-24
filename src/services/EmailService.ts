@@ -21,12 +21,10 @@ interface RecipientStatus {
   success: boolean;
   error?: string;
   queueId?: string;
-  mailId?: string;
 }
 
 interface SendEmailResult {
   queueId: string;
-  mailId: string;
   recipients: RecipientStatus[];
 }
 
@@ -83,23 +81,19 @@ class EmailService {
       }
 
       const queueId = queueIdMatch[1];
-      const mailId = info.messageId;
-
       logger.info(`queueId extraído com sucesso: ${queueId}`);
       logger.info(`Email enviado!`);
 
       // Associar imediatamente o queueId ao UUID
       if (uuid) {
-        this.stateManager.addQueueIdToUuid(uuid, queueId); // Garante que o queueId seja associado corretamente
+        this.stateManager.addQueueIdToUuid(uuid, queueId);
         logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
       }
 
-      // Adicionar o queueId no pendingSends
       const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
         recipient,
         success: true,
         queueId,
-        mailId,
       }));
 
       this.stateManager.addPendingSend(queueId, {
@@ -108,12 +102,8 @@ class EmailService {
         results: recipientsStatus,
       });
 
-      // Associar o queueId ao mailId
-      this.stateManager.addQueueIdToMailId(mailId, queueId);
-
       return {
         queueId,
-        mailId,
         recipients: recipientsStatus,
       };
     } catch (error: any) {
@@ -127,7 +117,6 @@ class EmailService {
 
       return {
         queueId: '',
-        mailId: '',
         recipients: recipientsStatus,
       };
     }
@@ -161,10 +150,8 @@ class EmailService {
       logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
       this.stateManager.deletePendingSend(logEntry.queueId);
 
-      // Atualiza o status do queueId com base no log
       this.stateManager.updateQueueIdStatus(logEntry.queueId, success);
 
-      // Verifica se há uuid associado ao queueId
       const uuid = this.stateManager.getUuidByQueueId(logEntry.queueId);
       if (uuid && this.stateManager.isUuidProcessed(uuid)) {
         const results = this.stateManager.consolidateResultsByUuid(uuid);
@@ -180,10 +167,6 @@ class EmailService {
     const allSuccess = results.every((result) => result.success);
     logger.info(`Resultados consolidados para uuid=${uuid}:`, results);
     logger.info(`Todos os emails foram enviados com sucesso? ${allSuccess}`);
-
-    // Aqui você pode enviar os resultados consolidados para uma API, banco de dados, etc.
-    // Exemplo:
-    // await this.sendResultsToApi(uuid, results);
   }
 }
 

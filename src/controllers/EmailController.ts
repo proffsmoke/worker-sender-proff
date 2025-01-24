@@ -83,17 +83,15 @@ class EmailController {
             res.json({
               success: true,
               uuid: requestUuid,
-              queueId: result.queueId,
-              mailId: result.mailId,
-              recipients: consolidatedResults,
+              queueId: result.queueId, // Incluindo o queueId
+              recipients: consolidatedResults, // Envia os resultados consolidados
             });
           } else {
             res.json({
               success: true,
               uuid: requestUuid,
               queueId: result.queueId,
-              mailId: result.mailId,
-              recipients: result.recipients,
+              recipients: result.recipients, // Envia os resultados do envio único
             });
           }
         } else {
@@ -101,7 +99,6 @@ class EmailController {
             success: true,
             uuid: requestUuid,
             queueId: result.queueId,
-            mailId: result.mailId,
             recipients: result.recipients,
           });
         }

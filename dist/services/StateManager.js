@@ -10,9 +10,7 @@ class StateManager {
         this.pendingSends = new Map();
         this.uuidQueueMap = new Map(); // Mapeia UUID para queueIds (evita duplicação com Set)
         this.uuidResultsMap = new Map(); // Mapeia UUID para resultados
-        this.logGroups = new Map(); // Agrupa logs por mailId
-        this.mailIdQueueMap = new Map(); // Mapeia mailId para queueIds
-        this.queueIdMailIdMap = new Map(); // Mapeia queueId para mailId
+        this.logGroups = new Map(); // Agrupa logs por queueId
     }
     // Adiciona um envio pendente
     addPendingSend(queueId, data) {
@@ -70,13 +68,8 @@ class StateManager {
     }
     // Atualiza o status de um queueId com base no log
     async updateQueueIdStatus(queueId, success) {
-        const mailId = this.queueIdMailIdMap.get(queueId);
-        if (!mailId) {
-            logger_1.default.warn(`MailId não encontrado para queueId=${queueId}`);
-            return;
-        }
         try {
-            const emailLog = await EmailLog_1.default.findOne({ mailId, queueId });
+            const emailLog = await EmailLog_1.default.findOne({ queueId }); // Buscando pelo queueId
             if (emailLog) {
                 emailLog.success = success; // Atualiza o status
                 emailLog.updated = true; // Marca como atualizado
@@ -84,7 +77,7 @@ class StateManager {
                 logger_1.default.info(`Status do queueId=${queueId} atualizado para success=${success}`);
             }
             else {
-                logger_1.default.warn(`EmailLog não encontrado para mailId=${mailId} e queueId=${queueId}`);
+                logger_1.default.warn(`EmailLog não encontrado para queueId=${queueId}`);
             }
         }
         catch (error) {
@@ -93,48 +86,13 @@ class StateManager {
     }
     // Adiciona um log a um grupo de logs
     addLogToGroup(queueId, logEntry) {
-        const mailId = logEntry.mailId || 'unknown';
-        const logGroup = this.logGroups.get(mailId) || { queueId, mailId, logs: [] };
+        const logGroup = this.logGroups.get(queueId) || { queueId, logs: [] };
         logGroup.logs.push(logEntry);
-        this.logGroups.set(mailId, logGroup);
+        this.logGroups.set(queueId, logGroup);
     }
-    // Obtém um grupo de logs pelo mailId
-    getLogGroup(mailId) {
-        return this.logGroups.get(mailId);
-    }
-    // Adiciona um queueId ao mailId
-    addQueueIdToMailId(mailId, queueId) {
-        if (!this.mailIdQueueMap.has(mailId)) {
-            this.mailIdQueueMap.set(mailId, []);
-        }
-        this.mailIdQueueMap.get(mailId)?.push(queueId);
-        this.queueIdMailIdMap.set(queueId, mailId); // Mapeia queueId para mailId
-        logger_1.default.info(`Associado queueId ${queueId} ao mailId ${mailId}`);
-    }
-    // Obtém todos os queueIds associados a um mailId
-    getQueueIdsByMailId(mailId) {
-        return this.mailIdQueueMap.get(mailId);
-    }
-    // Verifica se um mailId foi completamente processado
-    isMailIdProcessed(mailId) {
-        const queueIds = this.mailIdQueueMap.get(mailId);
-        if (!queueIds)
-            return false;
-        return queueIds.every((queueId) => !this.pendingSends.has(queueId));
-    }
-    // Obtém resultados associados a um mailId
-    getResultsByMailId(mailId) {
-        const queueIds = this.mailIdQueueMap.get(mailId);
-        if (!queueIds)
-            return undefined;
-        const allResults = [];
-        queueIds.forEach((queueId) => {
-            const sendData = this.pendingSends.get(queueId);
-            if (sendData) {
-                allResults.push(...sendData.results);
-            }
-        });
-        return allResults;
+    // Obtém um grupo de logs pelo queueId
+    getLogGroup(queueId) {
+        return this.logGroups.get(queueId);
     }
     // Obtém o UUID associado a um queueId
     getUuidByQueueId(queueId) {
