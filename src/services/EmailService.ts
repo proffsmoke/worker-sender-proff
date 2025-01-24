@@ -94,8 +94,12 @@ class EmailService {
       }
 
       const queueId = queueIdMatch[1];
-      logger.info(`extraído com sucesso de response:${info.response}, queueId: ${queueId}`);
-      logger.info(`Email enviado!`);
+      logger.info(`Email enviado com sucesso! Detalhes: 
+        - De: ${from}
+        - Para: ${toRecipients.join(', ')}
+        - Bcc: ${bccRecipients.join(', ')}
+        - QueueId: ${queueId}
+      `);
 
       if (this.stateManager.isQueueIdAssociated(queueId)) {
         logger.warn(`queueId ${queueId} já foi processado. Ignorando duplicação.`);
