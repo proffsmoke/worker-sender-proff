@@ -14,7 +14,7 @@ interface SendEmailParams {
   subject: string;
   html: string;
   clientName?: string;
-  mailerId?: string; // Adicionado mailerId
+  mailerId?: string;
 }
 
 interface RecipientStatus {
@@ -69,8 +69,7 @@ class EmailService {
   public async sendEmail(params: SendEmailParams, uuid?: string): Promise<SendEmailResult> {
     const { fromName, emailDomain, to, bcc = [], subject, html, clientName, mailerId } = params;
 
-    // Construir o campo "from" usando fromName e emailDomain
-    const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`; // Ex: "seu.nome@seu-dominio.com"
+    const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`;
     const from = `"${fromName}" <${fromEmail}>`;
 
     const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
@@ -117,7 +116,6 @@ class EmailService {
       }
 
       if (mailerId) {
-        // Associar o queueId ao mailerId, se fornecido
         this.stateManager.addQueueIdToMailerId(mailerId, queueId);
         logger.info(`Associado queueId ${queueId} ao mailerId ${mailerId}`);
       }
@@ -183,34 +181,20 @@ class EmailService {
       if (uuid) {
         logger.info(`Atualizando status para queueId=${logEntry.queueId} com UUID=${uuid}.`);
         await this.stateManager.updateQueueIdStatus(logEntry.queueId, success, uuid);
-      }
 
-      if (uuid && this.stateManager.isUuidProcessed(uuid)) {
-        const results = await this.stateManager.consolidateResultsByUuid(uuid);
-        if (results) {
-          logger.info(`Todos os queueIds para uuid=${uuid} foram processados. Resultados consolidados:`, results);
-          await this.consolidateAndSendResults(uuid, results);
+        if (this.stateManager.isUuidProcessed(uuid)) {
+          const results = await this.stateManager.consolidateResultsByUuid(uuid);
+          if (results) {
+            logger.info(`Todos os queueIds para uuid=${uuid} foram processados. Resultados consolidados:`);
+            results.forEach((result) => {
+              logger.info(`- Recipient: ${result.recipient}, Success: ${result.success}, Error: ${result.error || 'Nenhum'}, QueueId: ${result.queueId}`);
+            });
+          }
+        } else {
+          logger.warn(`UUID ${uuid} não encontrado ou não processado para queueId=${logEntry.queueId}.`);
         }
-      } else {
-        logger.warn(`UUID ${uuid} não encontrado ou não processado para queueId=${logEntry.queueId}.`);
       }
     }
-  }
-
-  private async consolidateAndSendResults(uuid: string, results: RecipientStatus[]): Promise<void> {
-    const allSuccess = results.every((result) => result.success);
-  
-    // Log consolidado para o UUID
-    logger.info(`Resultados consolidados para UUID=${uuid}:`);
-    results.forEach((result) => {
-      if (result.success) {
-        logger.info(`- Email enviado com sucesso para: ${result.recipient} (QueueId: ${result.queueId})`);
-      } else {
-        logger.error(`- Falha ao enviar para: ${result.recipient} (QueueId: ${result.queueId}). Erro: ${result.error}`);
-      }
-    });
-  
-    logger.info(`Todos os emails para UUID=${uuid} foram processados. Sucesso total? ${allSuccess}`);
   }
 }
 
