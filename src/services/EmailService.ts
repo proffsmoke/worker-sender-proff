@@ -199,8 +199,18 @@ class EmailService {
 
   private async consolidateAndSendResults(uuid: string, results: RecipientStatus[]): Promise<void> {
     const allSuccess = results.every((result) => result.success);
-    logger.info(`Resultados consolidados para uuid=${uuid}:`, results);
-    logger.info(`Todos os emails foram enviados com sucesso? ${allSuccess}`);
+  
+    // Log consolidado para o UUID
+    logger.info(`Resultados consolidados para UUID=${uuid}:`);
+    results.forEach((result) => {
+      if (result.success) {
+        logger.info(`- Email enviado com sucesso para: ${result.recipient} (QueueId: ${result.queueId})`);
+      } else {
+        logger.error(`- Falha ao enviar para: ${result.recipient} (QueueId: ${result.queueId}). Erro: ${result.error}`);
+      }
+    });
+  
+    logger.info(`Todos os emails para UUID=${uuid} foram processados. Sucesso total? ${allSuccess}`);
   }
 }
 
