@@ -52,6 +52,7 @@ class EmailService {
             logger_1.default.info(`queueId extraído com sucesso: ${queueId}`);
             logger_1.default.info(`Email enviado!`);
             // Verifica se o queueId já foi processado
+            // Dentro do método sendEmail
             if (this.stateManager.isQueueIdAssociated(queueId)) {
                 logger_1.default.warn(`queueId ${queueId} já foi processado. Ignorando duplicação.`);
                 return {
@@ -62,6 +63,11 @@ class EmailService {
                         queueId,
                     })),
                 };
+            }
+            // Associa imediatamente o queueId ao UUID
+            if (uuid) {
+                this.stateManager.addQueueIdToUuid(uuid, queueId);
+                logger_1.default.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
             }
             // Associar imediatamente o queueId ao UUID
             if (uuid) {
@@ -96,6 +102,7 @@ class EmailService {
             };
         }
     }
+    // Ajustar o método handleLogEntry para garantir que o estado esteja sendo processado corretamente
     handleLogEntry(logEntry) {
         const sendData = this.stateManager.getPendingSend(logEntry.queueId);
         if (!sendData) {

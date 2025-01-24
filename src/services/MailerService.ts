@@ -258,14 +258,14 @@ class MailerService {
         logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 60 segundos.`);
         resolve(null);
       }, 60000);
-
+  
       this.logParser.once('log', (logEntry: LogEntry) => {
         if (logEntry.queueId === queueId) {
           clearTimeout(timeout);
           resolve(logEntry);
         }
       });
-
+  
       // Verificar se o log já existe para o queueId
       const logEntry = this.getLogEntryByQueueId(queueId);
       if (logEntry) {
@@ -274,6 +274,7 @@ class MailerService {
       }
     });
   }
+  
 
   private getLogEntryByQueueId(queueId: string): LogEntry | null {
     logger.info(`Verificando log para queueId=${queueId}`);

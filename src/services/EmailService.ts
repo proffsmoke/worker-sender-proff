@@ -85,6 +85,7 @@ class EmailService {
       logger.info(`Email enviado!`);
   
       // Verifica se o queueId já foi processado
+      // Dentro do método sendEmail
       if (this.stateManager.isQueueIdAssociated(queueId)) {
         logger.warn(`queueId ${queueId} já foi processado. Ignorando duplicação.`);
         return {
@@ -96,6 +97,13 @@ class EmailService {
           })),
         };
       }
+
+      // Associa imediatamente o queueId ao UUID
+      if (uuid) {
+        this.stateManager.addQueueIdToUuid(uuid, queueId);
+        logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
+      }
+
   
       // Associar imediatamente o queueId ao UUID
       if (uuid) {
@@ -135,49 +143,51 @@ class EmailService {
     }
   }
 
-  private handleLogEntry(logEntry: LogEntry): void {
-    const sendData = this.stateManager.getPendingSend(logEntry.queueId);
-    if (!sendData) {
-      logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${logEntry.queueId}`);
-      return;
+  // Ajustar o método handleLogEntry para garantir que o estado esteja sendo processado corretamente
+private handleLogEntry(logEntry: LogEntry): void {
+  const sendData = this.stateManager.getPendingSend(logEntry.queueId);
+  if (!sendData) {
+    logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${logEntry.queueId}`);
+    return;
+  }
+  
+  const success = logEntry.success;
+  const recipient = logEntry.email.toLowerCase();
+  
+  const recipientIndex = sendData.results.findIndex((r) => r.recipient === recipient);
+  if (recipientIndex !== -1) {
+    sendData.results[recipientIndex].success = success;
+    if (!success) {
+      sendData.results[recipientIndex].error = `Status: ${logEntry.result}`;
+    }
+    logger.info(`Resultado atualizado para recipient=${recipient}:`, sendData.results[recipientIndex]);
+  } else {
+    logger.warn(`Recipient ${recipient} não encontrado nos resultados para queueId=${logEntry.queueId}`);
+  }
+  
+  const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
+  const processedRecipients = sendData.results.length;
+  
+  if (processedRecipients >= totalRecipients) {
+    logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
+    this.stateManager.deletePendingSend(logEntry.queueId);
+    
+    // Passa o mailId ao atualizar o status
+    const uuid = this.stateManager.getUuidByQueueId(logEntry.queueId);
+    if (uuid) {
+      this.stateManager.updateQueueIdStatus(logEntry.queueId, success, uuid);
     }
   
-    const success = logEntry.success;
-    const recipient = logEntry.email.toLowerCase();
-  
-    const recipientIndex = sendData.results.findIndex((r) => r.recipient === recipient);
-    if (recipientIndex !== -1) {
-      sendData.results[recipientIndex].success = success;
-      if (!success) {
-        sendData.results[recipientIndex].error = `Status: ${logEntry.result}`;
-      }
-      logger.info(`Resultado atualizado para recipient=${recipient}:`, sendData.results[recipientIndex]);
-    } else {
-      logger.warn(`Recipient ${recipient} não encontrado nos resultados para queueId=${logEntry.queueId}`);
-    }
-  
-    const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
-    const processedRecipients = sendData.results.length;
-  
-    if (processedRecipients >= totalRecipients) {
-      logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
-      this.stateManager.deletePendingSend(logEntry.queueId);
-  
-      // Passa o mailId ao atualizar o status
-      const uuid = this.stateManager.getUuidByQueueId(logEntry.queueId);
-      if (uuid) {
-        this.stateManager.updateQueueIdStatus(logEntry.queueId, success, uuid);
-      }
-  
-      if (uuid && this.stateManager.isUuidProcessed(uuid)) {
-        const results = this.stateManager.consolidateResultsByUuid(uuid);
-        if (results) {
-          logger.info(`Todos os queueIds para uuid=${uuid} foram processados. Resultados consolidados:`, results);
-          this.consolidateAndSendResults(uuid, results);
-        }
+    if (uuid && this.stateManager.isUuidProcessed(uuid)) {
+      const results = this.stateManager.consolidateResultsByUuid(uuid);
+      if (results) {
+        logger.info(`Todos os queueIds para uuid=${uuid} foram processados. Resultados consolidados:`, results);
+        this.consolidateAndSendResults(uuid, results);
       }
     }
   }
+}
+
 
   private async consolidateAndSendResults(uuid: string, results: RecipientStatus[]): Promise<void> {
     const allSuccess = results.every((result) => result.success);
