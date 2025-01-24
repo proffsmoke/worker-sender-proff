@@ -67,7 +67,10 @@ class EmailService {
 
   public async sendEmail(params: SendEmailParams, uuid?: string): Promise<SendEmailResult> {
     const { fromName = 'No-Reply', emailDomain, to, bcc = [], subject, html, clientName } = params;
-    const from = `"${fromName}" <${process.env.MAILER_NOREPLY_EMAIL || 'no-reply@outlook.com'}>`;
+
+    // Construir o campo "from" usando o fromName e o emailDomain
+    const fromEmail = `no-reply@${emailDomain}`; // Usar o domínio fornecido
+    const from = `"${fromName}" <${fromEmail}>`;
 
     const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
     const bccRecipients: string[] = bcc.map((r) => r.toLowerCase());
@@ -131,14 +134,14 @@ class EmailService {
   private async handleLogEntry(logEntry: LogEntry): Promise<void> {
     const sendData = this.stateManager.getPendingSend(logEntry.queueId);
     if (!sendData) return;
-  
+
     const success = logEntry.success;
     const recipient = logEntry.email.toLowerCase();
-  
+
     const recipientIndex = sendData.results.findIndex((r) => r.recipient === recipient);
     if (recipientIndex !== -1) {
       sendData.results[recipientIndex].success = success;
-  
+
       if (!success) {
         sendData.results[recipientIndex].error = `Status: ${logEntry.result}`;
         logger.error(`Falha ao enviar para recipient=${recipient}. Erro: ${logEntry.result}. Log completo: ${JSON.stringify(logEntry)}`);
@@ -148,22 +151,22 @@ class EmailService {
     } else {
       logger.warn(`Recipient ${recipient} não encontrado nos resultados para queueId=${logEntry.queueId}. Log completo: ${JSON.stringify(logEntry)}`);
     }
-  
+
     const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
     const processedRecipients = sendData.results.length;
-  
+
     logger.debug(`Status de processamento para queueId=${logEntry.queueId}: Total de recipients=${totalRecipients}, Processados=${processedRecipients}. Log completo: ${JSON.stringify(logEntry)}`);
-  
+
     if (processedRecipients >= totalRecipients) {
       logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends. Status atual: ${JSON.stringify(sendData)}`);
       this.stateManager.deletePendingSend(logEntry.queueId);
-  
+
       const uuid = this.stateManager.getUuidByQueueId(logEntry.queueId);
       if (uuid) {
         logger.info(`Atualizando status para queueId=${logEntry.queueId} com UUID=${uuid}.`);
         await this.stateManager.updateQueueIdStatus(logEntry.queueId, success, uuid);
       }
-  
+
       if (uuid && this.stateManager.isUuidProcessed(uuid)) {
         const results = await this.stateManager.consolidateResultsByUuid(uuid);
         if (results) {

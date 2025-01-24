@@ -39,7 +39,9 @@ class EmailService {
     }
     async sendEmail(params, uuid) {
         const { fromName = 'No-Reply', emailDomain, to, bcc = [], subject, html, clientName } = params;
-        const from = `"${fromName}" <${process.env.MAILER_NOREPLY_EMAIL || 'no-reply@outlook.com'}>`;
+        // Construir o campo "from" usando o fromName e o emailDomain
+        const fromEmail = `no-reply@${emailDomain}`; // Usar o domínio fornecido
+        const from = `"${fromName}" <${fromEmail}>`;
         const toRecipients = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
         const bccRecipients = bcc.map((r) => r.toLowerCase());
         const allRecipients = [...toRecipients, ...bccRecipients];
