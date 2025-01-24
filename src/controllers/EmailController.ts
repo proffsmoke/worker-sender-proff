@@ -10,11 +10,11 @@ class EmailController {
   }
 
   async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { emailDomain, emailList, fromName, clientName, uuid } = req.body;
+    const { emailDomain, emailList, fromName, uuid } = req.body;
 
     try {
       // Validação básica dos parâmetros
-      const requiredParams = ['emailDomain', 'emailList', 'fromName', 'clientName', 'uuid'];
+      const requiredParams = ['emailDomain', 'emailList', 'fromName', 'uuid'];
       const missingParams = requiredParams.filter(param => !(param in req.body));
 
       if (missingParams.length > 0) {
@@ -28,7 +28,7 @@ class EmailController {
 
       // Validar cada e-mail na lista
       for (const emailData of emailList) {
-        const { email, subject, templateId, html } = emailData;
+        const { email, subject, templateId, html, clientName } = emailData;
 
         if (!email || !subject) {
           throw new Error('Cada objeto em "emailList" deve conter "email" e "subject".');
@@ -50,7 +50,7 @@ class EmailController {
 
       // Enviar cada e-mail da lista
       for (const emailData of emailList) {
-        const { email, subject, templateId, html } = emailData;
+        const { email, subject, templateId, html, clientName } = emailData;
 
         const result = await emailService.sendEmail(
           {
@@ -59,7 +59,7 @@ class EmailController {
             to: email,
             subject,
             html: templateId ? `<p>Template ID: ${templateId}</p>` : html, // Substituir pelo conteúdo real do template
-            clientName, // Usar o clientName fornecido
+            clientName: clientName || fromName, // Usar clientName se estiver presente, caso contrário, usar fromName
           },
           uuid
         );
