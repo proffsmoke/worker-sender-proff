@@ -138,7 +138,7 @@ class EmailService {
   private handleLogEntry(logEntry: LogEntry): void {
     const sendData = this.stateManager.getPendingSend(logEntry.queueId);
     if (!sendData) {
-      logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${logEntry.queueId}. Log completo: ${JSON.stringify(logEntry)}`);
+      //logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${logEntry.queueId}. Log completo: ${JSON.stringify(logEntry)}`);
       return;
     }
     
