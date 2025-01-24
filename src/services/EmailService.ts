@@ -2,7 +2,7 @@ import nodemailer from 'nodemailer';
 import logger from '../utils/logger';
 import LogParser, { LogEntry } from '../log-parser';
 import dotenv from 'dotenv';
-import StateManager from './StateManager';
+import { EventEmitter } from 'events';
 
 dotenv.config();
 
@@ -29,13 +29,15 @@ interface SendEmailResult {
   recipients: RecipientStatus[];
 }
 
-class EmailService {
+class EmailService extends EventEmitter {
   private static instance: EmailService;
   private transporter: nodemailer.Transporter;
   private logParser: LogParser;
-  private stateManager: StateManager;
+  private pendingSends: Map<string, { toRecipients: string[]; bccRecipients: string[]; results: RecipientStatus[] }>;
+  private uuidQueueMap: Map<string, string[]>;
 
   private constructor(logParser: LogParser) {
+    super();
     this.transporter = nodemailer.createTransport({
       host: 'localhost',
       port: 25,
@@ -44,7 +46,8 @@ class EmailService {
     });
 
     this.logParser = logParser;
-    this.stateManager = new StateManager();
+    this.pendingSends = new Map();
+    this.uuidQueueMap = new Map();
     this.logParser.on('log', this.handleLogEntry.bind(this));
   }
 
@@ -102,27 +105,17 @@ class EmailService {
         - QueueId: ${queueId}
       `);
 
-      if (this.stateManager.isQueueIdAssociated(queueId)) {
-        logger.warn(`queueId ${queueId} já foi processado. Ignorando duplicação.`);
-        return {
-          queueId,
-          recipients: this.createRecipientsStatus(allRecipients, true, undefined, queueId),
-        };
-      }
-
       if (uuid) {
-        this.stateManager.addQueueIdToUuid(uuid, queueId);
+        if (!this.uuidQueueMap.has(uuid)) {
+          this.uuidQueueMap.set(uuid, []);
+        }
+        this.uuidQueueMap.get(uuid)?.push(queueId);
         logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
-      }
-
-      if (mailerId) {
-        this.stateManager.addQueueIdToMailerId(mailerId, queueId);
-        logger.info(`Associado queueId ${queueId} ao mailerId ${mailerId}`);
       }
 
       const recipientsStatus = this.createRecipientsStatus(allRecipients, true, undefined, queueId);
 
-      this.stateManager.addPendingSend(queueId, {
+      this.pendingSends.set(queueId, {
         toRecipients,
         bccRecipients,
         results: recipientsStatus,
@@ -145,7 +138,7 @@ class EmailService {
   }
 
   private async handleLogEntry(logEntry: LogEntry): Promise<void> {
-    const sendData = this.stateManager.getPendingSend(logEntry.queueId);
+    const sendData = this.pendingSends.get(logEntry.queueId);
     if (!sendData) {
       logger.warn(`Nenhum dado pendente encontrado para queueId=${logEntry.queueId}`);
       return;
@@ -171,30 +164,33 @@ class EmailService {
     const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
     const processedRecipients = sendData.results.length;
 
-    logger.debug(`Status de processamento para queueId=${logEntry.queueId}: Total de recipients=${totalRecipients}, Processados=${processedRecipients}. Log completo: ${JSON.stringify(logEntry)}`);
-
     if (processedRecipients >= totalRecipients) {
       logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends. Status atual: ${JSON.stringify(sendData)}`);
-      this.stateManager.deletePendingSend(logEntry.queueId);
+      this.pendingSends.delete(logEntry.queueId);
 
-      const uuid = this.stateManager.getUuidByQueueId(logEntry.queueId);
-      if (uuid) {
-        logger.info(`Atualizando status para queueId=${logEntry.queueId} com UUID=${uuid}.`);
-        await this.stateManager.updateQueueIdStatus(logEntry.queueId, success, uuid);
-
-        if (this.stateManager.isUuidProcessed(uuid)) {
-          const results = await this.stateManager.consolidateResultsByUuid(uuid);
-          if (results) {
-            logger.info(`Todos os queueIds para uuid=${uuid} foram processados. Resultados consolidados:`);
-            results.forEach((result) => {
-              logger.info(`- Recipient: ${result.recipient}, Success: ${result.success}, Error: ${result.error || 'Nenhum'}, QueueId: ${result.queueId}`);
-            });
-          }
-        } else {
-          logger.warn(`UUID ${uuid} não encontrado ou não processado para queueId=${logEntry.queueId}.`);
-        }
-      }
+      // Notificar que o queueId foi processado
+      this.emit('queueProcessed', logEntry.queueId, sendData.results);
     }
+  }
+
+  public async waitForUUIDCompletion(uuid: string): Promise<RecipientStatus[]> {
+    return new Promise((resolve) => {
+      const queueIds = this.uuidQueueMap.get(uuid) || [];
+      const results: RecipientStatus[] = [];
+
+      const onQueueProcessed = (queueId: string, queueResults: RecipientStatus[]) => {
+        if (queueIds.includes(queueId)) {
+          results.push(...queueResults);
+
+          if (results.length >= queueIds.length) {
+            this.removeListener('queueProcessed', onQueueProcessed);
+            resolve(results);
+          }
+        }
+      };
+
+      this.on('queueProcessed', onQueueProcessed);
+    });
   }
 }
 
