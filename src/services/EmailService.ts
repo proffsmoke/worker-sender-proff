@@ -97,7 +97,7 @@ class EmailService {
         };
       }
 
-      // Associa imediatamente o queueId ao UUID
+      // Associa o queueId ao UUID
       if (uuid) {
         this.stateManager.addQueueIdToUuid(uuid, queueId);
         logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
@@ -185,7 +185,6 @@ class EmailService {
       }
     }
   }
-  
 
   private async consolidateAndSendResults(uuid: string, results: RecipientStatus[]): Promise<void> {
     const allSuccess = results.every((result) => result.success);

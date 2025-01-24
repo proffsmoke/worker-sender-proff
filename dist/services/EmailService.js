@@ -63,7 +63,7 @@ class EmailService {
                     })),
                 };
             }
-            // Associa imediatamente o queueId ao UUID
+            // Associa o queueId ao UUID
             if (uuid) {
                 this.stateManager.addQueueIdToUuid(uuid, queueId);
                 logger_1.default.info(`Associado queueId ${queueId} ao UUID ${uuid}`);

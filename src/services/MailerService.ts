@@ -3,7 +3,6 @@ import config from '../config';
 import EmailService from './EmailService';
 import LogParser, { LogEntry } from '../log-parser';
 import BlockManagerService from './BlockManagerService';
-import StateManager from './StateManager';
 import { v4 as uuidv4 } from 'uuid';
 
 interface RecipientStatus {
@@ -24,7 +23,6 @@ class MailerService {
   private logParser: LogParser;
   private emailService: EmailService;
   private blockManagerService: BlockManagerService;
-  private stateManager: StateManager;
   private isMonitoringStarted: boolean = false;
 
   private constructor() {
@@ -32,10 +30,8 @@ class MailerService {
     this.logParser = new LogParser('/var/log/mail.log');
     this.emailService = EmailService.getInstance(this.logParser);
     this.blockManagerService = BlockManagerService.getInstance(this);
-    this.stateManager = new StateManager();
 
     if (!this.isMonitoringStarted) {
-      this.logParser.on('log', this.handleLogEntry.bind(this));
       this.logParser.startMonitoring();
       this.isMonitoringStarted = true;
     }
@@ -93,9 +89,9 @@ class MailerService {
       }
       logger.warn(`Mailer bloqueado com status: ${status}. Razão: ${reason}`);
       if (status === 'blocked_temporary') {
-        this.scheduleRetry(); // Agendar tentativa de reenvio
+        this.scheduleRetry();
       } else {
-        this.clearRetryInterval(); // Cancelar qualquer tentativa de reenvio agendada
+        this.clearRetryInterval();
       }
     }
   }
@@ -105,7 +101,7 @@ class MailerService {
       this.isBlocked = false;
       this.blockReason = null;
       logger.info('Mailer desbloqueado.');
-      this.clearRetryInterval(); // Cancelar intervalo de tentativa de reenvio
+      this.clearRetryInterval();
     }
   }
 
@@ -116,11 +112,11 @@ class MailerService {
     }
 
     if (this.retryIntervalId) {
-      return; // Se já existe uma tentativa agendada, não faz nada
+      return;
     }
 
     logger.info('Agendando tentativa de reenviar email de teste a cada 4 minutos.');
-    this.retryIntervalId = setInterval(() => this.retrySendEmail(), 4 * 60 * 1000); // Reenvio a cada 4 minutos
+    this.retryIntervalId = setInterval(() => this.retrySendEmail(), 4 * 60 * 1000);
   }
 
   private clearRetryInterval(): void {
@@ -159,10 +155,9 @@ class MailerService {
     };
   
     try {
-      const requestUuid = uuidv4(); // Gerando um UUID único
+      const requestUuid = uuidv4();
       logger.info(`UUID gerado para o teste: ${requestUuid}`);
   
-      // Passa o UUID para o sendEmail
       const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
   
       logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
@@ -186,74 +181,8 @@ class MailerService {
     }
   }
 
-  private handleLogEntry(logEntry: LogEntry) {
-    logger.info(`Log recebido para queueId=${logEntry.queueId}: ${JSON.stringify(logEntry)}`);
-    this.processLogEntry(logEntry);
-  }
-
-  private async processLogEntry(logEntry: LogEntry) {
-    if (this.getStatus() !== 'health') {
-      logger.info(`Ignorando logEntry porque o Mailer está bloqueado. Status atual: ${this.getStatus()}`);
-      return;
-    }
-
-    logger.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
-
-    // Obtém o UUID associado ao queueId
-    const mailId = this.stateManager.getUuidByQueueId(logEntry.queueId);
-    if (!mailId) {
-      logger.warn(`Nenhum UUID encontrado para queueId=${logEntry.queueId}`);
-      return;
-    }
-
-    // Atualiza o status do queueId com base no log
-    await this.stateManager.updateQueueIdStatus(logEntry.queueId, logEntry.success, mailId);
-
-    // Verifica se todos os destinatários de um e-mail ou lista de e-mails foram processados
-    const sendData = this.stateManager.getPendingSend(logEntry.queueId);
-    if (sendData) {
-      const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
-      const processedRecipients = sendData.results.filter((r: RecipientStatus) => r.success !== undefined).length;
-
-      if (processedRecipients === totalRecipients) {
-        // Exibir os dados consolidados antes de removê-los de pendingSends
-        logger.info(`Dados consolidados para queueId=${logEntry.queueId}:`, sendData.results);
-
-        // Consumir o array de resultados antes de removê-lo de pendingSends
-        const resultsToConsolidate = [...sendData.results];
-        this.stateManager.deletePendingSend(logEntry.queueId); // Remover o queueId da lista de pendentes
-
-        // Gerar a mensagem consolidada de forma assíncrona, esperando todos os logs
-        await this.sendConsolidatedResults(resultsToConsolidate, logEntry.queueId);
-      }
-    }
-  }
-
-  private async sendConsolidatedResults(results: any[], queueId: string): Promise<void> {
-    logger.info(`Aguardando todos os logs para a consolidação de resultados para queueId=${queueId}`);
-
-    // Consolidar os resultados
-    const successCount = results.filter(r => r.success).length;
-    const failureCount = results.filter(r => !r.success).length;
-
-    // Exibe no log os resultados consolidados
-    logger.info(`Todos os recipients processados para queueId=${queueId}. Resultados consolidados:`);
-    logger.info(`Resumo para queueId=${queueId}:`);
-    logger.info(`Emails enviados com sucesso: ${successCount}`);
-    logger.info(`Emails com falha: ${failureCount}`);
-
-    // Se houver falhas, logar os detalhes
-    if (failureCount > 0) {
-      logger.error(`Falha no envio de ${failureCount} emails para queueId=${queueId}. Detalhes:`, results.filter(r => !r.success));
-    }
-
-    // Aqui você pode enviar os resultados consolidados para uma API, email ou qualquer outro serviço
-    // Exemplo:
-    // await this.sendResultsToApi(queueId, results);
-  }
-
   private async waitForLogEntry(queueId: string): Promise<LogEntry | null> {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 60 segundos.`);
         resolve(null);
@@ -265,21 +194,7 @@ class MailerService {
           resolve(logEntry);
         }
       });
-  
-      // Verificar se o log já existe para o queueId
-      const logEntry = this.getLogEntryByQueueId(queueId);
-      if (logEntry) {
-        clearTimeout(timeout);
-        resolve(logEntry);
-      }
     });
-  }
-  
-
-  private getLogEntryByQueueId(queueId: string): LogEntry | null {
-    logger.info(`Verificando log para queueId=${queueId}`);
-    const recentLogs = this.logParser.getRecentLogs();
-    return recentLogs.find(log => log.queueId === queueId) || null;
   }
 }
 
