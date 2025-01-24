@@ -11,13 +11,13 @@ class EmailController {
     try {
       const emailService = EmailService.getInstance();
       const stateManager = new StateManager();
-      const requestUuid = uuid || uuidv4(); // Use the provided uuid or generate a new one
+      const requestUuid = uuid || uuidv4(); // Use o uuid fornecido ou gere um novo
 
       if (emailList) {
         // Enviar a lista de e-mails usando sendEmail com o mesmo uuid para cada envio
         const results = await Promise.all(
           emailList.map(async (emailItem: any) => {
-            return emailService.sendEmail(
+            const result = await emailService.sendEmail(
               {
                 fromName: emailItem.name || fromName || 'No-Reply',
                 emailDomain,
@@ -29,6 +29,10 @@ class EmailController {
               },
               requestUuid // Passando o uuid para associar com todos os e-mails
             );
+
+            // Atualiza o status do queueId com o mailId (requestUuid)
+            await stateManager.updateQueueIdStatus(result.queueId, true, requestUuid);
+            return result;
           })
         );
 
@@ -74,6 +78,9 @@ class EmailController {
           },
           requestUuid // Passando o uuid para associar com o e-mail
         );
+
+        // Atualiza o status do queueId com o mailId (requestUuid)
+        await stateManager.updateQueueIdStatus(result.queueId, true, requestUuid);
 
         // Verifica se o email foi processado
         if (stateManager.isUuidProcessed(requestUuid)) {

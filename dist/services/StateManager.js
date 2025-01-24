@@ -36,7 +36,7 @@ class StateManager {
             logger_1.default.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
         }
         else {
-            logger_1.default.info(`queueId ${queueId} já está associado ao UUID ${uuid}, não será associado novamente.`);
+            logger_1.default.warn(`queueId ${queueId} já está associado ao UUID ${uuid}. Ignorando duplicação.`);
         }
     }
     // Obtém todos os queueIds associados a um UUID
@@ -67,18 +67,35 @@ class StateManager {
         return [...queueIds].every((queueId) => !this.pendingSends.has(queueId));
     }
     // Atualiza o status de um queueId com base no log
-    async updateQueueIdStatus(queueId, success) {
+    async updateQueueIdStatus(queueId, success, mailId) {
         try {
-            const emailLog = await EmailLog_1.default.findOne({ queueId }); // Buscando pelo queueId
-            if (emailLog) {
-                emailLog.success = success; // Atualiza o status
-                emailLog.updated = true; // Marca como atualizado
-                await emailLog.save();
-                logger_1.default.info(`Status do queueId=${queueId} atualizado para success=${success}`);
+            let emailLog = await EmailLog_1.default.findOne({ queueId });
+            if (!emailLog) {
+                // Se o EmailLog não existir, cria um novo com o mailId fornecido
+                const sendData = this.getPendingSend(queueId);
+                if (!sendData) {
+                    logger_1.default.warn(`Nenhum dado encontrado no pendingSends para queueId=${queueId}`);
+                    return;
+                }
+                // Usa o primeiro destinatário como email (ou outro valor padrão)
+                const email = sendData.toRecipients[0] || 'no-reply@unknown.com';
+                emailLog = new EmailLog_1.default({
+                    mailId, // Usa o mailId fornecido
+                    queueId,
+                    email,
+                    success,
+                    updated: true,
+                    sentAt: new Date(),
+                    expireAt: new Date(Date.now() + 30 * 60 * 1000), // Expira em 30 minutos
+                });
             }
             else {
-                logger_1.default.warn(`EmailLog não encontrado para queueId=${queueId}`);
+                // Se existir, atualiza o status
+                emailLog.success = success;
+                emailLog.updated = true;
             }
+            await emailLog.save();
+            logger_1.default.info(`Status do queueId=${queueId} atualizado para success=${success}`);
         }
         catch (error) {
             logger_1.default.error(`Erro ao atualizar status do queueId=${queueId}:`, error);

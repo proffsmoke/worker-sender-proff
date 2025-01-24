@@ -164,8 +164,14 @@ class MailerService {
             return;
         }
         logger_1.default.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
+        // Obtém o UUID associado ao queueId
+        const mailId = this.stateManager.getUuidByQueueId(logEntry.queueId);
+        if (!mailId) {
+            logger_1.default.warn(`Nenhum UUID encontrado para queueId=${logEntry.queueId}`);
+            return;
+        }
         // Atualiza o status do queueId com base no log
-        await this.stateManager.updateQueueIdStatus(logEntry.queueId, logEntry.success);
+        await this.stateManager.updateQueueIdStatus(logEntry.queueId, logEntry.success, mailId);
         // Verifica se todos os destinatários de um e-mail ou lista de e-mails foram processados
         const sendData = this.stateManager.getPendingSend(logEntry.queueId);
         if (sendData) {

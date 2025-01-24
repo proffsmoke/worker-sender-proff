@@ -77,15 +77,15 @@ class LogParser extends EventEmitter {
       const logEntry = this.parseLogLine(line);
       if (logEntry) {
         const logHash = `${logEntry.timestamp}-${logEntry.queueId}-${logEntry.result}`;
-
+  
         if (this.logHashes.has(logHash)) {
           logger.info(`Log duplicado ignorado: ${logHash}`);
           return;
         }
-
+  
         this.recentLogs.push(logEntry);
         this.logHashes.add(logHash);
-
+  
         if (this.recentLogs.length > this.MAX_CACHE_SIZE) {
           const oldestLog = this.recentLogs.shift();
           if (oldestLog) {
@@ -93,7 +93,7 @@ class LogParser extends EventEmitter {
             this.logHashes.delete(oldestHash);
           }
         }
-
+  
         logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
         this.emit('log', logEntry);
       }

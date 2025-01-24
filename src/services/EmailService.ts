@@ -141,10 +141,10 @@ class EmailService {
       logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${logEntry.queueId}`);
       return;
     }
-
+  
     const success = logEntry.success;
     const recipient = logEntry.email.toLowerCase();
-
+  
     const recipientIndex = sendData.results.findIndex((r) => r.recipient === recipient);
     if (recipientIndex !== -1) {
       sendData.results[recipientIndex].success = success;
@@ -155,17 +155,20 @@ class EmailService {
     } else {
       logger.warn(`Recipient ${recipient} não encontrado nos resultados para queueId=${logEntry.queueId}`);
     }
-
+  
     const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
     const processedRecipients = sendData.results.length;
-
+  
     if (processedRecipients >= totalRecipients) {
       logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
       this.stateManager.deletePendingSend(logEntry.queueId);
-
-      this.stateManager.updateQueueIdStatus(logEntry.queueId, success);
-
+  
+      // Passa o mailId ao atualizar o status
       const uuid = this.stateManager.getUuidByQueueId(logEntry.queueId);
+      if (uuid) {
+        this.stateManager.updateQueueIdStatus(logEntry.queueId, success, uuid);
+      }
+  
       if (uuid && this.stateManager.isUuidProcessed(uuid)) {
         const results = this.stateManager.consolidateResultsByUuid(uuid);
         if (results) {

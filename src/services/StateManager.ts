@@ -64,7 +64,7 @@ class StateManager {
       queueIds.add(queueId);
       logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
     } else {
-      logger.info(`queueId ${queueId} já está associado ao UUID ${uuid}, não será associado novamente.`);
+      logger.warn(`queueId ${queueId} já está associado ao UUID ${uuid}. Ignorando duplicação.`);
     }
   }
 
@@ -100,17 +100,29 @@ class StateManager {
   }
 
   // Atualiza o status de um queueId com base no log
-  public async updateQueueIdStatus(queueId: string, success: boolean): Promise<void> {
+  public async updateQueueIdStatus(queueId: string, success: boolean, mailId: string): Promise<void> {
     try {
-      let emailLog = await EmailLog.findOne({ queueId }); // Buscando pelo queueId
+      let emailLog = await EmailLog.findOne({ queueId });
   
       if (!emailLog) {
-        // Se o EmailLog não existir, cria um novo
+        // Se o EmailLog não existir, cria um novo com o mailId fornecido
+        const sendData = this.getPendingSend(queueId);
+        if (!sendData) {
+          logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${queueId}`);
+          return;
+        }
+  
+        // Usa o primeiro destinatário como email (ou outro valor padrão)
+        const email = sendData.toRecipients[0] || 'no-reply@unknown.com';
+  
         emailLog = new EmailLog({
+          mailId, // Usa o mailId fornecido
           queueId,
+          email,
           success,
           updated: true,
-          timestamp: new Date(),
+          sentAt: new Date(),
+          expireAt: new Date(Date.now() + 30 * 60 * 1000), // Expira em 30 minutos
         });
       } else {
         // Se existir, atualiza o status

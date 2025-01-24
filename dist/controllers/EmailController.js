@@ -13,11 +13,11 @@ class EmailController {
         try {
             const emailService = EmailService_1.default.getInstance();
             const stateManager = new StateManager_1.default();
-            const requestUuid = uuid || (0, uuid_1.v4)(); // Use the provided uuid or generate a new one
+            const requestUuid = uuid || (0, uuid_1.v4)(); // Use o uuid fornecido ou gere um novo
             if (emailList) {
                 // Enviar a lista de e-mails usando sendEmail com o mesmo uuid para cada envio
                 const results = await Promise.all(emailList.map(async (emailItem) => {
-                    return emailService.sendEmail({
+                    const result = await emailService.sendEmail({
                         fromName: emailItem.name || fromName || 'No-Reply',
                         emailDomain,
                         to: emailItem.email,
@@ -27,6 +27,9 @@ class EmailController {
                         clientName: emailItem.clientName || clientName,
                     }, requestUuid // Passando o uuid para associar com todos os e-mails
                     );
+                    // Atualiza o status do queueId com o mailId (requestUuid)
+                    await stateManager.updateQueueIdStatus(result.queueId, true, requestUuid);
+                    return result;
                 }));
                 // Verifica se todos os emails da lista foram processados
                 if (stateManager.isUuidProcessed(requestUuid)) {
@@ -70,6 +73,8 @@ class EmailController {
                     clientName,
                 }, requestUuid // Passando o uuid para associar com o e-mail
                 );
+                // Atualiza o status do queueId com o mailId (requestUuid)
+                await stateManager.updateQueueIdStatus(result.queueId, true, requestUuid);
                 // Verifica se o email foi processado
                 if (stateManager.isUuidProcessed(requestUuid)) {
                     const consolidatedResults = stateManager.consolidateResultsByUuid(requestUuid);

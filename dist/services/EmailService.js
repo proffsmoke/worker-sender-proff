@@ -51,6 +51,18 @@ class EmailService {
             const queueId = queueIdMatch[1];
             logger_1.default.info(`queueId extraído com sucesso: ${queueId}`);
             logger_1.default.info(`Email enviado!`);
+            // Verifica se o queueId já foi processado
+            if (this.stateManager.getPendingSend(queueId)) {
+                logger_1.default.warn(`queueId ${queueId} já foi processado. Ignorando duplicação.`);
+                return {
+                    queueId,
+                    recipients: allRecipients.map((recipient) => ({
+                        recipient,
+                        success: true,
+                        queueId,
+                    })),
+                };
+            }
             // Associar imediatamente o queueId ao UUID
             if (uuid) {
                 this.stateManager.addQueueIdToUuid(uuid, queueId);
@@ -108,8 +120,11 @@ class EmailService {
         if (processedRecipients >= totalRecipients) {
             logger_1.default.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
             this.stateManager.deletePendingSend(logEntry.queueId);
-            this.stateManager.updateQueueIdStatus(logEntry.queueId, success);
+            // Passa o mailId ao atualizar o status
             const uuid = this.stateManager.getUuidByQueueId(logEntry.queueId);
+            if (uuid) {
+                this.stateManager.updateQueueIdStatus(logEntry.queueId, success, uuid);
+            }
             if (uuid && this.stateManager.isUuidProcessed(uuid)) {
                 const results = this.stateManager.consolidateResultsByUuid(uuid);
                 if (results) {
