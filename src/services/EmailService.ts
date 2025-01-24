@@ -153,10 +153,18 @@ class EmailService extends EventEmitter {
     this.emit('queueProcessed', logEntry.queueId, recipientStatus);
   }
 
-  public async waitForUUIDCompletion(uuid: string): Promise<RecipientStatus[]> {
+  public async waitForUUIDCompletion(uuid: string): Promise<{
+    uuid: string;
+    recipients: RecipientStatus[];
+    summary: {
+      total: number;
+      success: number;
+      failed: number;
+    };
+  }> {
     return new Promise((resolve) => {
       const results = this.uuidResults.get(uuid) || [];
-
+  
       const onQueueProcessed = (queueId: string, recipientStatus: RecipientStatus) => {
         // Atualiza o resultado no array de resultados do UUID
         const existingResultIndex = results.findIndex((r) => r.queueId === queueId);
@@ -165,15 +173,31 @@ class EmailService extends EventEmitter {
         } else {
           results.push(recipientStatus); // Adiciona um novo resultado
         }
-
+  
         // Verifica se todos os queueIds foram processados
-        const allQueueIdsProcessed = Array.from(this.pendingSends.keys()).every((qId) => !this.uuidResults.get(uuid)?.some((r) => r.queueId === qId));
+        const allQueueIdsProcessed = Array.from(this.pendingSends.keys()).every((qId) => 
+          !this.uuidResults.get(uuid)?.some((r) => r.queueId === qId)
+        );
+  
         if (allQueueIdsProcessed) {
           this.removeListener('queueProcessed', onQueueProcessed);
-          resolve(results); // Retorna os resultados consolidados
+  
+          // Cria o resumo consolidado
+          const summary = {
+            total: results.length,
+            success: results.filter((r) => r.success).length,
+            failed: results.filter((r) => !r.success).length,
+          };
+  
+          // Retorna o resumo completo
+          resolve({
+            uuid,
+            recipients: results,
+            summary,
+          });
         }
       };
-
+  
       this.on('queueProcessed', onQueueProcessed);
     });
   }
