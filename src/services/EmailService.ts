@@ -134,7 +134,6 @@ class EmailService {
   }
 
   private handleLogEntry(logEntry: LogEntry): void {
-    logger.info(`Log recebido para queueId=${logEntry.queueId}: ${JSON.stringify(logEntry)}`);
     const sendData = this.stateManager.getPendingSend(logEntry.queueId);
     if (!sendData) {
       logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${logEntry.queueId}`);
