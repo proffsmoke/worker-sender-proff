@@ -1,6 +1,6 @@
 import { LogEntry } from '../log-parser';
 import logger from '../utils/logger';
-import EmailLog from '../models/EmailLog'; // Importe o modelo de EmailLog
+import EmailLog from '../models/EmailLog';
 
 interface RecipientStatus {
   recipient: string;
@@ -24,11 +24,10 @@ class StateManager {
     }
   > = new Map();
 
-  private uuidQueueMap: Map<string, Set<string>> = new Map(); // Mapeia UUID para queueIds (evita duplicação com Set)
-  private uuidResultsMap: Map<string, RecipientStatus[]> = new Map(); // Mapeia UUID para resultados
-  private logGroups: Map<string, LogGroup> = new Map(); // Agrupa logs por queueId
+  private uuidQueueMap: Map<string, Set<string>> = new Map();
+  private uuidResultsMap: Map<string, RecipientStatus[]> = new Map();
+  private logGroups: Map<string, LogGroup> = new Map();
 
-  // Adiciona um envio pendente
   public addPendingSend(
     queueId: string,
     data: {
@@ -41,19 +40,16 @@ class StateManager {
     logger.info(`Dados de envio associados com sucesso para queueId=${queueId}.`);
   }
 
-  // Obtém um envio pendente pelo queueId
   public getPendingSend(
     queueId: string
   ): { toRecipients: string[]; bccRecipients: string[]; results: RecipientStatus[] } | undefined {
     return this.pendingSends.get(queueId);
   }
 
-  // Remove um envio pendente
   public deletePendingSend(queueId: string): void {
     this.pendingSends.delete(queueId);
   }
 
-  // Adiciona um queueId ao UUID (Evita duplicação usando Set)
   public addQueueIdToUuid(uuid: string, queueId: string): void {
     if (!this.uuidQueueMap.has(uuid)) {
       this.uuidQueueMap.set(uuid, new Set());
@@ -77,13 +73,11 @@ class StateManager {
     return false;
   }
 
-  // Obtém todos os queueIds associados a um UUID
   public getQueueIdsByUuid(uuid: string): string[] | undefined {
     const queueIds = this.uuidQueueMap.get(uuid);
     return queueIds ? Array.from(queueIds) : undefined;
   }
 
-  // Consolida resultados associados a um UUID
   public consolidateResultsByUuid(uuid: string): RecipientStatus[] | undefined {
     const queueIds = this.uuidQueueMap.get(uuid);
     if (!queueIds) return undefined;
@@ -99,42 +93,36 @@ class StateManager {
     return allResults;
   }
 
-  // Verifica se um UUID foi completamente processado
   public isUuidProcessed(uuid: string): boolean {
     const queueIds = this.uuidQueueMap.get(uuid);
     if (!queueIds) return false;
 
-    // Convertendo o Set para Array e usando every para verificar todos os queueIds
     return [...queueIds].every((queueId: string) => !this.pendingSends.has(queueId));
   }
 
-  // Atualiza o status de um queueId com base no log
   public async updateQueueIdStatus(queueId: string, success: boolean, mailId: string): Promise<void> {
     try {
       let emailLog = await EmailLog.findOne({ queueId });
   
       if (!emailLog) {
-        // Se o EmailLog não existir, cria um novo com o mailId fornecido
         const sendData = this.getPendingSend(queueId);
         if (!sendData) {
           logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${queueId}`);
           return;
         }
   
-        // Usa o primeiro destinatário como email (ou outro valor padrão)
         const email = sendData.toRecipients[0] || 'no-reply@unknown.com';
   
         emailLog = new EmailLog({
-          mailId, // Usa o mailId fornecido
+          mailId,
           queueId,
           email,
           success,
           updated: true,
           sentAt: new Date(),
-          expireAt: new Date(Date.now() + 30 * 60 * 1000), // Expira em 30 minutos
+          expireAt: new Date(Date.now() + 30 * 60 * 1000),
         });
       } else {
-        // Se existir, atualiza o status
         emailLog.success = success;
         emailLog.updated = true;
       }
@@ -146,19 +134,16 @@ class StateManager {
     }
   }
 
-  // Adiciona um log a um grupo de logs
   public addLogToGroup(queueId: string, logEntry: LogEntry): void {
     const logGroup = this.logGroups.get(queueId) || { queueId, logs: [] };
     logGroup.logs.push(logEntry);
     this.logGroups.set(queueId, logGroup);
   }
 
-  // Obtém um grupo de logs pelo queueId
   public getLogGroup(queueId: string): LogGroup | undefined {
     return this.logGroups.get(queueId);
   }
 
-  // Obtém o UUID associado a um queueId
   public getUuidByQueueId(queueId: string): string | undefined {
     for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
       if (queueIds.has(queueId)) {

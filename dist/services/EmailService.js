@@ -49,10 +49,9 @@ class EmailService {
                 throw new Error('Não foi possível extrair o queueId da resposta');
             }
             const queueId = queueIdMatch[1];
-            logger_1.default.info(`queueId extraído com sucesso: ${queueId}`);
+            logger_1.default.info(`extraído com sucesso de response:${info.response}, queueId: ${queueId}`);
             logger_1.default.info(`Email enviado!`);
             // Verifica se o queueId já foi processado
-            // Dentro do método sendEmail
             if (this.stateManager.isQueueIdAssociated(queueId)) {
                 logger_1.default.warn(`queueId ${queueId} já foi processado. Ignorando duplicação.`);
                 return {
@@ -65,11 +64,6 @@ class EmailService {
                 };
             }
             // Associa imediatamente o queueId ao UUID
-            if (uuid) {
-                this.stateManager.addQueueIdToUuid(uuid, queueId);
-                logger_1.default.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
-            }
-            // Associar imediatamente o queueId ao UUID
             if (uuid) {
                 this.stateManager.addQueueIdToUuid(uuid, queueId);
                 logger_1.default.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
@@ -102,11 +96,10 @@ class EmailService {
             };
         }
     }
-    // Ajustar o método handleLogEntry para garantir que o estado esteja sendo processado corretamente
     handleLogEntry(logEntry) {
         const sendData = this.stateManager.getPendingSend(logEntry.queueId);
         if (!sendData) {
-            logger_1.default.warn(`Nenhum dado encontrado no pendingSends para queueId=${logEntry.queueId}`);
+            logger_1.default.warn(`Nenhum dado encontrado no pendingSends para queueId=${logEntry.queueId}. Log completo: ${JSON.stringify(logEntry)}`);
             return;
         }
         const success = logEntry.success;
@@ -116,20 +109,24 @@ class EmailService {
             sendData.results[recipientIndex].success = success;
             if (!success) {
                 sendData.results[recipientIndex].error = `Status: ${logEntry.result}`;
+                logger_1.default.error(`Falha ao enviar para recipient=${recipient}. Erro: ${logEntry.result}. Log completo: ${JSON.stringify(logEntry)}`);
             }
-            logger_1.default.info(`Resultado atualizado para recipient=${recipient}:`, sendData.results[recipientIndex]);
+            else {
+                logger_1.default.info(`Resultado atualizado com sucesso para recipient=${recipient}. Status: ${success}. Log completo: ${JSON.stringify(logEntry)}`);
+            }
         }
         else {
-            logger_1.default.warn(`Recipient ${recipient} não encontrado nos resultados para queueId=${logEntry.queueId}`);
+            logger_1.default.warn(`Recipient ${recipient} não encontrado nos resultados para queueId=${logEntry.queueId}. Log completo: ${JSON.stringify(logEntry)}`);
         }
         const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
         const processedRecipients = sendData.results.length;
+        logger_1.default.debug(`Status de processamento para queueId=${logEntry.queueId}: Total de recipients=${totalRecipients}, Processados=${processedRecipients}. Log completo: ${JSON.stringify(logEntry)}`);
         if (processedRecipients >= totalRecipients) {
-            logger_1.default.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
+            logger_1.default.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends. Status atual: ${JSON.stringify(sendData)}`);
             this.stateManager.deletePendingSend(logEntry.queueId);
-            // Passa o mailId ao atualizar o status
             const uuid = this.stateManager.getUuidByQueueId(logEntry.queueId);
             if (uuid) {
+                logger_1.default.info(`Atualizando status para queueId=${logEntry.queueId} com UUID=${uuid}.`);
                 this.stateManager.updateQueueIdStatus(logEntry.queueId, success, uuid);
             }
             if (uuid && this.stateManager.isUuidProcessed(uuid)) {
@@ -138,6 +135,9 @@ class EmailService {
                     logger_1.default.info(`Todos os queueIds para uuid=${uuid} foram processados. Resultados consolidados:`, results);
                     this.consolidateAndSendResults(uuid, results);
                 }
+            }
+            else {
+                logger_1.default.warn(`UUID ${uuid} não encontrado ou não processado para queueId=${logEntry.queueId}.`);
             }
         }
     }
