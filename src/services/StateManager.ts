@@ -58,7 +58,6 @@ class StateManager {
     const queueIds = this.uuidQueueMap.get(uuid);
     if (queueIds && !queueIds.has(queueId)) {
       queueIds.add(queueId);
-      logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
     } else {
       logger.warn(`queueId ${queueId} já está associado ao UUID ${uuid}. Ignorando duplicação.`);
     }
