@@ -86,6 +86,8 @@ class EmailService {
         html,
       };
 
+      logger.info(`Preparando para enviar email: ${JSON.stringify(mailOptions)}`);
+
       const info = await this.transporter.sendMail(mailOptions);
 
       const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
@@ -128,6 +130,8 @@ class EmailService {
         results: recipientsStatus,
       });
 
+      logger.info(`Dados de envio associados com sucesso para queueId=${queueId}.`);
+
       return {
         queueId,
         recipients: recipientsStatus,
@@ -144,7 +148,10 @@ class EmailService {
 
   private async handleLogEntry(logEntry: LogEntry): Promise<void> {
     const sendData = this.stateManager.getPendingSend(logEntry.queueId);
-    if (!sendData) return;
+    if (!sendData) {
+      logger.warn(`Nenhum dado pendente encontrado para queueId=${logEntry.queueId}`);
+      return;
+    }
 
     const success = logEntry.success;
     const recipient = logEntry.email.toLowerCase();
