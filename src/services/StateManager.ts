@@ -76,7 +76,7 @@ class StateManager {
     }
     return false;
   }
-  
+
   // Obtém todos os queueIds associados a um UUID
   public getQueueIdsByUuid(uuid: string): string[] | undefined {
     const queueIds = this.uuidQueueMap.get(uuid);
