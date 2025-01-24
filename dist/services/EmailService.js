@@ -29,6 +29,14 @@ class EmailService {
         }
         return EmailService.instance;
     }
+    createRecipientsStatus(recipients, success, error, queueId) {
+        return recipients.map((recipient) => ({
+            recipient,
+            success,
+            error,
+            queueId,
+        }));
+    }
     async sendEmail(params, uuid) {
         const { fromName = 'No-Reply', emailDomain, to, bcc = [], subject, html, clientName } = params;
         const from = `"${fromName}" <${process.env.MAILER_NOREPLY_EMAIL || 'no-reply@outlook.com'}>`;
@@ -51,28 +59,18 @@ class EmailService {
             const queueId = queueIdMatch[1];
             logger_1.default.info(`extraído com sucesso de response:${info.response}, queueId: ${queueId}`);
             logger_1.default.info(`Email enviado!`);
-            // Verifica se o queueId já foi processado
             if (this.stateManager.isQueueIdAssociated(queueId)) {
                 logger_1.default.warn(`queueId ${queueId} já foi processado. Ignorando duplicação.`);
                 return {
                     queueId,
-                    recipients: allRecipients.map((recipient) => ({
-                        recipient,
-                        success: true,
-                        queueId,
-                    })),
+                    recipients: this.createRecipientsStatus(allRecipients, true, undefined, queueId),
                 };
             }
-            // Associa o queueId ao UUID
             if (uuid) {
                 this.stateManager.addQueueIdToUuid(uuid, queueId);
                 logger_1.default.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
             }
-            const recipientsStatus = allRecipients.map((recipient) => ({
-                recipient,
-                success: true,
-                queueId,
-            }));
+            const recipientsStatus = this.createRecipientsStatus(allRecipients, true, undefined, queueId);
             this.stateManager.addPendingSend(queueId, {
                 toRecipients,
                 bccRecipients,
@@ -85,23 +83,16 @@ class EmailService {
         }
         catch (error) {
             logger_1.default.error(`Erro ao enviar email: ${error.message}`, error);
-            const recipientsStatus = allRecipients.map((recipient) => ({
-                recipient,
-                success: false,
-                error: error.message,
-            }));
             return {
                 queueId: '',
-                recipients: recipientsStatus,
+                recipients: this.createRecipientsStatus(allRecipients, false, error.message),
             };
         }
     }
-    handleLogEntry(logEntry) {
+    async handleLogEntry(logEntry) {
         const sendData = this.stateManager.getPendingSend(logEntry.queueId);
-        if (!sendData) {
-            logger_1.default.warn(`Nenhum dado encontrado no pendingSends para queueId=${logEntry.queueId}. Log completo: ${JSON.stringify(logEntry)}`);
+        if (!sendData)
             return;
-        }
         const success = logEntry.success;
         const recipient = logEntry.email.toLowerCase();
         const recipientIndex = sendData.results.findIndex((r) => r.recipient === recipient);
@@ -127,13 +118,13 @@ class EmailService {
             const uuid = this.stateManager.getUuidByQueueId(logEntry.queueId);
             if (uuid) {
                 logger_1.default.info(`Atualizando status para queueId=${logEntry.queueId} com UUID=${uuid}.`);
-                this.stateManager.updateQueueIdStatus(logEntry.queueId, success, uuid);
+                await this.stateManager.updateQueueIdStatus(logEntry.queueId, success, uuid);
             }
             if (uuid && this.stateManager.isUuidProcessed(uuid)) {
-                const results = this.stateManager.consolidateResultsByUuid(uuid);
+                const results = await this.stateManager.consolidateResultsByUuid(uuid);
                 if (results) {
                     logger_1.default.info(`Todos os queueIds para uuid=${uuid} foram processados. Resultados consolidados:`, results);
-                    this.consolidateAndSendResults(uuid, results);
+                    await this.consolidateAndSendResults(uuid, results);
                 }
             }
             else {

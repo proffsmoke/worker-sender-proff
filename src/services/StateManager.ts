@@ -54,7 +54,7 @@ class StateManager {
     if (!this.uuidQueueMap.has(uuid)) {
       this.uuidQueueMap.set(uuid, new Set());
     }
-  
+
     const queueIds = this.uuidQueueMap.get(uuid);
     if (queueIds && !queueIds.has(queueId)) {
       queueIds.add(queueId);
@@ -77,10 +77,17 @@ class StateManager {
     return queueIds ? Array.from(queueIds) : undefined;
   }
 
-  public consolidateResultsByUuid(uuid: string): RecipientStatus[] | undefined {
+  public async consolidateResultsByUuid(uuid: string): Promise<RecipientStatus[] | undefined> {
     const queueIds = this.uuidQueueMap.get(uuid);
     if (!queueIds) return undefined;
 
+    // Busca resultados do EmailLog
+    const resultsFromEmailLog = await this.getResultsFromEmailLog(uuid);
+    if (resultsFromEmailLog) {
+      return resultsFromEmailLog;
+    }
+
+    // Caso não encontre no EmailLog, tenta buscar do pendingSends
     const allResults: RecipientStatus[] = [];
     queueIds.forEach((queueId) => {
       const sendData = this.pendingSends.get(queueId);
@@ -89,7 +96,25 @@ class StateManager {
       }
     });
 
-    return allResults;
+    return allResults.length > 0 ? allResults : undefined;
+  }
+
+  private async getResultsFromEmailLog(uuid: string): Promise<RecipientStatus[] | undefined> {
+    try {
+      const emailLogs = await EmailLog.find({ mailId: uuid });
+      if (!emailLogs || emailLogs.length === 0) return undefined;
+
+      const results: RecipientStatus[] = emailLogs.map((log) => ({
+        recipient: log.email,
+        success: log.success || false,
+        queueId: log.queueId,
+      }));
+
+      return results;
+    } catch (error) {
+      logger.error(`Erro ao buscar resultados do EmailLog para UUID=${uuid}:`, error);
+      return undefined;
+    }
   }
 
   public isUuidProcessed(uuid: string): boolean {
@@ -102,16 +127,15 @@ class StateManager {
   public async updateQueueIdStatus(queueId: string, success: boolean, mailId: string): Promise<void> {
     try {
       let emailLog = await EmailLog.findOne({ queueId });
-  
+
       if (!emailLog) {
         const sendData = this.getPendingSend(queueId);
         if (!sendData) {
-          // logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${queueId}`);
           return;
         }
-  
+
         const email = sendData.toRecipients[0] || 'no-reply@unknown.com';
-  
+
         emailLog = new EmailLog({
           mailId,
           queueId,
@@ -125,7 +149,7 @@ class StateManager {
         emailLog.success = success;
         emailLog.updated = true;
       }
-  
+
       await emailLog.save();
       logger.info(`Status do queueId=${queueId} atualizado para success=${success}`);
     } catch (error) {

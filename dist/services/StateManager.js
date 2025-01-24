@@ -29,7 +29,6 @@ class StateManager {
         const queueIds = this.uuidQueueMap.get(uuid);
         if (queueIds && !queueIds.has(queueId)) {
             queueIds.add(queueId);
-            logger_1.default.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
         }
         else {
             logger_1.default.warn(`queueId ${queueId} já está associado ao UUID ${uuid}. Ignorando duplicação.`);
@@ -47,10 +46,16 @@ class StateManager {
         const queueIds = this.uuidQueueMap.get(uuid);
         return queueIds ? Array.from(queueIds) : undefined;
     }
-    consolidateResultsByUuid(uuid) {
+    async consolidateResultsByUuid(uuid) {
         const queueIds = this.uuidQueueMap.get(uuid);
         if (!queueIds)
             return undefined;
+        // Busca resultados do EmailLog
+        const resultsFromEmailLog = await this.getResultsFromEmailLog(uuid);
+        if (resultsFromEmailLog) {
+            return resultsFromEmailLog;
+        }
+        // Caso não encontre no EmailLog, tenta buscar do pendingSends
         const allResults = [];
         queueIds.forEach((queueId) => {
             const sendData = this.pendingSends.get(queueId);
@@ -58,7 +63,24 @@ class StateManager {
                 allResults.push(...sendData.results);
             }
         });
-        return allResults;
+        return allResults.length > 0 ? allResults : undefined;
+    }
+    async getResultsFromEmailLog(uuid) {
+        try {
+            const emailLogs = await EmailLog_1.default.find({ mailId: uuid });
+            if (!emailLogs || emailLogs.length === 0)
+                return undefined;
+            const results = emailLogs.map((log) => ({
+                recipient: log.email,
+                success: log.success || false,
+                queueId: log.queueId,
+            }));
+            return results;
+        }
+        catch (error) {
+            logger_1.default.error(`Erro ao buscar resultados do EmailLog para UUID=${uuid}:`, error);
+            return undefined;
+        }
     }
     isUuidProcessed(uuid) {
         const queueIds = this.uuidQueueMap.get(uuid);
@@ -72,7 +94,6 @@ class StateManager {
             if (!emailLog) {
                 const sendData = this.getPendingSend(queueId);
                 if (!sendData) {
-                    logger_1.default.warn(`Nenhum dado encontrado no pendingSends para queueId=${queueId}`);
                     return;
                 }
                 const email = sendData.toRecipients[0] || 'no-reply@unknown.com';
