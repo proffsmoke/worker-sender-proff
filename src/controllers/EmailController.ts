@@ -10,11 +10,11 @@ class EmailController {
   }
 
   async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { mailerId, fromName, emailDomain, emailList, uuid } = req.body;
+    const { emailDomain, emailList, fromName, clientName, uuid } = req.body;
 
     try {
       // Validação básica dos parâmetros
-      const requiredParams = ['mailerId', 'fromName', 'emailDomain', 'emailList', 'uuid'];
+      const requiredParams = ['emailDomain', 'emailList', 'fromName', 'clientName', 'uuid'];
       const missingParams = requiredParams.filter(param => !(param in req.body));
 
       if (missingParams.length > 0) {
@@ -54,13 +54,12 @@ class EmailController {
 
         const result = await emailService.sendEmail(
           {
-            mailerId,
-            fromName,
             emailDomain,
+            fromName,
             to: email,
             subject,
             html: templateId ? `<p>Template ID: ${templateId}</p>` : html, // Substituir pelo conteúdo real do template
-            clientName: fromName, // Usar o fromName como clientName
+            clientName, // Usar o clientName fornecido
           },
           uuid
         );
@@ -77,12 +76,12 @@ class EmailController {
         const consolidatedResults = await stateManager.consolidateResultsByUuid(uuid);
         if (consolidatedResults) {
           logger.info(`Resultados consolidados para uuid=${uuid}:`, consolidatedResults);
-          this.sendSuccessResponse(res, uuid, mailerId, consolidatedResults);
+          this.sendSuccessResponse(res, uuid, consolidatedResults);
         } else {
-          this.sendSuccessResponse(res, uuid, mailerId, results);
+          this.sendSuccessResponse(res, uuid, results);
         }
       } else {
-        this.sendSuccessResponse(res, uuid, mailerId, results);
+        this.sendSuccessResponse(res, uuid, results);
       }
     } catch (error) {
       this.handleError(res, error);
@@ -93,13 +92,11 @@ class EmailController {
   private sendSuccessResponse(
     res: Response,
     uuid: string,
-    mailerId: string,
     results: any[]
   ): void {
     res.json({
       success: true,
       uuid,
-      mailerId,
       results,
     });
   }

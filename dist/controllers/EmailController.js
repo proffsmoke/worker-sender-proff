@@ -7,97 +7,97 @@ const EmailService_1 = __importDefault(require("../services/EmailService"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const StateManager_1 = __importDefault(require("../services/StateManager"));
 class EmailController {
+    constructor() {
+        // Bind the method to the instance
+        this.sendNormal = this.sendNormal.bind(this);
+    }
     async sendNormal(req, res, next) {
-        const { mailerId, fromName, emailDomain, emailList, uuid } = req.body;
+        const { emailDomain, emailList, fromName, clientName, uuid } = req.body;
         try {
             // Validação básica dos parâmetros
-            if (!mailerId || !fromName || !emailDomain || !uuid) {
-                throw new Error('Parâmetros obrigatórios faltando: mailerId, fromName, emailDomain, uuid.');
+            const requiredParams = ['emailDomain', 'emailList', 'fromName', 'clientName', 'uuid'];
+            const missingParams = requiredParams.filter(param => !(param in req.body));
+            if (missingParams.length > 0) {
+                throw new Error(`Parâmetros obrigatórios ausentes: ${missingParams.join(', ')}.`);
             }
-            if (!emailList || !Array.isArray(emailList) || emailList.length === 0) {
-                throw new Error('A lista de e-mails (emailList) é obrigatória e deve conter pelo menos um e-mail.');
+            // Verificar se emailList é um array e contém pelo menos um item
+            if (!Array.isArray(emailList) || emailList.length === 0) {
+                throw new Error('O parâmetro "emailList" deve ser um array com pelo menos um e-mail.');
+            }
+            // Validar cada e-mail na lista
+            for (const emailData of emailList) {
+                const { email, subject, templateId, html } = emailData;
+                if (!email || !subject) {
+                    throw new Error('Cada objeto em "emailList" deve conter "email" e "subject".');
+                }
+                const isHtmlPresent = typeof html === 'string' && html.trim() !== '';
+                const isTemplateIdPresent = typeof templateId === 'string' && templateId.trim() !== '';
+                if (!isHtmlPresent && !isTemplateIdPresent) {
+                    throw new Error('Cada objeto em "emailList" deve conter pelo menos "html" ou "templateId".');
+                }
             }
             const emailService = EmailService_1.default.getInstance();
             const stateManager = new StateManager_1.default();
-            // Enviar a lista de e-mails
-            const results = await this.sendEmailList(emailService, stateManager, {
-                mailerId,
-                fromName,
-                emailDomain,
-                emailList,
-                uuid,
-            });
+            // Array para armazenar os resultados de cada e-mail enviado
+            const results = [];
+            // Enviar cada e-mail da lista
+            for (const emailData of emailList) {
+                const { email, subject, templateId, html } = emailData;
+                const result = await emailService.sendEmail({
+                    emailDomain,
+                    fromName,
+                    to: email,
+                    subject,
+                    html: templateId ? `<p>Template ID: ${templateId}</p>` : html, // Substituir pelo conteúdo real do template
+                    clientName, // Usar o clientName fornecido
+                }, uuid);
+                // Atualiza o status do queueId com o mailId (uuid)
+                await stateManager.updateQueueIdStatus(result.queueId, true, uuid);
+                // Adiciona o resultado ao array de resultados
+                results.push(result);
+            }
             // Verifica se todos os e-mails foram processados
             if (stateManager.isUuidProcessed(uuid)) {
                 const consolidatedResults = await stateManager.consolidateResultsByUuid(uuid);
                 if (consolidatedResults) {
                     logger_1.default.info(`Resultados consolidados para uuid=${uuid}:`, consolidatedResults);
-                    this.sendSuccessResponse(res, uuid, mailerId, consolidatedResults);
+                    this.sendSuccessResponse(res, uuid, consolidatedResults);
                 }
                 else {
-                    this.sendSuccessResponse(res, uuid, mailerId, results);
+                    this.sendSuccessResponse(res, uuid, results);
                 }
             }
             else {
-                this.sendSuccessResponse(res, uuid, mailerId, results);
+                this.sendSuccessResponse(res, uuid, results);
             }
         }
         catch (error) {
             this.handleError(res, error);
         }
     }
-    // Método para enviar a lista de e-mails
-    async sendEmailList(emailService, stateManager, params) {
-        const { mailerId, fromName, emailDomain, emailList, uuid } = params;
-        return Promise.all(emailList.map(async (emailItem) => {
-            try {
-                const result = await emailService.sendEmail({
-                    mailerId,
-                    fromName,
-                    emailDomain,
-                    to: emailItem.email,
-                    subject: emailItem.subject,
-                    html: `<p>Template ID: ${emailItem.templateId}</p>`, // Substituir pelo conteúdo real do template
-                    clientName: fromName, // Usar o fromName como clientName
-                }, uuid);
-                // Atualiza o status do queueId com o mailId (uuid)
-                await stateManager.updateQueueIdStatus(result.queueId, true, uuid);
-                return result;
-            }
-            catch (error) {
-                logger_1.default.error(`Erro ao enviar e-mail para ${emailItem.email}:`, error);
-                return {
-                    recipient: emailItem.email,
-                    success: false,
-                    error: error instanceof Error ? error.message : 'Erro desconhecido',
-                };
-            }
-        }));
-    }
     // Método para enviar resposta de sucesso
-    sendSuccessResponse(res, uuid, mailerId, results) {
+    sendSuccessResponse(res, uuid, results) {
         res.json({
             success: true,
             uuid,
-            mailerId,
             results,
         });
     }
     // Método para tratar erros
     handleError(res, error) {
         if (error instanceof Error) {
-            logger_1.default.error(`Erro ao enviar e-mails:`, error);
+            logger_1.default.error(`Erro ao enviar e-mail:`, error);
             res.status(500).json({
                 success: false,
-                message: 'Erro ao enviar e-mails.',
+                message: 'Erro ao enviar e-mail.',
                 error: error.message,
             });
         }
         else {
-            logger_1.default.error(`Erro desconhecido ao enviar e-mails:`, error);
+            logger_1.default.error(`Erro desconhecido ao enviar e-mail:`, error);
             res.status(500).json({
                 success: false,
-                message: 'Erro desconhecido ao enviar e-mails.',
+                message: 'Erro desconhecido ao enviar e-mail.',
             });
         }
     }
