@@ -107,7 +107,7 @@ class StateManager {
       if (!emailLog) {
         const sendData = this.getPendingSend(queueId);
         if (!sendData) {
-          logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${queueId}`);
+          // logger.warn(`Nenhum dado encontrado no pendingSends para queueId=${queueId}`);
           return;
         }
   
