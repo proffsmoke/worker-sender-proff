@@ -34,7 +34,7 @@ class EmailService extends EventEmitter {
   private transporter: nodemailer.Transporter;
   private logParser: LogParser;
   private pendingSends: Map<string, { toRecipients: string[]; bccRecipients: string[]; results: RecipientStatus[] }>;
-  private uuidQueueMap: Map<string, string[]>;
+  private uuidResults: Map<string, RecipientStatus[]>; // Mapa para consolidar resultados por UUID
 
   private constructor(logParser: LogParser) {
     super();
@@ -47,7 +47,7 @@ class EmailService extends EventEmitter {
 
     this.logParser = logParser;
     this.pendingSends = new Map();
-    this.uuidQueueMap = new Map();
+    this.uuidResults = new Map(); // Inicializa o mapa de resultados por UUID
     this.logParser.on('log', this.handleLogEntry.bind(this));
   }
 
@@ -105,14 +105,6 @@ class EmailService extends EventEmitter {
         - QueueId: ${queueId}
       `);
 
-      if (uuid) {
-        if (!this.uuidQueueMap.has(uuid)) {
-          this.uuidQueueMap.set(uuid, []);
-        }
-        this.uuidQueueMap.get(uuid)?.push(queueId);
-        logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
-      }
-
       const recipientsStatus = this.createRecipientsStatus(allRecipients, true, undefined, queueId);
 
       this.pendingSends.set(queueId, {
@@ -120,6 +112,15 @@ class EmailService extends EventEmitter {
         bccRecipients,
         results: recipientsStatus,
       });
+
+      if (uuid) {
+        if (!this.uuidResults.has(uuid)) {
+          this.uuidResults.set(uuid, []);
+        }
+        // Adiciona os resultados iniciais ao UUID
+        this.uuidResults.get(uuid)?.push(...recipientsStatus);
+        logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
+      }
 
       logger.info(`Dados de envio associados com sucesso para queueId=${queueId}.`);
 
@@ -175,17 +176,24 @@ class EmailService extends EventEmitter {
 
   public async waitForUUIDCompletion(uuid: string): Promise<RecipientStatus[]> {
     return new Promise((resolve) => {
-      const queueIds = this.uuidQueueMap.get(uuid) || [];
-      const results: RecipientStatus[] = [];
+      const results = this.uuidResults.get(uuid) || [];
 
       const onQueueProcessed = (queueId: string, queueResults: RecipientStatus[]) => {
-        if (queueIds.includes(queueId)) {
-          results.push(...queueResults);
-
-          if (results.length >= queueIds.length) {
-            this.removeListener('queueProcessed', onQueueProcessed);
-            resolve(results);
+        // Atualiza os resultados do UUID com os novos resultados do queueId
+        queueResults.forEach((result) => {
+          const existingResultIndex = results.findIndex((r) => r.recipient === result.recipient && r.queueId === result.queueId);
+          if (existingResultIndex !== -1) {
+            results[existingResultIndex] = result; // Atualiza o resultado existente
+          } else {
+            results.push(result); // Adiciona um novo resultado
           }
+        });
+
+        // Verifica se todos os queueIds foram processados
+        const allQueueIdsProcessed = Array.from(this.pendingSends.keys()).every((qId) => !this.uuidResults.get(uuid)?.some((r) => r.queueId === qId));
+        if (allQueueIdsProcessed) {
+          this.removeListener('queueProcessed', onQueueProcessed);
+          resolve(results); // Retorna os resultados consolidados
         }
       };
 
