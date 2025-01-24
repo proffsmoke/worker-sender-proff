@@ -22,6 +22,7 @@ interface RecipientStatus {
   success: boolean;
   error?: string;
   queueId?: string;
+  logEntry?: LogEntry; // Adicionado para incluir o log completo
 }
 
 interface SendEmailResult {
@@ -33,8 +34,8 @@ class EmailService extends EventEmitter {
   private static instance: EmailService;
   private transporter: nodemailer.Transporter;
   private logParser: LogParser;
-  private pendingSends: Map<string, RecipientStatus>; // Mapa para armazenar o status de cada queueId
-  private uuidResults: Map<string, RecipientStatus[]>; // Mapa para consolidar resultados por UUID
+  private pendingSends: Map<string, RecipientStatus>;
+  private uuidResults: Map<string, RecipientStatus[]>;
 
   private constructor(logParser: LogParser) {
     super();
@@ -47,7 +48,7 @@ class EmailService extends EventEmitter {
 
     this.logParser = logParser;
     this.pendingSends = new Map();
-    this.uuidResults = new Map(); // Inicializa o mapa de resultados por UUID
+    this.uuidResults = new Map();
     this.logParser.on('log', this.handleLogEntry.bind(this));
   }
 
@@ -111,7 +112,6 @@ class EmailService extends EventEmitter {
         if (!this.uuidResults.has(uuid)) {
           this.uuidResults.set(uuid, []);
         }
-        // Adiciona o resultado inicial ao UUID
         this.uuidResults.get(uuid)?.push(recipientStatus);
         logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
       }
@@ -141,6 +141,7 @@ class EmailService extends EventEmitter {
     }
 
     recipientStatus.success = logEntry.success;
+    recipientStatus.logEntry = logEntry; // Adiciona o logEntry ao recipientStatus
 
     if (!logEntry.success) {
       recipientStatus.error = `Status: ${logEntry.result}`;
@@ -149,7 +150,6 @@ class EmailService extends EventEmitter {
       logger.info(`Resultado atualizado com sucesso para recipient=${recipientStatus.recipient}. Status: ${logEntry.success}. Log completo: ${JSON.stringify(logEntry)}`);
     }
 
-    // Notificar que o queueId foi processado
     this.emit('queueProcessed', logEntry.queueId, recipientStatus);
   }
 
@@ -164,32 +164,28 @@ class EmailService extends EventEmitter {
   }> {
     return new Promise((resolve) => {
       const results = this.uuidResults.get(uuid) || [];
-  
+
       const onQueueProcessed = (queueId: string, recipientStatus: RecipientStatus) => {
-        // Atualiza o resultado no array de resultados do UUID
         const existingResultIndex = results.findIndex((r) => r.queueId === queueId);
         if (existingResultIndex !== -1) {
-          results[existingResultIndex] = recipientStatus; // Atualiza o resultado existente
+          results[existingResultIndex] = recipientStatus;
         } else {
-          results.push(recipientStatus); // Adiciona um novo resultado
+          results.push(recipientStatus);
         }
-  
-        // Verifica se todos os queueIds foram processados
+
         const allQueueIdsProcessed = Array.from(this.pendingSends.keys()).every((qId) => 
           !this.uuidResults.get(uuid)?.some((r) => r.queueId === qId)
         );
-  
+
         if (allQueueIdsProcessed) {
           this.removeListener('queueProcessed', onQueueProcessed);
-  
-          // Cria o resumo consolidado
+
           const summary = {
             total: results.length,
             success: results.filter((r) => r.success).length,
             failed: results.filter((r) => !r.success).length,
           };
-  
-          // Retorna o resumo completo
+
           resolve({
             uuid,
             recipients: results,
@@ -197,7 +193,7 @@ class EmailService extends EventEmitter {
           });
         }
       };
-  
+
       this.on('queueProcessed', onQueueProcessed);
     });
   }

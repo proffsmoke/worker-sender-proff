@@ -11,6 +11,7 @@ interface RecipientStatus {
   error?: string;
   name?: string;
   queueId?: string;
+  logEntry?: LogEntry; // Adicionado para incluir o log completo
 }
 
 class MailerService {
@@ -129,18 +130,15 @@ class MailerService {
   }
 
   private async retrySendEmail(): Promise<void> {
-    // Verifica se o Mailer está bloqueado e o bloqueio é temporário
     if (!this.isBlocked || this.isBlockedPermanently) {
       this.clearRetryInterval();
       logger.info('Mailer não está bloqueado temporariamente. Cancelando tentativas de reenvio.');
       return;
     }
 
-    // Se estiver bloqueado temporariamente, tenta reenviar o email
     logger.info('Tentando reenviar email de teste...');
     const result = await this.sendInitialTestEmail();
 
-    // Se o reenvio for bem-sucedido, cancela as tentativas futuras
     if (result.success) {
       logger.info('Reenvio de email de teste bem-sucedido. Cancelando futuras tentativas.');
       this.clearRetryInterval();
@@ -162,12 +160,10 @@ class MailerService {
       const requestUuid = uuidv4();
       logger.info(`UUID gerado para o teste: ${requestUuid}`);
 
-      // Envia o e-mail de teste
       const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
 
       logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
 
-      // Aguarda o log correspondente ao queueId
       const logEntry = await this.waitForLogEntry(result.queueId);
       logger.info(`Esperando log para queueId=${result.queueId}. Conteúdo aguardado: ${JSON.stringify(logEntry)}`);
 
