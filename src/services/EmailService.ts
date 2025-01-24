@@ -69,7 +69,7 @@ class EmailService {
     const { fromName = 'No-Reply', emailDomain, to, bcc = [], subject, html, clientName } = params;
 
     // Construir o campo "from" usando o fromName e o emailDomain
-    const fromEmail = `no-reply@${emailDomain}`; // Usar o domínio fornecido
+    const fromEmail = `${fromName.replace(/\s+/g, '.')}@${emailDomain}`; // Formato: fromName@domain
     const from = `"${fromName}" <${fromEmail}>`;
 
     const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
