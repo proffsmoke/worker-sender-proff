@@ -164,36 +164,60 @@ class EmailService extends EventEmitter {
   }> {
     return new Promise((resolve) => {
       const results = this.uuidResults.get(uuid) || [];
-
+  
       const onQueueProcessed = (queueId: string, recipientStatus: RecipientStatus) => {
+        // Atualiza o resultado no array de resultados do UUID
         const existingResultIndex = results.findIndex((r) => r.queueId === queueId);
         if (existingResultIndex !== -1) {
-          results[existingResultIndex] = recipientStatus;
+          results[existingResultIndex] = recipientStatus; // Atualiza o resultado existente
         } else {
-          results.push(recipientStatus);
+          results.push(recipientStatus); // Adiciona um novo resultado
         }
-
+  
+        // Verifica se todos os queueIds foram processados
         const allQueueIdsProcessed = Array.from(this.pendingSends.keys()).every((qId) => 
           !this.uuidResults.get(uuid)?.some((r) => r.queueId === qId)
         );
-
+  
         if (allQueueIdsProcessed) {
           this.removeListener('queueProcessed', onQueueProcessed);
-
+  
+          // Cria o resumo consolidado
           const summary = {
             total: results.length,
             success: results.filter((r) => r.success).length,
             failed: results.filter((r) => !r.success).length,
           };
-
+  
+          // Retorna o resumo completo
           resolve({
             uuid,
             recipients: results,
             summary,
           });
+  
+          // Exibe o resumo no log
+          logger.info('Resumo Completo:');
+          logger.info(`UUID: ${uuid}`);
+          logger.info('Recipients:');
+          results.forEach((recipient) => {
+            logger.info(`- Recipient: ${recipient.recipient}`);
+            logger.info(`  Success: ${recipient.success}`);
+            logger.info(`  QueueId: ${recipient.queueId}`);
+            if (recipient.error) {
+              logger.info(`  Error: ${recipient.error}`);
+            }
+            if (recipient.logEntry) {
+              logger.info(`  Log Completo: ${JSON.stringify(recipient.logEntry)}`);
+            }
+          });
+          logger.info('Summary:');
+          logger.info(`  Total: ${summary.total}`);
+          logger.info(`  Success: ${summary.success}`);
+          logger.info(`  Failed: ${summary.failed}`);
         }
       };
-
+  
       this.on('queueProcessed', onQueueProcessed);
     });
   }
