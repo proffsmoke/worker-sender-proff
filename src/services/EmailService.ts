@@ -85,7 +85,7 @@ class EmailService {
       logger.info(`Email enviado!`);
   
       // Verifica se o queueId já foi processado
-      if (this.stateManager.getPendingSend(queueId)) {
+      if (this.stateManager.isQueueIdAssociated(queueId)) {
         logger.warn(`queueId ${queueId} já foi processado. Ignorando duplicação.`);
         return {
           queueId,

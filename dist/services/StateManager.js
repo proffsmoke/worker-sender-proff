@@ -39,6 +39,14 @@ class StateManager {
             logger_1.default.warn(`queueId ${queueId} já está associado ao UUID ${uuid}. Ignorando duplicação.`);
         }
     }
+    isQueueIdAssociated(queueId) {
+        for (const queueIds of this.uuidQueueMap.values()) {
+            if (queueIds.has(queueId)) {
+                return true;
+            }
+        }
+        return false;
+    }
     // Obtém todos os queueIds associados a um UUID
     getQueueIdsByUuid(uuid) {
         const queueIds = this.uuidQueueMap.get(uuid);

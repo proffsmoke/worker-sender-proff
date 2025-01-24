@@ -134,8 +134,6 @@ class MailerService {
             // Passa o UUID para o sendEmail
             const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
             logger_1.default.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
-            this.stateManager.addQueueIdToUuid(requestUuid, result.queueId);
-            logger_1.default.info(`Associado queueId ${result.queueId} ao UUID ${requestUuid}`);
             const logEntry = await this.waitForLogEntry(result.queueId);
             logger_1.default.info(`Esperando log para queueId=${result.queueId}. Conteúdo aguardado: ${JSON.stringify(logEntry)}`);
             if (logEntry && logEntry.success) {

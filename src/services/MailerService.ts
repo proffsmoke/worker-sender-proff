@@ -167,9 +167,6 @@ class MailerService {
   
       logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
   
-      this.stateManager.addQueueIdToUuid(requestUuid, result.queueId);
-      logger.info(`Associado queueId ${result.queueId} ao UUID ${requestUuid}`);
-  
       const logEntry = await this.waitForLogEntry(result.queueId);
       logger.info(`Esperando log para queueId=${result.queueId}. Conteúdo aguardado: ${JSON.stringify(logEntry)}`);
   

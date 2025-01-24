@@ -68,6 +68,15 @@ class StateManager {
     }
   }
 
+  public isQueueIdAssociated(queueId: string): boolean {
+    for (const queueIds of this.uuidQueueMap.values()) {
+      if (queueIds.has(queueId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  
   // Obtém todos os queueIds associados a um UUID
   public getQueueIdsByUuid(uuid: string): string[] | undefined {
     const queueIds = this.uuidQueueMap.get(uuid);
