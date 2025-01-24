@@ -8,7 +8,7 @@ const EmailLog_1 = __importDefault(require("../models/EmailLog")); // Importe o 
 class StateManager {
     constructor() {
         this.pendingSends = new Map();
-        this.uuidQueueMap = new Map(); // Mapeia UUID para queueIds
+        this.uuidQueueMap = new Map(); // Mapeia UUID para queueIds (evita duplicação com Set)
         this.uuidResultsMap = new Map(); // Mapeia UUID para resultados
         this.logGroups = new Map(); // Agrupa logs por mailId
         this.mailIdQueueMap = new Map(); // Mapeia mailId para queueIds
@@ -27,14 +27,14 @@ class StateManager {
     deletePendingSend(queueId) {
         this.pendingSends.delete(queueId);
     }
-    // Adiciona um queueId ao UUID
+    // Adiciona um queueId ao UUID (Evita duplicação usando Set)
     addQueueIdToUuid(uuid, queueId) {
         if (!this.uuidQueueMap.has(uuid)) {
-            this.uuidQueueMap.set(uuid, []);
+            this.uuidQueueMap.set(uuid, new Set());
         }
-        // Verifica se o queueId já está associado ao UUID
-        if (!this.uuidQueueMap.get(uuid)?.includes(queueId)) {
-            this.uuidQueueMap.get(uuid)?.push(queueId);
+        const queueIds = this.uuidQueueMap.get(uuid);
+        if (queueIds && !queueIds.has(queueId)) {
+            queueIds.add(queueId);
             logger_1.default.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
         }
         else {
@@ -43,23 +43,53 @@ class StateManager {
     }
     // Obtém todos os queueIds associados a um UUID
     getQueueIdsByUuid(uuid) {
-        return this.uuidQueueMap.get(uuid);
+        const queueIds = this.uuidQueueMap.get(uuid);
+        return queueIds ? Array.from(queueIds) : undefined;
     }
-    // Obtém o mapa completo de UUID para queueIds
-    getUuidQueueMap() {
-        return this.uuidQueueMap;
+    // Consolida resultados associados a um UUID
+    consolidateResultsByUuid(uuid) {
+        const queueIds = this.uuidQueueMap.get(uuid);
+        if (!queueIds)
+            return undefined;
+        const allResults = [];
+        queueIds.forEach((queueId) => {
+            const sendData = this.pendingSends.get(queueId);
+            if (sendData) {
+                allResults.push(...sendData.results);
+            }
+        });
+        return allResults;
     }
-    // Adiciona resultados ao UUID
-    addResultsToUuid(uuid, results) {
-        this.uuidResultsMap.set(uuid, results);
+    // Verifica se um UUID foi completamente processado
+    isUuidProcessed(uuid) {
+        const queueIds = this.uuidQueueMap.get(uuid);
+        if (!queueIds)
+            return false;
+        // Convertendo o Set para Array e usando every para verificar todos os queueIds
+        return [...queueIds].every((queueId) => !this.pendingSends.has(queueId));
     }
-    // Obtém resultados associados a um UUID
-    getResultsByUuid(uuid) {
-        return this.uuidResultsMap.get(uuid);
-    }
-    // Remove resultados associados a um UUID
-    deleteResultsByUuid(uuid) {
-        this.uuidResultsMap.delete(uuid);
+    // Atualiza o status de um queueId com base no log
+    async updateQueueIdStatus(queueId, success) {
+        const mailId = this.queueIdMailIdMap.get(queueId);
+        if (!mailId) {
+            logger_1.default.warn(`MailId não encontrado para queueId=${queueId}`);
+            return;
+        }
+        try {
+            const emailLog = await EmailLog_1.default.findOne({ mailId, queueId });
+            if (emailLog) {
+                emailLog.success = success; // Atualiza o status
+                emailLog.updated = true; // Marca como atualizado
+                await emailLog.save();
+                logger_1.default.info(`Status do queueId=${queueId} atualizado para success=${success}`);
+            }
+            else {
+                logger_1.default.warn(`EmailLog não encontrado para mailId=${mailId} e queueId=${queueId}`);
+            }
+        }
+        catch (error) {
+            logger_1.default.error(`Erro ao atualizar status do queueId=${queueId}:`, error);
+        }
     }
     // Adiciona um log a um grupo de logs
     addLogToGroup(queueId, logEntry) {
@@ -106,58 +136,14 @@ class StateManager {
         });
         return allResults;
     }
-    // Consolida resultados associados a um UUID
-    consolidateResultsByUuid(uuid) {
-        const queueIds = this.uuidQueueMap.get(uuid);
-        if (!queueIds)
-            return undefined;
-        const allResults = [];
-        queueIds.forEach((queueId) => {
-            const sendData = this.pendingSends.get(queueId);
-            if (sendData) {
-                allResults.push(...sendData.results);
-            }
-        });
-        return allResults;
-    }
-    // Verifica se um UUID foi completamente processado
-    isUuidProcessed(uuid) {
-        const queueIds = this.uuidQueueMap.get(uuid);
-        if (!queueIds)
-            return false;
-        return queueIds.every((queueId) => !this.pendingSends.has(queueId));
-    }
     // Obtém o UUID associado a um queueId
     getUuidByQueueId(queueId) {
         for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
-            if (queueIds.includes(queueId)) {
+            if (queueIds.has(queueId)) {
                 return uuid;
             }
         }
         return undefined;
-    }
-    // Atualiza o status de um queueId com base no log
-    async updateQueueIdStatus(queueId, success) {
-        const mailId = this.queueIdMailIdMap.get(queueId);
-        if (!mailId) {
-            logger_1.default.warn(`MailId não encontrado para queueId=${queueId}`);
-            return;
-        }
-        try {
-            const emailLog = await EmailLog_1.default.findOne({ mailId, queueId });
-            if (emailLog) {
-                emailLog.success = success; // Atualiza o status
-                emailLog.updated = true; // Marca como atualizado
-                await emailLog.save();
-                logger_1.default.info(`Status do queueId=${queueId} atualizado para success=${success}`);
-            }
-            else {
-                logger_1.default.warn(`EmailLog não encontrado para mailId=${mailId} e queueId=${queueId}`);
-            }
-        }
-        catch (error) {
-            logger_1.default.error(`Erro ao atualizar status do queueId=${queueId}:`, error);
-        }
     }
 }
 exports.default = StateManager;
