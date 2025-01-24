@@ -198,50 +198,50 @@ class MailerService {
       logger.info(`Ignorando logEntry porque o Mailer está bloqueado. Status atual: ${this.getStatus()}`);
       return;
     }
-  
+
     logger.info(`Processando log para queueId=${logEntry.queueId}: ${logEntry.result}`);
-  
-    // Atualiza o status de cada destinatário
-    this.blockManagerService.handleLogEntry(logEntry);
-  
+
+    // Atualiza o status do queueId com base no log
+    await this.stateManager.updateQueueIdStatus(logEntry.queueId, logEntry.success);
+
     // Verifica se todos os destinatários de um e-mail ou lista de e-mails foram processados
     const sendData = this.stateManager.getPendingSend(logEntry.queueId);
     if (sendData) {
       const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
       const processedRecipients = sendData.results.filter((r: RecipientStatus) => r.success !== undefined).length;
-  
+
       if (processedRecipients === totalRecipients) {
         // Exibir os dados consolidados antes de removê-los de pendingSends
         logger.info(`Dados consolidados para queueId=${logEntry.queueId}:`, sendData.results);
-  
+
         // Consumir o array de resultados antes de removê-lo de pendingSends
         const resultsToConsolidate = [...sendData.results];
         this.stateManager.deletePendingSend(logEntry.queueId); // Remover o queueId da lista de pendentes
-  
+
         // Gerar a mensagem consolidada de forma assíncrona, esperando todos os logs
         await this.sendConsolidatedResults(resultsToConsolidate, logEntry.queueId);
       }
     }
   }
-  
+
   private async sendConsolidatedResults(results: any[], queueId: string): Promise<void> {
     logger.info(`Aguardando todos os logs para a consolidação de resultados para queueId=${queueId}`);
-  
+
     // Consolidar os resultados
     const successCount = results.filter(r => r.success).length;
     const failureCount = results.filter(r => !r.success).length;
-  
+
     // Exibe no log os resultados consolidados
     logger.info(`Todos os recipients processados para queueId=${queueId}. Resultados consolidados:`);
     logger.info(`Resumo para queueId=${queueId}:`);
     logger.info(`Emails enviados com sucesso: ${successCount}`);
     logger.info(`Emails com falha: ${failureCount}`);
-  
+
     // Se houver falhas, logar os detalhes
     if (failureCount > 0) {
       logger.error(`Falha no envio de ${failureCount} emails para queueId=${queueId}. Detalhes:`, results.filter(r => !r.success));
     }
-  
+
     // Aqui você pode enviar os resultados consolidados para uma API, email ou qualquer outro serviço
     // Exemplo:
     // await this.sendResultsToApi(queueId, results);
@@ -253,14 +253,14 @@ class MailerService {
         logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 60 segundos.`);
         resolve(null);
       }, 60000);
-  
+
       this.logParser.once('log', (logEntry: LogEntry) => {
         if (logEntry.queueId === queueId) {
           clearTimeout(timeout);
           resolve(logEntry);
         }
       });
-  
+
       // Verificar se o log já existe para o queueId
       const logEntry = this.getLogEntryByQueueId(queueId);
       if (logEntry) {
@@ -269,8 +269,6 @@ class MailerService {
       }
     });
   }
-  
-  
 
   private getLogEntryByQueueId(queueId: string): LogEntry | null {
     logger.info(`Verificando log para queueId=${queueId}`);
@@ -278,6 +276,5 @@ class MailerService {
     return recentLogs.find(log => log.queueId === queueId) || null;
   }
 }
-
 
 export default MailerService.getInstance();

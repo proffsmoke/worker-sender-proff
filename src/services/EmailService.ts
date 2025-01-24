@@ -108,6 +108,9 @@ class EmailService {
         results: recipientsStatus,
       });
 
+      // Associar o queueId ao mailId
+      this.stateManager.addQueueIdToMailId(mailId, queueId);
+
       return {
         queueId,
         mailId,
@@ -158,6 +161,9 @@ class EmailService {
       logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends.`);
       this.stateManager.deletePendingSend(logEntry.queueId);
 
+      // Atualiza o status do queueId com base no log
+      this.stateManager.updateQueueIdStatus(logEntry.queueId, success);
+
       // Verifica se há uuid associado ao queueId
       const uuid = this.stateManager.getUuidByQueueId(logEntry.queueId);
       if (uuid && this.stateManager.isUuidProcessed(uuid)) {
@@ -180,6 +186,5 @@ class EmailService {
     // await this.sendResultsToApi(uuid, results);
   }
 }
-
 
 export default EmailService;

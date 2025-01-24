@@ -35,17 +35,16 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const EmailLogSchema = new mongoose_1.Schema({
-    mailId: { type: String, required: true, index: true },
-    sendmailQueueId: { type: String, index: true },
+    mailId: { type: String, required: true, unique: true, index: true }, // UUID único
+    queueId: { type: String, required: true, unique: true, index: true }, // Queue ID único
     email: { type: String, required: true, index: true },
-    message: { type: String, required: true },
-    success: { type: Boolean, default: null },
-    detail: { type: mongoose_1.Schema.Types.Mixed, default: {} }, // Garante que detail nunca seja undefined
+    success: { type: Boolean, default: null }, // Inicialmente null
+    updated: { type: Boolean, default: false }, // Inicialmente false
     sentAt: { type: Date, default: Date.now, index: true },
     expireAt: { type: Date, default: () => new Date(Date.now() + 30 * 60 * 1000), index: true }, // Expira em 30 minutos
 }, {
     timestamps: true,
-    collection: 'emailLogs', // Especifica explicitamente o nome da coleção
+    collection: 'emailLogs',
 });
 // Criar índice TTL no campo expireAt
 EmailLogSchema.index({ expireAt: 1 }, { expireAfterSeconds: 0 });

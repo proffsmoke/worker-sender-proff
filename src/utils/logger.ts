@@ -1,25 +1,25 @@
-// src/utils/logger.ts
-
 import { createLogger, format, transports } from 'winston';
 
+// Formato personalizado para os logs
 const customFormat = format.combine(
-  format.timestamp(),
+  format.timestamp(), // Adiciona um timestamp ao log
   format.printf(({ timestamp, level, message, ...meta }) => {
     let metaString = '';
     if (Object.keys(meta).length > 0) {
-      metaString = JSON.stringify(meta);
+      metaString = JSON.stringify(meta); // Converte metadados em string JSON
     }
     return `${timestamp} [${level.toUpperCase()}]: ${message} ${metaString}`;
   })
 );
 
+// Configuração do logger
 const logger = createLogger({
-  level: 'info',
-  format: customFormat,
+  level: 'info', // Nível mínimo de log (info, error, etc.)
+  format: customFormat, // Usa o formato personalizado
   transports: [
-    new transports.Console(),
-    new transports.File({ filename: 'logs/error.log', level: 'error' }),
-    new transports.File({ filename: 'logs/combined.log' }),
+    new transports.Console(), // Saída para o console
+    new transports.File({ filename: 'logs/error.log', level: 'error' }), // Arquivo para logs de erro
+    new transports.File({ filename: 'logs/combined.log' }), // Arquivo para todos os logs
   ],
 });
 
