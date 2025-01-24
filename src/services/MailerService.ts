@@ -157,21 +157,22 @@ class MailerService {
       html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
       clientName: 'Prasminha camarada'
     };
-
+  
     try {
-      const result = await this.emailService.sendEmail(testEmailParams);
-
-      logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
-
       const requestUuid = uuidv4(); // Gerando um UUID único
       logger.info(`UUID gerado para o teste: ${requestUuid}`);
-
+  
+      // Passa o UUID para o sendEmail
+      const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
+  
+      logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
+  
       this.stateManager.addQueueIdToUuid(requestUuid, result.queueId);
       logger.info(`Associado queueId ${result.queueId} ao UUID ${requestUuid}`);
-
+  
       const logEntry = await this.waitForLogEntry(result.queueId);
       logger.info(`Esperando log para queueId=${result.queueId}. Conteúdo aguardado: ${JSON.stringify(logEntry)}`);
-
+  
       if (logEntry && logEntry.success) {
         logger.info(`Email de teste enviado com sucesso. Status do Mailer: health`);
         this.unblockMailer();

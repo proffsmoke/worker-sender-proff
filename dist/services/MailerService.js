@@ -129,10 +129,11 @@ class MailerService {
             clientName: 'Prasminha camarada'
         };
         try {
-            const result = await this.emailService.sendEmail(testEmailParams);
-            logger_1.default.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
             const requestUuid = (0, uuid_1.v4)(); // Gerando um UUID único
             logger_1.default.info(`UUID gerado para o teste: ${requestUuid}`);
+            // Passa o UUID para o sendEmail
+            const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
+            logger_1.default.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
             this.stateManager.addQueueIdToUuid(requestUuid, result.queueId);
             logger_1.default.info(`Associado queueId ${result.queueId} ao UUID ${requestUuid}`);
             const logEntry = await this.waitForLogEntry(result.queueId);
