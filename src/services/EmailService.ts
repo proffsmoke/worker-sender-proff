@@ -59,11 +59,11 @@ class EmailService {
   public async sendEmail(params: SendEmailParams, uuid?: string): Promise<SendEmailResult> {
     const { fromName = 'No-Reply', emailDomain, to, bcc = [], subject, html, clientName } = params;
     const from = `"${fromName}" <${process.env.MAILER_NOREPLY_EMAIL || 'no-reply@outlook.com'}>`;
-
+  
     const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
     const bccRecipients: string[] = bcc.map((r) => r.toLowerCase());
     const allRecipients: string[] = [...toRecipients, ...bccRecipients];
-
+  
     try {
       const mailOptions = {
         from,
@@ -72,49 +72,62 @@ class EmailService {
         subject: clientName ? `[${clientName}] ${subject}` : subject,
         html,
       };
-
+  
       const info = await this.transporter.sendMail(mailOptions);
-
+  
       const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
       if (!queueIdMatch || !queueIdMatch[1]) {
         throw new Error('Não foi possível extrair o queueId da resposta');
       }
-
+  
       const queueId = queueIdMatch[1];
       logger.info(`queueId extraído com sucesso: ${queueId}`);
       logger.info(`Email enviado!`);
-
+  
+      // Verifica se o queueId já foi processado
+      if (this.stateManager.getPendingSend(queueId)) {
+        logger.warn(`queueId ${queueId} já foi processado. Ignorando duplicação.`);
+        return {
+          queueId,
+          recipients: allRecipients.map((recipient) => ({
+            recipient,
+            success: true,
+            queueId,
+          })),
+        };
+      }
+  
       // Associar imediatamente o queueId ao UUID
       if (uuid) {
         this.stateManager.addQueueIdToUuid(uuid, queueId);
         logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
       }
-
+  
       const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
         recipient,
         success: true,
         queueId,
       }));
-
+  
       this.stateManager.addPendingSend(queueId, {
         toRecipients,
         bccRecipients,
         results: recipientsStatus,
       });
-
+  
       return {
         queueId,
         recipients: recipientsStatus,
       };
     } catch (error: any) {
       logger.error(`Erro ao enviar email: ${error.message}`, error);
-
+  
       const recipientsStatus: RecipientStatus[] = allRecipients.map((recipient) => ({
         recipient,
         success: false,
         error: error.message,
       }));
-
+  
       return {
         queueId: '',
         recipients: recipientsStatus,

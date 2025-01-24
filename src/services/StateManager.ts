@@ -58,7 +58,7 @@ class StateManager {
     if (!this.uuidQueueMap.has(uuid)) {
       this.uuidQueueMap.set(uuid, new Set());
     }
-
+  
     const queueIds = this.uuidQueueMap.get(uuid);
     if (queueIds && !queueIds.has(queueId)) {
       queueIds.add(queueId);
@@ -102,15 +102,24 @@ class StateManager {
   // Atualiza o status de um queueId com base no log
   public async updateQueueIdStatus(queueId: string, success: boolean): Promise<void> {
     try {
-      const emailLog = await EmailLog.findOne({ queueId }); // Buscando pelo queueId
-      if (emailLog) {
-        emailLog.success = success; // Atualiza o status
-        emailLog.updated = true; // Marca como atualizado
-        await emailLog.save();
-        logger.info(`Status do queueId=${queueId} atualizado para success=${success}`);
+      let emailLog = await EmailLog.findOne({ queueId }); // Buscando pelo queueId
+  
+      if (!emailLog) {
+        // Se o EmailLog não existir, cria um novo
+        emailLog = new EmailLog({
+          queueId,
+          success,
+          updated: true,
+          timestamp: new Date(),
+        });
       } else {
-        logger.warn(`EmailLog não encontrado para queueId=${queueId}`);
+        // Se existir, atualiza o status
+        emailLog.success = success;
+        emailLog.updated = true;
       }
+  
+      await emailLog.save();
+      logger.info(`Status do queueId=${queueId} atualizado para success=${success}`);
     } catch (error) {
       logger.error(`Erro ao atualizar status do queueId=${queueId}:`, error);
     }
