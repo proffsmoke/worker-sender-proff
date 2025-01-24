@@ -9,7 +9,7 @@ dotenv.config();
 interface SendEmailParams {
   fromName: string;
   emailDomain: string;
-  to: string | string[];
+  to: string;
   bcc?: string[];
   subject: string;
   html: string;
@@ -26,14 +26,14 @@ interface RecipientStatus {
 
 interface SendEmailResult {
   queueId: string;
-  recipients: RecipientStatus[];
+  recipient: RecipientStatus;
 }
 
 class EmailService extends EventEmitter {
   private static instance: EmailService;
   private transporter: nodemailer.Transporter;
   private logParser: LogParser;
-  private pendingSends: Map<string, { toRecipients: string[]; bccRecipients: string[]; results: RecipientStatus[] }>;
+  private pendingSends: Map<string, RecipientStatus>; // Mapa para armazenar o status de cada queueId
   private uuidResults: Map<string, RecipientStatus[]>; // Mapa para consolidar resultados por UUID
 
   private constructor(logParser: LogParser) {
@@ -60,13 +60,13 @@ class EmailService extends EventEmitter {
     return EmailService.instance;
   }
 
-  private createRecipientsStatus(recipients: string[], success: boolean, error?: string, queueId?: string): RecipientStatus[] {
-    return recipients.map((recipient) => ({
+  private createRecipientStatus(recipient: string, success: boolean, error?: string, queueId?: string): RecipientStatus {
+    return {
       recipient,
       success,
       error,
       queueId,
-    }));
+    };
   }
 
   public async sendEmail(params: SendEmailParams, uuid?: string): Promise<SendEmailResult> {
@@ -75,14 +75,12 @@ class EmailService extends EventEmitter {
     const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`;
     const from = `"${fromName}" <${fromEmail}>`;
 
-    const toRecipients: string[] = Array.isArray(to) ? to.map((r) => r.toLowerCase()) : [to.toLowerCase()];
-    const bccRecipients: string[] = bcc.map((r) => r.toLowerCase());
-    const allRecipients: string[] = [...toRecipients, ...bccRecipients];
+    const recipient = to.toLowerCase();
 
     try {
       const mailOptions = {
         from,
-        to: Array.isArray(to) ? to.join(', ') : to,
+        to: recipient,
         bcc,
         subject: clientName ? `[${clientName}] ${subject}` : subject,
         html,
@@ -100,25 +98,21 @@ class EmailService extends EventEmitter {
       const queueId = queueIdMatch[1];
       logger.info(`Email enviado com sucesso! Detalhes: 
         - De: ${from}
-        - Para: ${toRecipients.join(', ')}
-        - Bcc: ${bccRecipients.join(', ')}
+        - Para: ${recipient}
+        - Bcc: ${bcc.join(', ')}
         - QueueId: ${queueId}
       `);
 
-      const recipientsStatus = this.createRecipientsStatus(allRecipients, true, undefined, queueId);
+      const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
 
-      this.pendingSends.set(queueId, {
-        toRecipients,
-        bccRecipients,
-        results: recipientsStatus,
-      });
+      this.pendingSends.set(queueId, recipientStatus);
 
       if (uuid) {
         if (!this.uuidResults.has(uuid)) {
           this.uuidResults.set(uuid, []);
         }
-        // Adiciona os resultados iniciais ao UUID
-        this.uuidResults.get(uuid)?.push(...recipientsStatus);
+        // Adiciona o resultado inicial ao UUID
+        this.uuidResults.get(uuid)?.push(recipientStatus);
         logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
       }
 
@@ -126,68 +120,51 @@ class EmailService extends EventEmitter {
 
       return {
         queueId,
-        recipients: recipientsStatus,
+        recipient: recipientStatus,
       };
     } catch (error: any) {
       logger.error(`Erro ao enviar email: ${error.message}`, error);
 
+      const recipientStatus = this.createRecipientStatus(recipient, false, error.message);
       return {
         queueId: '',
-        recipients: this.createRecipientsStatus(allRecipients, false, error.message),
+        recipient: recipientStatus,
       };
     }
   }
 
   private async handleLogEntry(logEntry: LogEntry): Promise<void> {
-    const sendData = this.pendingSends.get(logEntry.queueId);
-    if (!sendData) {
+    const recipientStatus = this.pendingSends.get(logEntry.queueId);
+    if (!recipientStatus) {
       logger.warn(`Nenhum dado pendente encontrado para queueId=${logEntry.queueId}`);
       return;
     }
 
-    const success = logEntry.success;
-    const recipient = logEntry.email.toLowerCase();
+    recipientStatus.success = logEntry.success;
 
-    const recipientIndex = sendData.results.findIndex((r) => r.recipient === recipient);
-    if (recipientIndex !== -1) {
-      sendData.results[recipientIndex].success = success;
-
-      if (!success) {
-        sendData.results[recipientIndex].error = `Status: ${logEntry.result}`;
-        logger.error(`Falha ao enviar para recipient=${recipient}. Erro: ${logEntry.result}. Log completo: ${JSON.stringify(logEntry)}`);
-      } else {
-        logger.info(`Resultado atualizado com sucesso para recipient=${recipient}. Status: ${success}. Log completo: ${JSON.stringify(logEntry)}`);
-      }
+    if (!logEntry.success) {
+      recipientStatus.error = `Status: ${logEntry.result}`;
+      logger.error(`Falha ao enviar para recipient=${recipientStatus.recipient}. Erro: ${logEntry.result}. Log completo: ${JSON.stringify(logEntry)}`);
     } else {
-      logger.warn(`Recipient ${recipient} não encontrado nos resultados para queueId=${logEntry.queueId}. Log completo: ${JSON.stringify(logEntry)}`);
+      logger.info(`Resultado atualizado com sucesso para recipient=${recipientStatus.recipient}. Status: ${logEntry.success}. Log completo: ${JSON.stringify(logEntry)}`);
     }
 
-    const totalRecipients = sendData.toRecipients.length + sendData.bccRecipients.length;
-    const processedRecipients = sendData.results.length;
-
-    if (processedRecipients >= totalRecipients) {
-      logger.info(`Todos os recipients processados para queueId=${logEntry.queueId}. Removendo do pendingSends. Status atual: ${JSON.stringify(sendData)}`);
-      this.pendingSends.delete(logEntry.queueId);
-
-      // Notificar que o queueId foi processado
-      this.emit('queueProcessed', logEntry.queueId, sendData.results);
-    }
+    // Notificar que o queueId foi processado
+    this.emit('queueProcessed', logEntry.queueId, recipientStatus);
   }
 
   public async waitForUUIDCompletion(uuid: string): Promise<RecipientStatus[]> {
     return new Promise((resolve) => {
       const results = this.uuidResults.get(uuid) || [];
 
-      const onQueueProcessed = (queueId: string, queueResults: RecipientStatus[]) => {
-        // Atualiza os resultados do UUID com os novos resultados do queueId
-        queueResults.forEach((result) => {
-          const existingResultIndex = results.findIndex((r) => r.recipient === result.recipient && r.queueId === result.queueId);
-          if (existingResultIndex !== -1) {
-            results[existingResultIndex] = result; // Atualiza o resultado existente
-          } else {
-            results.push(result); // Adiciona um novo resultado
-          }
-        });
+      const onQueueProcessed = (queueId: string, recipientStatus: RecipientStatus) => {
+        // Atualiza o resultado no array de resultados do UUID
+        const existingResultIndex = results.findIndex((r) => r.queueId === queueId);
+        if (existingResultIndex !== -1) {
+          results[existingResultIndex] = recipientStatus; // Atualiza o resultado existente
+        } else {
+          results.push(recipientStatus); // Adiciona um novo resultado
+        }
 
         // Verifica se todos os queueIds foram processados
         const allQueueIdsProcessed = Array.from(this.pendingSends.keys()).every((qId) => !this.uuidResults.get(uuid)?.some((r) => r.queueId === qId));

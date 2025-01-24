@@ -10,6 +10,7 @@ interface RecipientStatus {
   success: boolean;
   error?: string;
   name?: string;
+  queueId?: string;
 }
 
 class MailerService {
@@ -154,28 +155,30 @@ class MailerService {
       bcc: [],
       subject: 'Email de Teste Inicial',
       html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
-      clientName: 'Prasminha camarada'
+      clientName: 'Prasminha camarada',
     };
-  
+
     try {
       const requestUuid = uuidv4();
       logger.info(`UUID gerado para o teste: ${requestUuid}`);
-  
+
+      // Envia o e-mail de teste
       const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
-  
+
       logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
-  
+
+      // Aguarda o log correspondente ao queueId
       const logEntry = await this.waitForLogEntry(result.queueId);
       logger.info(`Esperando log para queueId=${result.queueId}. Conteúdo aguardado: ${JSON.stringify(logEntry)}`);
-  
+
       if (logEntry && logEntry.success) {
         logger.info(`Email de teste enviado com sucesso. Status do Mailer: health`);
         this.unblockMailer();
-        return { success: true, recipients: result.recipients };
+        return { success: true, recipients: [result.recipient] };
       } else {
         logger.warn(`Falha ao enviar email de teste. LogEntry: ${JSON.stringify(logEntry)}`);
         this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
-        return { success: false, recipients: result.recipients };
+        return { success: false, recipients: [result.recipient] };
       }
     } catch (error: any) {
       logger.error(`Erro ao enviar email de teste: ${error.message}`, error);
@@ -190,7 +193,7 @@ class MailerService {
         logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 60 segundos.`);
         resolve(null);
       }, 60000);
-  
+
       this.logParser.once('log', (logEntry: LogEntry) => {
         if (logEntry.queueId === queueId) {
           clearTimeout(timeout);
