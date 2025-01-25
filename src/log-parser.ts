@@ -162,8 +162,8 @@ class LogParser extends EventEmitter {
         await emailLog.save();
         logger.info(`Log salvo no EmailLog: queueId=${queueId}, email=${email}, success=${success}, mailId=${mailId}`);
 
-        // Buscar logs após salvar
-        await this.testAndFetchEmailLogs(queueId, mailId);
+        // Verificação imediata após salvar
+        await this.verifyLogSaved(queueId, mailId);
       } else {
         logger.info(`Log já existe no EmailLog: queueId=${queueId}`);
       }
@@ -172,24 +172,20 @@ class LogParser extends EventEmitter {
     }
   }
 
-  private async testAndFetchEmailLogs(queueId: string, mailId: string): Promise<void> {
+  private async verifyLogSaved(queueId: string, mailId: string): Promise<void> {
     try {
-      logger.info(`Buscando logs no EmailLog para queueId=${queueId} e mailId=${mailId}`);
+      logger.info(`Verificando se o log foi salvo no EmailLog: queueId=${queueId}, mailId=${mailId}`);
 
-      // Busca o log específico
-      const specificLog = await EmailLog.findOne({ queueId, mailId });
+      // Busca o log salvo no banco de dados
+      const savedLog = await EmailLog.findOne({ queueId, mailId });
 
-      if (specificLog) {
-        logger.info(`Log encontrado no EmailLog:`, specificLog);
+      if (savedLog) {
+        logger.info(`Log encontrado no EmailLog após salvamento:`, savedLog);
       } else {
-        logger.warn(`Log não encontrado no EmailLog para queueId=${queueId} e mailId=${mailId}. Retornando todos os logs.`);
-
-        // Se não encontrar, retorna todos os logs
-        const allLogs = await EmailLog.find({});
-        logger.info(`Todos os logs no EmailLog:`, allLogs);
+        logger.error(`Log NÃO encontrado no EmailLog após salvamento: queueId=${queueId}, mailId=${mailId}`);
       }
     } catch (error) {
-      logger.error(`Erro ao buscar logs no EmailLog:`, error);
+      logger.error(`Erro ao verificar log salvo no EmailLog:`, error);
     }
   }
 
