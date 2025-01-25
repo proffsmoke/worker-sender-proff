@@ -181,11 +181,13 @@ class StateManager {
   public getLogGroup(queueId: string): LogGroup | undefined {
     return this.logGroups.get(queueId);
   }
-
 // StateManager.ts
 
 public async addQueueIdToUuid(uuid: string, queueId: string): Promise<void> {
+  logger.info(`Tentando associar queueId=${queueId} ao UUID=${uuid}`);
+
   if (!this.uuidQueueMap.has(uuid)) {
+    logger.info(`UUID ${uuid} não encontrado no uuidQueueMap. Criando novo Set.`);
     this.uuidQueueMap.set(uuid, new Set());
   }
 
@@ -203,13 +205,15 @@ public async addQueueIdToUuid(uuid: string, queueId: string): Promise<void> {
 
 private async saveQueueIdToEmailLog(queueId: string, mailId: string): Promise<void> {
   try {
+    logger.info(`Tentando salvar queueId=${queueId} e mailId=${mailId} no EmailLog.`);
+
     const existingLog = await EmailLog.findOne({ queueId });
 
     if (!existingLog) {
       const emailLog = new EmailLog({
         mailId, // UUID
         queueId,
-        email: 'no-reply@unknown.com', // Defina um e-mail padrão ou obtenha do contexto
+        email: 'no-reply@unknown.com', // E-mail padrão
         success: null, // Inicialmente null
         updated: false,
         sentAt: new Date(),
@@ -225,15 +229,17 @@ private async saveQueueIdToEmailLog(queueId: string, mailId: string): Promise<vo
     logger.error(`Erro ao salvar log no EmailLog:`, error);
   }
 }
-// StateManager.ts
 
 public getUuidByQueueId(queueId: string): string | undefined {
+  logger.info(`Tentando obter UUID para queueId=${queueId}`);
+
   for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
     if (queueIds.has(queueId)) {
       logger.info(`UUID encontrado para queueId=${queueId}: ${uuid}`);
       return uuid;
     }
   }
+
   logger.warn(`UUID não encontrado para queueId=${queueId}`);
   return undefined;
 }

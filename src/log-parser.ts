@@ -77,8 +77,35 @@ class LogParser extends EventEmitter {
   }
 
 
+
+  private parseLogLine(line: string): LogEntry | null {
+    const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
+    if (!match) return null;
+
+    const [, queueId, email, result] = match;
+
+    // Extrai o mailId da linha do log, se disponível
+    const mailIdMatch = line.match(/message-id=<(.*)>/);
+    const mailId = mailIdMatch ? mailIdMatch[1] : undefined;
+
+    return {
+      timestamp: new Date().toISOString(),
+      queueId,
+      email: email.trim(),
+      result,
+      success: result.startsWith('sent'),
+      mailId,
+    };
+  }
+
+  // LogParser.ts
+
+// LogParser.ts
+
 private async handleLogLine(line: string): Promise<void> {
   try {
+    logger.info(`Processando linha do log: ${line}`);
+
     const logEntry = this.parseLogLine(line);
     if (logEntry) {
       const logHash = `${logEntry.timestamp}-${logEntry.queueId}-${logEntry.result}`;
@@ -114,28 +141,6 @@ private async handleLogLine(line: string): Promise<void> {
   }
 }
 
-  private parseLogLine(line: string): LogEntry | null {
-    const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
-    if (!match) return null;
-
-    const [, queueId, email, result] = match;
-
-    // Extrai o mailId da linha do log, se disponível
-    const mailIdMatch = line.match(/message-id=<(.*)>/);
-    const mailId = mailIdMatch ? mailIdMatch[1] : undefined;
-
-    return {
-      timestamp: new Date().toISOString(),
-      queueId,
-      email: email.trim(),
-      result,
-      success: result.startsWith('sent'),
-      mailId,
-    };
-  }
-
-  // LogParser.ts
-
 private async saveLogToEmailLog(logEntry: LogEntry, mailId?: string): Promise<void> {
   try {
     const { queueId, email, success } = logEntry;
@@ -144,6 +149,8 @@ private async saveLogToEmailLog(logEntry: LogEntry, mailId?: string): Promise<vo
       logger.warn(`mailId não encontrado para queueId=${queueId}. Não será possível salvar o log.`);
       return;
     }
+
+    logger.info(`Tentando salvar log no EmailLog: queueId=${queueId}, mailId=${mailId}`);
 
     const existingLog = await EmailLog.findOne({ queueId });
 
@@ -157,6 +164,7 @@ private async saveLogToEmailLog(logEntry: LogEntry, mailId?: string): Promise<vo
         sentAt: new Date(),
         expireAt: new Date(Date.now() + 30 * 60 * 1000), // Expira em 30 minutos
       });
+
       await emailLog.save();
       logger.info(`Log salvo no EmailLog: queueId=${queueId}, email=${email}, success=${success}, mailId=${mailId}`);
     } else {

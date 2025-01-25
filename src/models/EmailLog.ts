@@ -12,7 +12,7 @@ export interface IEmailLog extends Document {
 
 const EmailLogSchema: Schema = new Schema(
   {
-    mailId: { type: String, required: true, unique: true, index: true }, // UUID único
+    mailId: { type: String, required: true, index: true }, // UUID único
     queueId: { type: String, required: true, unique: true, index: true }, // Queue ID único
     email: { type: String, required: true, index: true },
     success: { type: Boolean, default: null }, // Inicialmente null

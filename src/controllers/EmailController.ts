@@ -15,6 +15,8 @@ async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void>
   const { emailDomain, emailList, fromName, uuid } = req.body;
 
   try {
+    logger.info(`Iniciando envio de e-mails para UUID=${uuid}`);
+
     // Validação básica dos parâmetros
     const requiredParams = ['emailDomain', 'emailList', 'fromName', 'uuid'];
     const missingParams = requiredParams.filter(param => !(param in req.body));
