@@ -76,42 +76,43 @@ class LogParser extends EventEmitter {
     return 'Desconhecido';
   }
 
-  private async handleLogLine(line: string): Promise<void> {
-    try {
-      const logEntry = this.parseLogLine(line);
-      if (logEntry) {
-        const logHash = `${logEntry.timestamp}-${logEntry.queueId}-${logEntry.result}`;
-  
-        if (this.logHashes.has(logHash)) {
-          logger.info(`Log duplicado ignorado: ${logHash}`);
-          return;
-        }
-  
-        this.recentLogs.push(logEntry);
-        this.logHashes.add(logHash);
-  
-        if (this.recentLogs.length > this.MAX_CACHE_SIZE) {
-          const oldestLog = this.recentLogs.shift();
-          if (oldestLog) {
-            const oldestHash = `${oldestLog.timestamp}-${oldestLog.queueId}-${oldestLog.result}`;
-            this.logHashes.delete(oldestHash);
-          }
-        }
-  
-        logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
-        this.emit('log', logEntry);
-  
-        // Obter o mailId (uuid) associado ao queueId
-        const mailId = this.stateManager.getUuidByQueueId(logEntry.queueId);
-        logger.info(`mailId obtido para queueId=${logEntry.queueId}: ${mailId}`);
-  
-        // Salvar diretamente no EmailLog com o mailId
-        await this.saveLogToEmailLog(logEntry, mailId);
+
+private async handleLogLine(line: string): Promise<void> {
+  try {
+    const logEntry = this.parseLogLine(line);
+    if (logEntry) {
+      const logHash = `${logEntry.timestamp}-${logEntry.queueId}-${logEntry.result}`;
+
+      if (this.logHashes.has(logHash)) {
+        logger.info(`Log duplicado ignorado: ${logHash}`);
+        return;
       }
-    } catch (error) {
-      logger.error(`Erro ao processar a linha do log: ${line}`, error);
+
+      this.recentLogs.push(logEntry);
+      this.logHashes.add(logHash);
+
+      if (this.recentLogs.length > this.MAX_CACHE_SIZE) {
+        const oldestLog = this.recentLogs.shift();
+        if (oldestLog) {
+          const oldestHash = `${oldestLog.timestamp}-${oldestLog.queueId}-${oldestLog.result}`;
+          this.logHashes.delete(oldestHash);
+        }
+      }
+
+      logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
+      this.emit('log', logEntry);
+
+      // Obter o mailId (uuid) associado ao queueId
+      const mailId = this.stateManager.getUuidByQueueId(logEntry.queueId);
+      logger.info(`mailId obtido para queueId=${logEntry.queueId}: ${mailId}`);
+
+      // Salvar diretamente no EmailLog com o mailId
+      await this.saveLogToEmailLog(logEntry, mailId);
     }
+  } catch (error) {
+    logger.error(`Erro ao processar a linha do log: ${line}`, error);
   }
+}
 
   private parseLogLine(line: string): LogEntry | null {
     const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
