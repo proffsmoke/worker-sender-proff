@@ -54,19 +54,6 @@ class StateManager {
     this.pendingSends.delete(queueId);
   }
 
-  // Associa queueId a um UUID
-  public addQueueIdToUuid(uuid: string, queueId: string): void {
-    if (!this.uuidQueueMap.has(uuid)) {
-      this.uuidQueueMap.set(uuid, new Set());
-    }
-
-    const queueIds = this.uuidQueueMap.get(uuid);
-    if (queueIds && !queueIds.has(queueId)) {
-      queueIds.add(queueId);
-    } else {
-      logger.warn(`queueId ${queueId} já está associado ao UUID ${uuid}. Ignorando duplicação.`);
-    }
-  }
 
   // Verifica se um queueId já está associado a algum UUID
   public isQueueIdAssociated(queueId: string): boolean {
@@ -195,15 +182,31 @@ class StateManager {
     return this.logGroups.get(queueId);
   }
 
-  // Obtém o UUID associado a um queueId
-  public getUuidByQueueId(queueId: string): string | undefined {
-    for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
-      if (queueIds.has(queueId)) {
-        return uuid;
-      }
-    }
-    return undefined;
+// StateManager.ts
+
+public addQueueIdToUuid(uuid: string, queueId: string): void {
+  if (!this.uuidQueueMap.has(uuid)) {
+    this.uuidQueueMap.set(uuid, new Set());
   }
+
+  const queueIds = this.uuidQueueMap.get(uuid);
+  if (queueIds && !queueIds.has(queueId)) {
+    queueIds.add(queueId);
+    logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
+  } else {
+    logger.warn(`queueId ${queueId} já está associado ao UUID ${uuid}. Ignorando duplicação.`);
+  }
+}
+
+public getUuidByQueueId(queueId: string): string | undefined {
+  for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
+    if (queueIds.has(queueId)) {
+      return uuid;
+    }
+  }
+  return undefined;
+}
+
 }
 
 export default StateManager;

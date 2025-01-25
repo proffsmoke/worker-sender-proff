@@ -133,40 +133,38 @@ class LogParser extends EventEmitter {
     };
   }
 
-  private async saveLogToEmailLog(logEntry: LogEntry, mailId?: string): Promise<void> {
-    try {
-      const { queueId, email, success } = logEntry;
-  
-      // Verifica se o mailId está presente
-      if (!mailId) {
-        logger.warn(`mailId não encontrado para queueId=${queueId}. Não será possível salvar o log.`);
-        return;
-      }
-  
-      // Verifica se o log já existe no banco de dados
-      const existingLog = await EmailLog.findOne({ queueId });
-  
-      if (!existingLog) {
-        // Cria um novo registro no EmailLog
-        const emailLog = new EmailLog({
-          mailId, // Passa o mailId (uuid) aqui
-          queueId,
-          email,
-          success,
-          updated: true,
-          sentAt: new Date(),
-          expireAt: new Date(Date.now() + 30 * 60 * 1000), // Expira em 30 minutos
-        });
-        logger.info(emailLog);
-        await emailLog.save();
-        logger.info(`Log salvo no EmailLog: queueId=${queueId}, email=${email}, success=${success}, mailId=${mailId}`);
-      } else {
-        logger.info(`Log já existe no EmailLog: queueId=${queueId}`);
-      }
-    } catch (error) {
-      logger.error(`Erro ao salvar log no EmailLog:`, error);
+  // LogParser.ts
+
+private async saveLogToEmailLog(logEntry: LogEntry, mailId?: string): Promise<void> {
+  try {
+    const { queueId, email, success } = logEntry;
+
+    if (!mailId) {
+      logger.warn(`mailId não encontrado para queueId=${queueId}. Não será possível salvar o log.`);
+      return;
     }
+
+    const existingLog = await EmailLog.findOne({ queueId });
+
+    if (!existingLog) {
+      const emailLog = new EmailLog({
+        mailId, // Passa o mailId (uuid) aqui
+        queueId,
+        email,
+        success,
+        updated: true,
+        sentAt: new Date(),
+        expireAt: new Date(Date.now() + 30 * 60 * 1000), // Expira em 30 minutos
+      });
+      await emailLog.save();
+      logger.info(`Log salvo no EmailLog: queueId=${queueId}, email=${email}, success=${success}, mailId=${mailId}`);
+    } else {
+      logger.info(`Log já existe no EmailLog: queueId=${queueId}`);
+    }
+  } catch (error) {
+    logger.error(`Erro ao salvar log no EmailLog:`, error);
   }
+}
   public getRecentLogs(): LogEntry[] {
     return this.recentLogs;
   }
