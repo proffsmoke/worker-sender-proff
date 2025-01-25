@@ -76,8 +76,6 @@ class LogParser extends EventEmitter {
     return 'Desconhecido';
   }
 
-
-
   private parseLogLine(line: string): LogEntry | null {
     const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
     if (!match) return null;
@@ -98,85 +96,102 @@ class LogParser extends EventEmitter {
     };
   }
 
-  // LogParser.ts
+  private async handleLogLine(line: string): Promise<void> {
+    try {
+      logger.info(`Processando linha do log: ${line}`);
 
-// LogParser.ts
+      const logEntry = this.parseLogLine(line);
+      if (logEntry) {
+        const logHash = `${logEntry.timestamp}-${logEntry.queueId}-${logEntry.result}`;
 
-// LogParser.ts
+        if (this.logHashes.has(logHash)) {
+          logger.info(`Log duplicado ignorado: ${logHash}`);
+          return;
+        }
 
-private async handleLogLine(line: string): Promise<void> {
-  try {
-    logger.info(`Processando linha do log: ${line}`);
+        this.recentLogs.push(logEntry);
+        this.logHashes.add(logHash);
 
-    const logEntry = this.parseLogLine(line);
-    if (logEntry) {
-      const logHash = `${logEntry.timestamp}-${logEntry.queueId}-${logEntry.result}`;
+        if (this.recentLogs.length > this.MAX_CACHE_SIZE) {
+          const oldestLog = this.recentLogs.shift();
+          if (oldestLog) {
+            const oldestHash = `${oldestLog.timestamp}-${oldestLog.queueId}-${oldestLog.result}`;
+            this.logHashes.delete(oldestHash);
+          }
+        }
 
-      if (this.logHashes.has(logHash)) {
-        logger.info(`Log duplicado ignorado: ${logHash}`);
+        logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
+        this.emit('log', logEntry);
+
+        // Obter o mailId (uuid) associado ao queueId
+        const mailId = this.stateManager.getUuidByQueueId(logEntry.queueId);
+        logger.info(`mailId obtido para queueId=${logEntry.queueId}: ${mailId}`);
+
+        // Salvar diretamente no EmailLog com o mailId
+        await this.saveLogToEmailLog(logEntry, mailId);
+      }
+    } catch (error) {
+      logger.error(`Erro ao processar a linha do log: ${line}`, error);
+    }
+  }
+
+  private async saveLogToEmailLog(logEntry: LogEntry, mailId?: string): Promise<void> {
+    try {
+      const { queueId, email, success } = logEntry;
+
+      if (!mailId) {
+        logger.warn(`mailId não encontrado para queueId=${queueId}. Não será possível salvar o log.`);
         return;
       }
 
-      this.recentLogs.push(logEntry);
-      this.logHashes.add(logHash);
+      logger.info(`Tentando salvar log no EmailLog: queueId=${queueId}, mailId=${mailId}`);
 
-      if (this.recentLogs.length > this.MAX_CACHE_SIZE) {
-        const oldestLog = this.recentLogs.shift();
-        if (oldestLog) {
-          const oldestHash = `${oldestLog.timestamp}-${oldestLog.queueId}-${oldestLog.result}`;
-          this.logHashes.delete(oldestHash);
-        }
+      const existingLog = await EmailLog.findOne({ queueId });
+
+      if (!existingLog) {
+        const emailLog = new EmailLog({
+          mailId, // Passa o mailId (uuid) aqui
+          queueId,
+          email,
+          success,
+          updated: true,
+          sentAt: new Date(),
+          expireAt: new Date(Date.now() + 30 * 60 * 1000), // Expira em 30 minutos
+        });
+
+        await emailLog.save();
+        logger.info(`Log salvo no EmailLog: queueId=${queueId}, email=${email}, success=${success}, mailId=${mailId}`);
+
+        // Buscar logs após salvar
+        await this.testAndFetchEmailLogs(queueId, mailId);
+      } else {
+        logger.info(`Log já existe no EmailLog: queueId=${queueId}`);
       }
-
-      logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
-      this.emit('log', logEntry);
-
-      // Obter o mailId (uuid) associado ao queueId
-      const mailId = this.stateManager.getUuidByQueueId(logEntry.queueId);
-      logger.info(`mailId obtido para queueId=${logEntry.queueId}: ${mailId}`);
-
-      // Salvar diretamente no EmailLog com o mailId
-      await this.saveLogToEmailLog(logEntry, mailId);
+    } catch (error) {
+      logger.error(`Erro ao salvar log no EmailLog:`, error);
     }
-  } catch (error) {
-    logger.error(`Erro ao processar a linha do log: ${line}`, error);
   }
-}
 
-private async saveLogToEmailLog(logEntry: LogEntry, mailId?: string): Promise<void> {
-  try {
-    const { queueId, email, success } = logEntry;
+  private async testAndFetchEmailLogs(queueId: string, mailId: string): Promise<void> {
+    try {
+      logger.info(`Buscando logs no EmailLog para queueId=${queueId} e mailId=${mailId}`);
 
-    if (!mailId) {
-      logger.warn(`mailId não encontrado para queueId=${queueId}. Não será possível salvar o log.`);
-      return;
+      // Busca o log específico
+      const specificLog = await EmailLog.findOne({ queueId, mailId });
+
+      if (specificLog) {
+        logger.info(`Log encontrado no EmailLog:`, specificLog);
+      } else {
+        logger.warn(`Log não encontrado no EmailLog para queueId=${queueId} e mailId=${mailId}. Retornando todos os logs.`);
+
+        // Se não encontrar, retorna todos os logs
+        const allLogs = await EmailLog.find({});
+        logger.info(`Todos os logs no EmailLog:`, allLogs);
+      }
+    } catch (error) {
+      logger.error(`Erro ao buscar logs no EmailLog:`, error);
     }
-
-    logger.info(`Tentando salvar log no EmailLog: queueId=${queueId}, mailId=${mailId}`);
-
-    const existingLog = await EmailLog.findOne({ queueId });
-
-    if (!existingLog) {
-      const emailLog = new EmailLog({
-        mailId, // Passa o mailId (uuid) aqui
-        queueId,
-        email,
-        success,
-        updated: true,
-        sentAt: new Date(),
-        expireAt: new Date(Date.now() + 30 * 60 * 1000), // Expira em 30 minutos
-      });
-
-      await emailLog.save();
-      logger.info(`Log salvo no EmailLog: queueId=${queueId}, email=${email}, success=${success}, mailId=${mailId}`);
-    } else {
-      logger.info(`Log já existe no EmailLog: queueId=${queueId}`);
-    }
-  } catch (error) {
-    logger.error(`Erro ao salvar log no EmailLog:`, error);
   }
-}
-
 
   public getRecentLogs(): LogEntry[] {
     return this.recentLogs;
