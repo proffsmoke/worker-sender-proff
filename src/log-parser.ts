@@ -4,6 +4,7 @@ import fs from 'fs';
 import EventEmitter from 'events';
 import path from 'path';
 import EmailLog from './models/EmailLog'; // Importar o modelo EmailLog diretamente
+import StateManager from './services/StateManager'; // Importar StateManager para obter o mailId
 
 export interface LogEntry {
   timestamp: string;
@@ -21,10 +22,12 @@ class LogParser extends EventEmitter {
   private logHashes: Set<string> = new Set();
   private MAX_CACHE_SIZE = 1000;
   private isMonitoringStarted: boolean = false;
+  private stateManager: StateManager;
 
   constructor(logFilePath: string = '/var/log/mail.log') {
     super();
     this.logFilePath = logFilePath;
+    this.stateManager = new StateManager(); // Instanciar StateManager
 
     if (!fs.existsSync(this.logFilePath)) {
       logger.error(`Log file not found at path: ${this.logFilePath}`);
@@ -98,8 +101,11 @@ class LogParser extends EventEmitter {
         logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
         this.emit('log', logEntry);
 
-        // Salvar diretamente no EmailLog
-        await this.saveLogToEmailLog(logEntry);
+        // Obter o mailId (uuid) associado ao queueId
+        const mailId = this.stateManager.getUuidByQueueId(logEntry.queueId);
+
+        // Salvar diretamente no EmailLog com o mailId
+        await this.saveLogToEmailLog(logEntry, mailId);
       }
     } catch (error) {
       logger.error(`Erro ao processar a linha do log: ${line}`, error);
@@ -126,9 +132,9 @@ class LogParser extends EventEmitter {
     };
   }
 
-  private async saveLogToEmailLog(logEntry: LogEntry): Promise<void> {
+  private async saveLogToEmailLog(logEntry: LogEntry, mailId?: string): Promise<void> {
     try {
-      const { queueId, email, success, mailId } = logEntry;
+      const { queueId, email, success } = logEntry;
 
       // Verifica se o log já existe no banco de dados
       const existingLog = await EmailLog.findOne({ queueId });
@@ -136,7 +142,7 @@ class LogParser extends EventEmitter {
       if (!existingLog) {
         // Cria um novo registro no EmailLog
         const emailLog = new EmailLog({
-          mailId,
+          mailId, // Passa o mailId (uuid) aqui
           queueId,
           email,
           success,
@@ -146,7 +152,7 @@ class LogParser extends EventEmitter {
         });
 
         await emailLog.save();
-        logger.info(`Log salvo no EmailLog: queueId=${queueId}, email=${email}, success=${success}`);
+        logger.info(`Log salvo no EmailLog: queueId=${queueId}, email=${email}, success=${success}, mailId=${mailId}`);
       } else {
         logger.info(`Log já existe no EmailLog: queueId=${queueId}`);
       }
