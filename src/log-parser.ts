@@ -150,14 +150,14 @@ class LogParser extends EventEmitter {
           sentAt: new Date(),
           expireAt: new Date(Date.now() + 30 * 60 * 1000), // Expira em 30 minutos
         });
-
+        logger.info(emailLog);
         await emailLog.save();
         logger.info(`Log salvo no EmailLog: queueId=${queueId}, email=${email}, success=${success}, mailId=${mailId}`);
       } else {
         logger.info(`Log já existe no EmailLog: queueId=${queueId}`);
       }
     } catch (error) {
-      logger.error(`Erro ao salvar log no EmailLog:`, error);
+      logger.error(`Erro ao salvar log no EmailLog:`, error, );
     }
   }
 
