@@ -153,15 +153,15 @@ class StateManager {
   public async updateQueueIdStatus(queueId: string, success: boolean, mailId: string): Promise<void> {
     try {
       let emailLog = await EmailLog.findOne({ queueId });
-
+  
       if (!emailLog) {
         const sendData = this.getPendingSend(queueId);
         if (!sendData) {
           return;
         }
-
+  
         const email = sendData.toRecipients[0] || 'no-reply@unknown.com';
-
+  
         emailLog = new EmailLog({
           mailId,
           queueId,
@@ -175,9 +175,9 @@ class StateManager {
         emailLog.success = success;
         emailLog.updated = true;
       }
-
+  
       await emailLog.save();
-      logger.info(`Status do queueId=${queueId} atualizado para success=${success}`);
+      logger.info(`Status do queueId=${queueId} atualizado para success=${success} com mailId=${mailId}`);
     } catch (error) {
       logger.error(`Erro ao atualizar status do queueId=${queueId}:`, error);
     }
