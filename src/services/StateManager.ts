@@ -183,6 +183,8 @@ class StateManager {
   }
 // StateManager.ts
 
+// StateManager.ts
+
 public async addQueueIdToUuid(uuid: string, queueId: string): Promise<void> {
   logger.info(`Tentando associar queueId=${queueId} ao UUID=${uuid}`);
 
@@ -229,6 +231,7 @@ private async saveQueueIdToEmailLog(queueId: string, mailId: string): Promise<vo
     logger.error(`Erro ao salvar log no EmailLog:`, error);
   }
 }
+
 
 public getUuidByQueueId(queueId: string): string | undefined {
   logger.info(`Tentando obter UUID para queueId=${queueId}`);

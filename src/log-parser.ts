@@ -102,6 +102,8 @@ class LogParser extends EventEmitter {
 
 // LogParser.ts
 
+// LogParser.ts
+
 private async handleLogLine(line: string): Promise<void> {
   try {
     logger.info(`Processando linha do log: ${line}`);
@@ -174,6 +176,8 @@ private async saveLogToEmailLog(logEntry: LogEntry, mailId?: string): Promise<vo
     logger.error(`Erro ao salvar log no EmailLog:`, error);
   }
 }
+
+
   public getRecentLogs(): LogEntry[] {
     return this.recentLogs;
   }
