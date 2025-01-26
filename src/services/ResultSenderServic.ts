@@ -81,7 +81,7 @@ export class ResultSenderService {
 
     // Exibe o UUID completo e os resultados que estão sendo enviados
     logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
-    logger.info('Resultados a serem enviados:', inspect(results, { depth: null, colors: true }));
+    logger.info('Resultados a serem enviados:', inspect(results));
 
     // Verifica se há resultados para enviar
     if (results.length === 0) {
