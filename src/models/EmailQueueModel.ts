@@ -3,7 +3,8 @@ import { Schema, model, Document } from 'mongoose';
 // Interface para representar um queueId
 interface IQueueId {
   queueId: string;
-  success: boolean;
+  email: string;
+  success: boolean | null; // Permite null
 }
 
 // Interface para representar o documento completo
@@ -18,7 +19,8 @@ const EmailQueueSchema = new Schema<IEmailQueue>({
   queueIds: [
     {
       queueId: { type: String, required: true },
-      success: { type: Boolean, required: true },
+      email: { type: String, required: true },
+      success: { type: Boolean, default: null }, // Permite null
     },
   ],
 });

@@ -49,10 +49,11 @@ class EmailController {
           uuid
         );
 
-        // Adiciona o resultado ao array de queueIds (apenas queueId e success)
+        // Adiciona o resultado ao array de queueIds (com email e success como null)
         emailQueue.queueIds.push({
           queueId: result.queueId,
-          success: true, // Assume que o envio foi bem-sucedido
+          email,
+          success: null, // Deixa como null por enquanto
         });
 
         logger.info(`E-mail enviado com sucesso:`, {
@@ -68,7 +69,7 @@ class EmailController {
       // Tenta salvar o documento no banco de dados
       await this.saveEmailQueue(emailQueue, uuid);
 
-      // Retorna apenas a lista de queueIds
+      // Retorna a resposta de sucesso
       this.sendSuccessResponse(res, emailQueue);
     } catch (error) {
       this.handleError(res, error);
@@ -91,15 +92,16 @@ class EmailController {
   // Método para enviar resposta de sucesso
   private sendSuccessResponse(
     res: Response,
-    emailQueue: { uuid: string; queueIds: Array<{ queueId: string; success: boolean }> }
+    emailQueue: { uuid: string; queueIds: Array<{ queueId: string; email: string; success: boolean | null }> }
   ): void {
-    // Retorna apenas a lista de queueIds
-    const queueIdList = emailQueue.queueIds.map(q => q.queueId);
-
     res.json({
       success: true,
       uuid: emailQueue.uuid,
-      queueIds: queueIdList, // Retorna apenas a lista de queueIds
+      queueIds: emailQueue.queueIds.map(q => ({
+        queueId: q.queueId,
+        email: q.email,
+        success: q.success, // Pode ser null
+      })),
     });
   }
 
