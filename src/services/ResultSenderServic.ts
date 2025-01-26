@@ -126,11 +126,15 @@ export class ResultSenderService {
   private async realSendResults(uuid: string, results: any[]): Promise<boolean> {
     try {
       // Faz uma requisição POST para o servidor
-      logger.info(`Real: Enviando resultados para o servidor: uuid=${uuid}`);
-      const response = await axios.post('http://localhost:4008/api/results', {
+      const payload = {
         uuid,
         results,
-      });
+      };
+
+      logger.info(`Real: Enviando resultados para o servidor: uuid=${uuid}`);
+      logger.info('Payload sendo enviado:', inspect(payload, { depth: null, colors: true }));
+
+      const response = await axios.post('http://localhost:4008/api/results', payload);
 
       // Verifica se a requisição foi bem-sucedida
       if (response.status === 200) {
