@@ -9,6 +9,7 @@ const logger_1 = __importDefault(require("./utils/logger"));
 const mongoose_1 = __importDefault(require("mongoose"));
 const config_1 = __importDefault(require("./config"));
 const MailerService_1 = __importDefault(require("./services/MailerService"));
+const ResultSenderServic_1 = __importDefault(require("./services/ResultSenderServic"));
 const app = (0, express_1.default)();
 mongoose_1.default
     .connect(config_1.default.mongodbUri)
@@ -18,6 +19,9 @@ mongoose_1.default
     process.exit(1);
 });
 MailerService_1.default;
+//inicia service result
+const resultSenderService = new ResultSenderServic_1.default();
+resultSenderService.start();
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 app.use('/api', routes_1.default);

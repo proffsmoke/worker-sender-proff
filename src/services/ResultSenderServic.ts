@@ -1,14 +1,15 @@
 // src/services/ResultSenderService.ts
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
+import axios from 'axios'; // Importa o axios para fazer requisições HTTP
 
 export class ResultSenderService {
   private interval: NodeJS.Timeout | null = null;
   private isSending: boolean = false;
   private useMock: boolean; // Define se o mock deve ser usado
 
-  constructor(useMock: boolean = true) {
-    this.useMock = useMock; // Por padrão, usa o mock
+  constructor(useMock: boolean = false) { // Por padrão, não usa o mock
+    this.useMock = useMock;
     this.start();
   }
 
@@ -115,15 +116,23 @@ export class ResultSenderService {
     return true; // Retorna true para indicar sucesso
   }
 
-  // Real: Envia os resultados para o servidor (implementação futura)
+  // Real: Envia os resultados para o servidor
   private async realSendResults(uuid: string, results: any[]): Promise<boolean> {
     try {
-      // Substitua por uma requisição HTTP real
-      // Exemplo: await axios.post('https://seu-dominio.env/results', { uuid, results });
-      logger.info(`Real: Enviando resultados para uuid=${uuid}`);
+      // Faz uma requisição POST para o servidor
+      const response = await axios.post('http://localhost:4008/api/results', {
+        uuid,
+        results,
+      });
 
-      // Simula um envio bem-sucedido
-      return true;
+      // Verifica se a requisição foi bem-sucedida
+      if (response.status === 200) {
+        logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
+        return true;
+      } else {
+        logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
+        return false;
+      }
     } catch (error) {
       logger.error(`Erro ao enviar resultados ao servidor: uuid=${uuid}`, error);
       return false;

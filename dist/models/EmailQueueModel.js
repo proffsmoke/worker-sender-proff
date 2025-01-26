@@ -11,6 +11,7 @@ const EmailQueueSchema = new mongoose_1.Schema({
             success: { type: Boolean, default: null }, // Permite null
         },
     ],
+    resultSent: { type: Boolean, default: false }, // Campo único para o uuid
 });
 // Modelo do Mongoose
 const EmailQueueModel = (0, mongoose_1.model)('EmailQueue', EmailQueueSchema);

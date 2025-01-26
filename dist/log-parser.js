@@ -103,8 +103,9 @@ class LogParser extends events_1.default {
                 logger_1.default.info(`mailId obtido para queueId=${logEntry.queueId}: ${mailId}`);
                 // Verificar se mailId não é null antes de prosseguir
                 if (mailId !== null) {
-                    // Atualizar o campo success no EmailQueueModel
-                    await this.updateSuccessInEmailQueueModel(logEntry.queueId, logEntry.success);
+                    // Atualizar o campo success
+                    await EmailQueueModel_1.default.updateOne({ 'queueIds.queueId': logEntry.queueId }, { $set: { 'queueIds.$.success': logEntry.success } });
+                    logger_1.default.info(`Campo success atualizado no EmailQueueModel para queueId=${logEntry.queueId}: success=${logEntry.success}`);
                     // Salvar diretamente no EmailLog com o mailId
                     await this.saveLogToEmailLog(logEntry, mailId);
                 }
