@@ -11,6 +11,11 @@ interface IQueueId {
 interface IEmailQueue extends Document {
   uuid: string;
   queueIds: IQueueId[];
+  resultSent: boolean; // Campo único para o uuid
+}
+
+interface IResultSender {
+  sendResults(uuid: string, results: any[]): Promise<boolean>;
 }
 
 // Schema do Mongoose
@@ -23,6 +28,7 @@ const EmailQueueSchema = new Schema<IEmailQueue>({
       success: { type: Boolean, default: null }, // Permite null
     },
   ],
+  resultSent: { type: Boolean, default: false }, // Campo único para o uuid
 });
 
 // Modelo do Mongoose

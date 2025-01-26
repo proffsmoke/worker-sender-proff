@@ -130,8 +130,13 @@ class LogParser extends EventEmitter {
   
         // Verificar se mailId não é null antes de prosseguir
         if (mailId !== null) {
-          // Atualizar o campo success no EmailQueueModel
-          await this.updateSuccessInEmailQueueModel(logEntry.queueId, logEntry.success);
+          // Atualizar o campo success
+          await EmailQueueModel.updateOne(
+            { 'queueIds.queueId': logEntry.queueId },
+            { $set: { 'queueIds.$.success': logEntry.success } }
+          );
+  
+          logger.info(`Campo success atualizado no EmailQueueModel para queueId=${logEntry.queueId}: success=${logEntry.success}`);
   
           // Salvar diretamente no EmailLog com o mailId
           await this.saveLogToEmailLog(logEntry, mailId);
