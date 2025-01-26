@@ -71,7 +71,7 @@ export class ResultSenderService {
 
     // Filtra os queueIds com success preenchido
     const results = queueIds
-      .filter((q: any) => q.success !== null)
+      .filter((q: any) => q.success !== null && q.success !== undefined) // Garante que success não seja null ou undefined
       .map((q: any) => ({
         queueId: q.queueId,
         email: q.email,
@@ -81,6 +81,12 @@ export class ResultSenderService {
     // Exibe o UUID completo e os resultados que estão sendo enviados
     logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
     logger.info('Resultados a serem enviados:', inspect(results, { depth: null, colors: true }));
+
+    // Verifica se há resultados para enviar
+    if (results.length === 0) {
+      logger.warn(`Nenhum resultado válido encontrado para enviar: uuid=${uuid}`);
+      return;
+    }
 
     // Usa o mock ou o envio real
     const sendSuccess = this.useMock
