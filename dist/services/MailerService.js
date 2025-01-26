@@ -103,16 +103,13 @@ class MailerService {
         }
     }
     async retrySendEmail() {
-        // Verifica se o Mailer está bloqueado e o bloqueio é temporário
         if (!this.isBlocked || this.isBlockedPermanently) {
             this.clearRetryInterval();
             logger_1.default.info('Mailer não está bloqueado temporariamente. Cancelando tentativas de reenvio.');
             return;
         }
-        // Se estiver bloqueado temporariamente, tenta reenviar o email
         logger_1.default.info('Tentando reenviar email de teste...');
         const result = await this.sendInitialTestEmail();
-        // Se o reenvio for bem-sucedido, cancela as tentativas futuras
         if (result.success) {
             logger_1.default.info('Reenvio de email de teste bem-sucedido. Cancelando futuras tentativas.');
             this.clearRetryInterval();
@@ -126,7 +123,7 @@ class MailerService {
             bcc: [],
             subject: 'Email de Teste Inicial',
             html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
-            clientName: 'Prasminha camarada'
+            clientName: 'Prasminha camarada',
         };
         try {
             const requestUuid = (0, uuid_1.v4)();
@@ -138,12 +135,12 @@ class MailerService {
             if (logEntry && logEntry.success) {
                 logger_1.default.info(`Email de teste enviado com sucesso. Status do Mailer: health`);
                 this.unblockMailer();
-                return { success: true, recipients: result.recipients };
+                return { success: true, recipients: [result.recipient] };
             }
             else {
                 logger_1.default.warn(`Falha ao enviar email de teste. LogEntry: ${JSON.stringify(logEntry)}`);
                 this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
-                return { success: false, recipients: result.recipients };
+                return { success: false, recipients: [result.recipient] };
             }
         }
         catch (error) {

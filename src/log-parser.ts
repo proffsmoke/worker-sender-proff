@@ -5,6 +5,7 @@ import EventEmitter from 'events';
 import path from 'path';
 import EmailLog from './models/EmailLog'; // Importar o modelo EmailLog diretamente
 import StateManager from './services/StateManager'; // Importar StateManager para obter o mailId
+import EmailQueueModel from './models/EmailQueueModel';
 
 export interface LogEntry {
   timestamp: string;
@@ -99,19 +100,19 @@ class LogParser extends EventEmitter {
   private async handleLogLine(line: string): Promise<void> {
     try {
       logger.info(`Processando linha do log: ${line}`);
-
+  
       const logEntry = this.parseLogLine(line);
       if (logEntry) {
         const logHash = `${logEntry.timestamp}-${logEntry.queueId}-${logEntry.result}`;
-
+  
         if (this.logHashes.has(logHash)) {
           logger.info(`Log duplicado ignorado: ${logHash}`);
           return;
         }
-
+  
         this.recentLogs.push(logEntry);
         this.logHashes.add(logHash);
-
+  
         if (this.recentLogs.length > this.MAX_CACHE_SIZE) {
           const oldestLog = this.recentLogs.shift();
           if (oldestLog) {
@@ -119,19 +120,63 @@ class LogParser extends EventEmitter {
             this.logHashes.delete(oldestHash);
           }
         }
-
+  
         logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
         this.emit('log', logEntry);
-
-        // Obter o mailId (uuid) associado ao queueId
-        const mailId = this.stateManager.getUuidByQueueId(logEntry.queueId);
+  
+        // Obter o mailId (uuid) associado ao queueId usando EmailQueueModel
+        const mailId = await this.getMailIdByQueueId(logEntry.queueId);
         logger.info(`mailId obtido para queueId=${logEntry.queueId}: ${mailId}`);
-
-        // Salvar diretamente no EmailLog com o mailId
-        await this.saveLogToEmailLog(logEntry, mailId);
+  
+        // Verificar se mailId não é null antes de prosseguir
+        if (mailId !== null) {
+          // Atualizar o campo success no EmailQueueModel
+          await this.updateSuccessInEmailQueueModel(logEntry.queueId, logEntry.success);
+  
+          // Salvar diretamente no EmailLog com o mailId
+          await this.saveLogToEmailLog(logEntry, mailId);
+        } else {
+          logger.warn(`mailId não encontrado para queueId=${logEntry.queueId}. Log não será salvo.`);
+        }
       }
     } catch (error) {
       logger.error(`Erro ao processar a linha do log: ${line}`, error);
+    }
+  }
+
+  private async getMailIdByQueueId(queueId: string): Promise<string | null> {
+    try {
+      // Busca o documento no EmailQueueModel que contém o queueId
+      const emailQueue = await EmailQueueModel.findOne({ 'queueIds.queueId': queueId });
+
+      if (emailQueue) {
+        // Retorna o uuid associado ao queueId
+        return emailQueue.uuid;
+      }
+
+      logger.warn(`Nenhum mailId encontrado para queueId=${queueId}`);
+      return null;
+    } catch (error) {
+      logger.error(`Erro ao buscar mailId para queueId=${queueId}:`, error);
+      return null;
+    }
+  }
+
+  private async updateSuccessInEmailQueueModel(queueId: string, success: boolean): Promise<void> {
+    try {
+      // Atualiza o campo success no EmailQueueModel para o queueId correspondente
+      const result = await EmailQueueModel.updateOne(
+        { 'queueIds.queueId': queueId }, // Filtra pelo queueId
+        { $set: { 'queueIds.$.success': success } } // Atualiza o campo success
+      );
+
+      if (result.modifiedCount > 0) {
+        logger.info(`Campo success atualizado no EmailQueueModel para queueId=${queueId}: success=${success}`);
+      } else {
+        logger.warn(`Nenhum documento encontrado para atualizar no EmailQueueModel: queueId=${queueId}`);
+      }
+    } catch (error) {
+      logger.error(`Erro ao atualizar success no EmailQueueModel para queueId=${queueId}:`, error);
     }
   }
 

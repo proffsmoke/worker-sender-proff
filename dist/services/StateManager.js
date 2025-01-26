@@ -26,19 +26,6 @@ class StateManager {
     deletePendingSend(queueId) {
         this.pendingSends.delete(queueId);
     }
-    // Associa queueId a um UUID
-    addQueueIdToUuid(uuid, queueId) {
-        if (!this.uuidQueueMap.has(uuid)) {
-            this.uuidQueueMap.set(uuid, new Set());
-        }
-        const queueIds = this.uuidQueueMap.get(uuid);
-        if (queueIds && !queueIds.has(queueId)) {
-            queueIds.add(queueId);
-        }
-        else {
-            logger_1.default.warn(`queueId ${queueId} já está associado ao UUID ${uuid}. Ignorando duplicação.`);
-        }
-    }
     // Verifica se um queueId já está associado a algum UUID
     isQueueIdAssociated(queueId) {
         for (const queueIds of this.uuidQueueMap.values()) {
@@ -137,7 +124,7 @@ class StateManager {
                 emailLog.updated = true;
             }
             await emailLog.save();
-            logger_1.default.info(`Status do queueId=${queueId} atualizado para success=${success}`);
+            logger_1.default.info(`Status do queueId=${queueId} atualizado para success=${success} com mailId=${mailId}`);
         }
         catch (error) {
             logger_1.default.error(`Erro ao atualizar status do queueId=${queueId}:`, error);
@@ -153,13 +140,59 @@ class StateManager {
     getLogGroup(queueId) {
         return this.logGroups.get(queueId);
     }
-    // Obtém o UUID associado a um queueId
+    // StateManager.ts
+    // StateManager.ts
+    async addQueueIdToUuid(uuid, queueId) {
+        logger_1.default.info(`Tentando associar queueId=${queueId} ao UUID=${uuid}`);
+        if (!this.uuidQueueMap.has(uuid)) {
+            logger_1.default.info(`UUID ${uuid} não encontrado no uuidQueueMap. Criando novo Set.`);
+            this.uuidQueueMap.set(uuid, new Set());
+        }
+        const queueIds = this.uuidQueueMap.get(uuid);
+        if (queueIds && !queueIds.has(queueId)) {
+            queueIds.add(queueId);
+            logger_1.default.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
+            // Salvar a associação no EmailLog
+            await this.saveQueueIdToEmailLog(queueId, uuid);
+        }
+        else {
+            logger_1.default.warn(`queueId ${queueId} já está associado ao UUID ${uuid}. Ignorando duplicação.`);
+        }
+    }
+    async saveQueueIdToEmailLog(queueId, mailId) {
+        try {
+            logger_1.default.info(`Tentando salvar queueId=${queueId} e mailId=${mailId} no EmailLog.`);
+            const existingLog = await EmailLog_1.default.findOne({ queueId });
+            if (!existingLog) {
+                const emailLog = new EmailLog_1.default({
+                    mailId, // UUID
+                    queueId,
+                    email: 'no-reply@unknown.com', // E-mail padrão
+                    success: null, // Inicialmente null
+                    updated: false,
+                    sentAt: new Date(),
+                    expireAt: new Date(Date.now() + 30 * 60 * 1000), // Expira em 30 minutos
+                });
+                await emailLog.save();
+                logger_1.default.info(`Log salvo no EmailLog: queueId=${queueId}, mailId=${mailId}`);
+            }
+            else {
+                logger_1.default.info(`Log já existe no EmailLog: queueId=${queueId}`);
+            }
+        }
+        catch (error) {
+            logger_1.default.error(`Erro ao salvar log no EmailLog:`, error);
+        }
+    }
     getUuidByQueueId(queueId) {
+        logger_1.default.info(`Tentando obter UUID para queueId=${queueId}`);
         for (const [uuid, queueIds] of this.uuidQueueMap.entries()) {
             if (queueIds.has(queueId)) {
+                logger_1.default.info(`UUID encontrado para queueId=${queueId}: ${uuid}`);
                 return uuid;
             }
         }
+        logger_1.default.warn(`UUID não encontrado para queueId=${queueId}`);
         return undefined;
     }
 }

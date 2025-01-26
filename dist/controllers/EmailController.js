@@ -5,42 +5,31 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const EmailService_1 = __importDefault(require("../services/EmailService"));
 const logger_1 = __importDefault(require("../utils/logger"));
-const StateManager_1 = __importDefault(require("../services/StateManager"));
+const EmailQueueModel_1 = __importDefault(require("../models/EmailQueueModel"));
 class EmailController {
     constructor() {
-        // Bind the method to the instance
         this.sendNormal = this.sendNormal.bind(this);
     }
     async sendNormal(req, res, next) {
         const { emailDomain, emailList, fromName, uuid } = req.body;
         try {
+            logger_1.default.info(`Iniciando envio de e-mails para UUID=${uuid}`);
             // Validação básica dos parâmetros
             const requiredParams = ['emailDomain', 'emailList', 'fromName', 'uuid'];
             const missingParams = requiredParams.filter(param => !(param in req.body));
             if (missingParams.length > 0) {
                 throw new Error(`Parâmetros obrigatórios ausentes: ${missingParams.join(', ')}.`);
             }
-            // Verificar se emailList é um array e contém pelo menos um item
-            if (!Array.isArray(emailList) || emailList.length === 0) {
-                throw new Error('O parâmetro "emailList" deve ser um array com pelo menos um e-mail.');
-            }
-            // Validar cada e-mail na lista
-            for (const emailData of emailList) {
-                const { email, subject, templateId, html, clientName } = emailData;
-                if (!email || !subject) {
-                    throw new Error('Cada objeto em "emailList" deve conter "email" e "subject".');
-                }
-                const isHtmlPresent = typeof html === 'string' && html.trim() !== '';
-                const isTemplateIdPresent = typeof templateId === 'string' && templateId.trim() !== '';
-                if (!isHtmlPresent && !isTemplateIdPresent) {
-                    throw new Error('Cada objeto em "emailList" deve conter pelo menos "html" ou "templateId".');
-                }
-            }
             const emailService = EmailService_1.default.getInstance();
-            const stateManager = new StateManager_1.default();
-            // Array para armazenar os resultados de cada e-mail enviado
-            const results = [];
-            // Enviar cada e-mail da lista
+            // Cria ou atualiza o documento no banco de dados
+            let emailQueue = await EmailQueueModel_1.default.findOne({ uuid });
+            if (!emailQueue) {
+                emailQueue = new EmailQueueModel_1.default({ uuid, queueIds: [] });
+                logger_1.default.info(`Novo documento criado para UUID=${uuid}`);
+            }
+            else {
+                logger_1.default.info(`Documento existente encontrado para UUID=${uuid}`);
+            }
             for (const emailData of emailList) {
                 const { email, subject, templateId, html, clientName } = emailData;
                 const result = await emailService.sendEmail({
@@ -48,39 +37,56 @@ class EmailController {
                     fromName,
                     to: email,
                     subject,
-                    html: templateId ? `<p>Template ID: ${templateId}</p>` : html, // Substituir pelo conteúdo real do template
-                    clientName: clientName || fromName, // Usar clientName se estiver presente, caso contrário, usar fromName
+                    html: templateId ? `<p>Template ID: ${templateId}</p>` : html,
+                    clientName: clientName || fromName,
                 }, uuid);
-                // Atualiza o status do queueId com o mailId (uuid)
-                await stateManager.updateQueueIdStatus(result.queueId, true, uuid);
-                // Adiciona o resultado ao array de resultados
-                results.push(result);
+                // Adiciona o resultado ao array de queueIds (com email e success como null)
+                emailQueue.queueIds.push({
+                    queueId: result.queueId,
+                    email,
+                    success: null, // Deixa como null por enquanto
+                });
+                logger_1.default.info(`E-mail enviado com sucesso:`, {
+                    uuid,
+                    queueId: result.queueId,
+                    email,
+                    subject,
+                    templateId,
+                    clientName,
+                });
             }
-            // Verifica se todos os e-mails foram processados
-            if (stateManager.isUuidProcessed(uuid)) {
-                const consolidatedResults = await stateManager.consolidateResultsByUuid(uuid);
-                if (consolidatedResults) {
-                    logger_1.default.info(`Resultados consolidados para uuid=${uuid}:`, consolidatedResults);
-                    this.sendSuccessResponse(res, uuid, consolidatedResults);
-                }
-                else {
-                    this.sendSuccessResponse(res, uuid, results);
-                }
-            }
-            else {
-                this.sendSuccessResponse(res, uuid, results);
-            }
+            // Tenta salvar o documento no banco de dados
+            await this.saveEmailQueue(emailQueue, uuid);
+            // Retorna a resposta de sucesso
+            this.sendSuccessResponse(res, emailQueue);
         }
         catch (error) {
             this.handleError(res, error);
         }
     }
+    // Método para salvar o EmailQueue no banco de dados
+    async saveEmailQueue(emailQueue, uuid) {
+        try {
+            await emailQueue.save();
+            console.log('Dados salvos com sucesso:', emailQueue); // Confirmação no console
+            logger_1.default.info(`Dados salvos com sucesso para UUID=${uuid}`, { emailQueue });
+        }
+        catch (saveError) {
+            console.error('Erro ao salvar os dados:', saveError); // Log de erro no console
+            logger_1.default.error(`Erro ao salvar os dados para UUID=${uuid}:`, saveError);
+            throw new Error('Erro ao salvar os dados no banco de dados.');
+        }
+    }
     // Método para enviar resposta de sucesso
-    sendSuccessResponse(res, uuid, results) {
+    sendSuccessResponse(res, emailQueue) {
         res.json({
             success: true,
-            uuid,
-            results,
+            uuid: emailQueue.uuid,
+            queueIds: emailQueue.queueIds.map(q => ({
+                queueId: q.queueId,
+                email: q.email,
+                success: q.success, // Pode ser null
+            })),
         });
     }
     // Método para tratar erros
