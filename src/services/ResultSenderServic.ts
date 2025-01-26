@@ -2,6 +2,7 @@
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
 import axios from 'axios'; // Importa o axios para fazer requisições HTTP
+import { inspect } from 'util'; // Para formatar erros circulares e exibir a estrutura completa
 
 export class ResultSenderService {
   private interval: NodeJS.Timeout | null = null;
@@ -57,7 +58,8 @@ export class ResultSenderService {
         await new Promise((resolve) => setTimeout(resolve, 1000)); // Limita a 1 envio por segundo
       }
     } catch (error) {
-      logger.error('Erro ao processar resultados:', error);
+      // Exibe a estrutura completa do erro para depuração
+      logger.error('Erro ao processar resultados:', inspect(error, { depth: null, colors: true }));
     } finally {
       this.isSending = false;
     }
@@ -76,7 +78,8 @@ export class ResultSenderService {
         success: q.success,
       }));
 
-    logger.info(`Preparando para enviar resultados: uuid=${uuid}`);
+    // Exibe o UUID completo para depuração
+    logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
 
     // Usa o mock ou o envio real
     const sendSuccess = this.useMock
@@ -104,11 +107,7 @@ export class ResultSenderService {
     // Exibe os resultados que estão sendo enviados
     logger.info(`Mock: Enviando resultados para uuid=${uuid}`);
     results.forEach((result, index) => {
-      logger.info(`Resultado ${index + 1}:`, {
-        queueId: result.queueId,
-        email: result.email,
-        success: result.success,
-      });
+      logger.info(`Resultado ${index + 1}:`, inspect(result, { depth: null, colors: true }));
     });
 
     // Simula um envio bem-sucedido
@@ -134,7 +133,8 @@ export class ResultSenderService {
         return false;
       }
     } catch (error) {
-      logger.error(`Erro ao enviar resultados ao servidor: uuid=${uuid}`, error);
+      // Exibe a estrutura completa do erro para depuração
+      logger.error(`Erro ao enviar resultados ao servidor: uuid=${uuid}`, inspect(error, { depth: null, colors: true }));
       return false;
     }
   }
