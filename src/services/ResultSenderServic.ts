@@ -32,7 +32,13 @@ class RealSenderStrategy implements ResultSenderStrategy {
     try {
       const payload = { uuid, results };
       logger.info(`Enviando resultados reais para o servidor: uuid=${uuid}`);
-      logger.info('Payload:', payload);
+      
+      // Evitar a serialização completa do payload que pode causar o erro circular
+      const simplifiedPayload = {
+        uuid,
+        results: results.map(r => ({ queueId: r.queueId, email: r.email, success: r.success }))
+      };
+      logger.info('Payload:', simplifiedPayload);
 
       const response = await axios.post('http://localhost:4008/api/results', payload);
 
