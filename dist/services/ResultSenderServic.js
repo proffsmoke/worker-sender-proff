@@ -8,6 +8,7 @@ exports.ResultSenderService = void 0;
 const EmailQueueModel_1 = __importDefault(require("../models/EmailQueueModel"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const axios_1 = __importDefault(require("axios")); // Importa o axios para fazer requisições HTTP
+const util_1 = require("util"); // Para formatar erros circulares e exibir a estrutura completa
 class ResultSenderService {
     constructor(useMock = false) {
         this.interval = null;
@@ -53,7 +54,8 @@ class ResultSenderService {
             }
         }
         catch (error) {
-            logger_1.default.error('Erro ao processar resultados:', error);
+            // Exibe a estrutura completa do erro para depuração
+            logger_1.default.error('Erro ao processar resultados:', (0, util_1.inspect)(error, { depth: null, colors: true }));
         }
         finally {
             this.isSending = false;
@@ -70,7 +72,9 @@ class ResultSenderService {
             email: q.email,
             success: q.success,
         }));
-        logger_1.default.info(`Preparando para enviar resultados: uuid=${uuid}`);
+        // Exibe o UUID completo e os resultados que estão sendo enviados
+        logger_1.default.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
+        logger_1.default.info('Resultados a serem enviados:', (0, util_1.inspect)(results, { depth: null, colors: true }));
         // Usa o mock ou o envio real
         const sendSuccess = this.useMock
             ? await this.mockSendResults(uuid, results) // Usa o mock
@@ -91,11 +95,7 @@ class ResultSenderService {
         // Exibe os resultados que estão sendo enviados
         logger_1.default.info(`Mock: Enviando resultados para uuid=${uuid}`);
         results.forEach((result, index) => {
-            logger_1.default.info(`Resultado ${index + 1}:`, {
-                queueId: result.queueId,
-                email: result.email,
-                success: result.success,
-            });
+            logger_1.default.info(`Resultado ${index + 1}:`, (0, util_1.inspect)(result, { depth: null, colors: true }));
         });
         // Simula um envio bem-sucedido
         logger_1.default.info(`Mock: Resultados enviados com sucesso: uuid=${uuid}`);
@@ -105,6 +105,7 @@ class ResultSenderService {
     async realSendResults(uuid, results) {
         try {
             // Faz uma requisição POST para o servidor
+            logger_1.default.info(`Real: Enviando resultados para o servidor: uuid=${uuid}`);
             const response = await axios_1.default.post('http://localhost:4008/api/results', {
                 uuid,
                 results,
@@ -120,7 +121,21 @@ class ResultSenderService {
             }
         }
         catch (error) {
-            logger_1.default.error(`Erro ao enviar resultados ao servidor: uuid=${uuid}`, error);
+            // Exibe a estrutura completa do erro para depuração
+            logger_1.default.error(`Erro ao enviar resultados ao servidor: uuid=${uuid}`, (0, util_1.inspect)(error, { depth: null, colors: true }));
+            // Exibe detalhes específicos do erro, se disponíveis
+            if (error.response) {
+                logger_1.default.error('Detalhes do erro:', {
+                    status: error.response.status,
+                    data: error.response.data,
+                });
+            }
+            else if (error.request) {
+                logger_1.default.error('Erro na requisição:', error.request);
+            }
+            else {
+                logger_1.default.error('Erro desconhecido:', error.message);
+            }
             return false;
         }
     }

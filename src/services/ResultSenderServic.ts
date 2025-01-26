@@ -1,7 +1,7 @@
 // src/services/ResultSenderService.ts
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
-import axios from 'axios'; // Importa o axios para fazer requisições HTTP
+import axios, { AxiosError } from 'axios'; // Importa o axios e AxiosError
 import { inspect } from 'util'; // Para formatar erros circulares e exibir a estrutura completa
 
 export class ResultSenderService {
@@ -78,8 +78,9 @@ export class ResultSenderService {
         success: q.success,
       }));
 
-    // Exibe o UUID completo para depuração
+    // Exibe o UUID completo e os resultados que estão sendo enviados
     logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
+    logger.info('Resultados a serem enviados:', inspect(results, { depth: null, colors: true }));
 
     // Usa o mock ou o envio real
     const sendSuccess = this.useMock
@@ -119,6 +120,7 @@ export class ResultSenderService {
   private async realSendResults(uuid: string, results: any[]): Promise<boolean> {
     try {
       // Faz uma requisição POST para o servidor
+      logger.info(`Real: Enviando resultados para o servidor: uuid=${uuid}`);
       const response = await axios.post('http://localhost:4008/api/results', {
         uuid,
         results,
@@ -133,8 +135,26 @@ export class ResultSenderService {
         return false;
       }
     } catch (error) {
-      // Exibe a estrutura completa do erro para depuração
-      logger.error(`Erro ao enviar resultados ao servidor: uuid=${uuid}`, inspect(error, { depth: null, colors: true }));
+      if (axios.isAxiosError(error)) {
+        // Erro do Axios
+        if (error.response) {
+          logger.error('Detalhes do erro:', {
+            status: error.response.status,
+            data: error.response.data,
+          });
+        } else if (error.request) {
+          logger.error('Erro na requisição:', error.request);
+        } else {
+          logger.error('Erro desconhecido:', error.message);
+        }
+      } else if (error instanceof Error) {
+        // Erro genérico
+        logger.error('Erro desconhecido:', error.message);
+      } else {
+        // Erro completamente desconhecido
+        logger.error('Erro desconhecido:', inspect(error, { depth: null, colors: true }));
+      }
+
       return false;
     }
   }
