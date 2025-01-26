@@ -71,14 +71,14 @@ export class ResultSenderService {
     const { uuid, queueIds } = emailQueue;
     logger.info('queueIds a ser filtrados: ',queueIds)
 
-  // Filtra os queueIds com success preenchido
-  const results = queueIds
-    .filter((q: any) => q.success != null) // Garante que success não seja null ou undefined
-    .map((q: any) => ({
-      queueId: q.queueId,
-      email: q.email,
-      success: q.success,
-    }));
+    // Filtra os queueIds com success preenchido
+    const results = queueIds
+      .filter((q: any) => q.success != null) // Garante que success não seja null ou undefined
+      .map((q: any) => ({
+        queueId: q.queueId,
+        email: q.email,
+        success: q.success,
+      }));
 
     // Exibe o UUID completo e os resultados que estão sendo enviados
     logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
