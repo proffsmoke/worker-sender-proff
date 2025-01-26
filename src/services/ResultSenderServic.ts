@@ -72,13 +72,26 @@ export class ResultSenderService {
     logger.info('queueIds a ser filtrados: ',queueIds)
 
     // Filtra os queueIds com success preenchido
-    const results = queueIds
-      .filter((q: any) => q.success != null) // Garante que success não seja null ou undefined
-      .map((q: any) => ({
+    console.log('queueIds antes do filtro:', queueIds); // Mostra o array completo antes do filtro
+
+    const filteredQueueIds = queueIds.filter((q: any) => {
+      console.log('Verificando item:', q); // Mostra cada item sendo verificado
+      return q.success != null; // Garante que success não seja null ou undefined
+    });
+
+    console.log('queueIds após o filtro:', filteredQueueIds); // Mostra o array após o filtro
+
+    const results = filteredQueueIds.map((q: any) => {
+      const resultItem = {
         queueId: q.queueId,
         email: q.email,
         success: q.success,
-      }));
+      };
+      console.log('Mapeando item:', resultItem); // Mostra cada item sendo mapeado
+      return resultItem;
+    });
+
+console.log('Resultados finais:', results); // Mostra o array final de resultados
 
     // Exibe o UUID completo e os resultados que estão sendo enviados
     logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
