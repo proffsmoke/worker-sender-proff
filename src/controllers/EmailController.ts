@@ -49,10 +49,9 @@ class EmailController {
           uuid
         );
 
-        // Adiciona o resultado ao array de queueIds
+        // Adiciona o resultado ao array de queueIds (apenas queueId e success)
         emailQueue.queueIds.push({
           queueId: result.queueId,
-          email,
           success: true, // Assume que o envio foi bem-sucedido
         });
 
@@ -69,6 +68,7 @@ class EmailController {
       // Tenta salvar o documento no banco de dados
       await this.saveEmailQueue(emailQueue, uuid);
 
+      // Retorna apenas a lista de queueIds
       this.sendSuccessResponse(res, emailQueue);
     } catch (error) {
       this.handleError(res, error);
@@ -91,12 +91,15 @@ class EmailController {
   // Método para enviar resposta de sucesso
   private sendSuccessResponse(
     res: Response,
-    emailQueue: { uuid: string; queueIds: Array<{ queueId: string; email: string; success: boolean }> }
+    emailQueue: { uuid: string; queueIds: Array<{ queueId: string; success: boolean }> }
   ): void {
+    // Retorna apenas a lista de queueIds
+    const queueIdList = emailQueue.queueIds.map(q => q.queueId);
+
     res.json({
       success: true,
       uuid: emailQueue.uuid,
-      queueIds: emailQueue.queueIds,
+      queueIds: queueIdList, // Retorna apenas a lista de queueIds
     });
   }
 
