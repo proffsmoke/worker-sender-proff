@@ -104,9 +104,7 @@ export class ResultSenderService {
     }
 
     // Usa o mock ou o envio real
-    const sendSuccess = this.useMock
-      ? await this.mockSendResults(uuid, results) // Usa o mock
-      : await this.realSendResults(uuid, results); // Usa o envio real
+    const sendSuccess = await this.realSendResults(uuid, results); // Usa o envio real
 
     if (sendSuccess) {
       // Atualiza o campo resultSent para true
@@ -119,22 +117,6 @@ export class ResultSenderService {
     } else {
       logger.error(`Falha ao enviar resultados: uuid=${uuid}`);
     }
-  }
-
-  // Mock: Simula o envio de resultados
-  private async mockSendResults(uuid: string, results: any[]): Promise<boolean> {
-    // Simula um delay de 500ms para o envio
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    // Exibe os resultados que estão sendo enviados
-    logger.info(`Mock: Enviando resultados para uuid=${uuid}`);
-    results.forEach((result, index) => {
-      logger.info(`Resultado ${index + 1}:`, inspect(result, { depth: null, colors: true }));
-    });
-
-    // Simula um envio bem-sucedido
-    logger.info(`Mock: Resultados enviados com sucesso: uuid=${uuid}`);
-    return true; // Retorna true para indicar sucesso
   }
 
   // Real: Envia os resultados para o servidor
