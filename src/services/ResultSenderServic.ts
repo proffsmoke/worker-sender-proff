@@ -40,7 +40,8 @@ class RealSenderStrategy implements ResultSenderStrategy {
       };
       logger.info('Payload:', simplifiedPayload);
 
-      const response = await axios.post('http://localhost:4008/api/results', payload);
+      // Usando simplifiedPayload para evitar a estrutura circular
+      const response = await axios.post('http://localhost:4008/api/results', simplifiedPayload);
 
       if (response.status === 200) {
         logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
