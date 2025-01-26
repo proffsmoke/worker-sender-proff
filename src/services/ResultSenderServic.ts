@@ -2,7 +2,7 @@ import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
 import axios from 'axios';
 
-// Definição das interfaces
+// Interfaces
 interface QueueItem {
   queueId: string;
   email: string;
@@ -21,67 +21,103 @@ interface ResultItem {
   success: boolean;
 }
 
-// Strategy Interface
-interface ResultSenderStrategy {
-  sendResults(uuid: string, results: ResultItem[]): Promise<boolean>;
+// Payload Builder
+class PayloadBuilder {
+  private uuid: string;
+  private results: ResultItem[];
+
+  constructor(uuid: string) {
+    this.uuid = uuid;
+    this.results = [];
+  }
+
+  addResult(queueId: string, email: string, success: boolean): PayloadBuilder {
+    this.results.push({ queueId, email, success });
+    return this;
+  }
+
+  build(): { uuid: string; results: ResultItem[] } {
+    return { uuid: this.uuid, results: this.results };
+  }
 }
 
-// Real Sender Strategy
-class RealSenderStrategy implements ResultSenderStrategy {
-  public async sendResults(uuid: string, results: ResultItem[]): Promise<boolean> {
+// Command Pattern: Define a Command Interface
+interface Command {
+  execute(): Promise<void>;
+}
+
+// SendResultsCommand: Implements Command
+class SendResultsCommand implements Command {
+  private emailQueue: EmailQueue;
+
+  constructor(emailQueue: EmailQueue) {
+    this.emailQueue = emailQueue;
+  }
+
+  async execute(): Promise<void> {
+    const { uuid, queueIds } = this.emailQueue;
+
+    // Filtrar resultados válidos
+    const filteredQueueIds = queueIds.filter((q) => q.success !== null);
+    if (filteredQueueIds.length === 0) {
+      logger.warn(`Nenhum resultado válido encontrado para enviar: uuid=${uuid}`);
+      return;
+    }
+
+    // Construir Payload
+    const builder = new PayloadBuilder(uuid);
+    filteredQueueIds.forEach((q) =>
+      builder.addResult(q.queueId, q.email, q.success!)
+    );
+    const payload = builder.build();
+
+    logger.info(
+      `Preparando para enviar resultados: uuid=${uuid}, total=${payload.results.length}`
+    );
+
+    // Enviar resultados
     try {
-      const payload = { uuid, results };
-      logger.info(`Enviando resultados reais para o servidor: uuid=${uuid}`);
-      
-      // Evitar a serialização completa do payload que pode causar o erro circular
-      const simplifiedPayload = {
-        uuid,
-        results: results.map(r => ({ queueId: r.queueId, email: r.email, success: r.success }))
-      };
-      logger.info('Payload:', simplifiedPayload);
-
-      const response = await axios.post('http://localhost:4008/api/results', simplifiedPayload);
-
+      const response = await axios.post(
+        'http://localhost:4008/api/results',
+        payload
+      );
       if (response.status === 200) {
         logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
-        return true;
+        // Atualizar o banco de dados
+        await EmailQueueModel.updateOne({ uuid }, { $set: { resultSent: true } });
+        logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
       } else {
-        logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
-        return false;
+        logger.error(
+          `Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`
+        );
       }
     } catch (error) {
-      logger.error('Erro ao enviar resultados reais:', error);
-      return false;
+      logger.error(`Erro ao enviar resultados: uuid=${uuid}`, error);
     }
   }
 }
 
-// Mock Sender Strategy
-class MockSenderStrategy implements ResultSenderStrategy {
-  public async sendResults(uuid: string, results: ResultItem[]): Promise<boolean> {
-    logger.info(`Simulação de envio para uuid=${uuid} com resultados:`, results);
-    return true; // Simula um sucesso no envio
+// Command Manager
+class CommandManager {
+  private commands: Command[] = [];
+
+  addCommand(command: Command): void {
+    this.commands.push(command);
+  }
+
+  async executeCommands(): Promise<void> {
+    for (const command of this.commands) {
+      await command.execute();
+    }
+    this.commands = [];
   }
 }
 
-// Fábrica para enviar resultados
-class ResultSenderFactory {
-  public static createSender(useMock: boolean): ResultSenderStrategy {
-    return useMock ? new MockSenderStrategy() : new RealSenderStrategy();
-  }
-}
-
-export class ResultSenderService {
+// ResultSenderService: Orquestra tudo
+class ResultSenderService {
   private interval: NodeJS.Timeout | null = null;
   private isSending: boolean = false;
-  private useMock: boolean;
-  private senderStrategy: ResultSenderStrategy;
-
-  constructor(useMock: boolean = false) {
-    this.useMock = useMock;
-    this.senderStrategy = ResultSenderFactory.createSender(this.useMock);
-    this.start();
-  }
+  private commandManager: CommandManager = new CommandManager();
 
   public start(): void {
     if (this.interval) {
@@ -103,13 +139,14 @@ export class ResultSenderService {
 
   private async processResults(): Promise<void> {
     if (this.isSending) {
-      logger.info('ResultSenderService já está processando resultados. Aguardando...');
+      logger.info('Já está processando resultados. Aguardando...');
       return;
     }
 
     this.isSending = true;
 
     try {
+      // Buscar registros no banco de dados
       const emailQueues = await EmailQueueModel.find({
         'queueIds.success': { $exists: true, $ne: null },
         resultSent: false,
@@ -117,43 +154,17 @@ export class ResultSenderService {
 
       logger.info(`Encontrados ${emailQueues.length} registros para processar.`);
 
+      // Criar e adicionar comandos para cada registro
       for (const emailQueue of emailQueues) {
-        logger.info('Processando emailQueue:', emailQueue);
-        await this.sendResults(emailQueue);
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        this.commandManager.addCommand(new SendResultsCommand(emailQueue));
       }
+
+      // Executar comandos
+      await this.commandManager.executeCommands();
     } catch (error) {
       logger.error('Erro ao processar resultados:', error);
     } finally {
       this.isSending = false;
-    }
-  }
-
-  private async sendResults(emailQueue: EmailQueue): Promise<void> {
-    const { uuid, queueIds } = emailQueue;
-
-    const filteredQueueIds = queueIds.filter((q: QueueItem) => q.success != null);
-    const results: ResultItem[] = filteredQueueIds.map((q: QueueItem) => ({
-      queueId: q.queueId,
-      email: q.email,
-      success: q.success!,
-    }));
-
-    logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
-    logger.info('Resultados a serem enviados:', results);
-
-    if (results.length === 0) {
-      logger.warn(`Nenhum resultado válido encontrado para enviar: uuid=${uuid}`);
-      return;
-    }
-
-    const sendSuccess = await this.senderStrategy.sendResults(uuid, results);
-
-    if (sendSuccess) {
-      await EmailQueueModel.updateOne({ uuid }, { $set: { resultSent: true } });
-      logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
-    } else {
-      logger.error(`Falha ao enviar resultados: uuid=${uuid}`);
     }
   }
 }
