@@ -54,6 +54,7 @@ export class ResultSenderService {
 
       // Processa cada registro
       for (const emailQueue of emailQueues) {
+        logger.info('emailQueue: ', emailQueue)
         await this.sendResults(emailQueue);
         await new Promise((resolve) => setTimeout(resolve, 1000)); // Limita a 1 envio por segundo
       }
