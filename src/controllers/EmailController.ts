@@ -64,8 +64,16 @@ class EmailController {
         });
       }
 
-      // Salva o documento no banco de dados
-      await emailQueue.save();
+      // Tenta salvar o documento no banco de dados
+      try {
+        await emailQueue.save();
+        console.log('Dados salvos com sucesso:', emailQueue); // Confirmação no console
+        logger.info(`Dados salvos com sucesso para UUID=${uuid}`);
+      } catch (saveError) {
+        console.error('Erro ao salvar os dados:', saveError); // Log de erro no console
+        logger.error(`Erro ao salvar os dados para UUID=${uuid}:`, saveError);
+        throw new Error('Erro ao salvar os dados no banco de dados.');
+      }
 
       this.sendSuccessResponse(res, emailQueue);
     } catch (error) {
