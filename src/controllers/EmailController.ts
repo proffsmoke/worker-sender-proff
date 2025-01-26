@@ -1,11 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import EmailService from '../services/EmailService';
 import logger from '../utils/logger';
-import EmailQueueModel from '../models/EmailQueueModel'; // Importando o novo modelo
+import EmailQueueModel from '../models/EmailQueueModel';
 
 class EmailController {
   constructor() {
-    // Bind the method to the instance
     this.sendNormal = this.sendNormal.bind(this);
   }
 
@@ -30,6 +29,9 @@ class EmailController {
 
       if (!emailQueue) {
         emailQueue = new EmailQueueModel({ uuid, queueIds: [] });
+        logger.info(`Novo documento criado para UUID=${uuid}`);
+      } else {
+        logger.info(`Documento existente encontrado para UUID=${uuid}`);
       }
 
       for (const emailData of emailList) {
@@ -65,19 +67,24 @@ class EmailController {
       }
 
       // Tenta salvar o documento no banco de dados
-      try {
-        await emailQueue.save();
-        console.log('Dados salvos com sucesso:', emailQueue); // Confirmação no console
-        logger.info(`Dados salvos com sucesso para UUID=${uuid}`);
-      } catch (saveError) {
-        console.error('Erro ao salvar os dados:', saveError); // Log de erro no console
-        logger.error(`Erro ao salvar os dados para UUID=${uuid}:`, saveError);
-        throw new Error('Erro ao salvar os dados no banco de dados.');
-      }
+      await this.saveEmailQueue(emailQueue, uuid);
 
       this.sendSuccessResponse(res, emailQueue);
     } catch (error) {
       this.handleError(res, error);
+    }
+  }
+
+  // Método para salvar o EmailQueue no banco de dados
+  private async saveEmailQueue(emailQueue: any, uuid: string): Promise<void> {
+    try {
+      await emailQueue.save();
+      console.log('Dados salvos com sucesso:', emailQueue); // Confirmação no console
+      logger.info(`Dados salvos com sucesso para UUID=${uuid}`, { emailQueue });
+    } catch (saveError) {
+      console.error('Erro ao salvar os dados:', saveError); // Log de erro no console
+      logger.error(`Erro ao salvar os dados para UUID=${uuid}:`, saveError);
+      throw new Error('Erro ao salvar os dados no banco de dados.');
     }
   }
 
