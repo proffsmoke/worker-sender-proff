@@ -69,6 +69,7 @@ export class ResultSenderService {
   // Envia os resultados (mock ou real)
   private async sendResults(emailQueue: any): Promise<void> {
     const { uuid, queueIds } = emailQueue;
+    logger.info('queueIds a ser filtrados: ',queueIds)
 
     // Filtra os queueIds com success preenchido
     const results = queueIds
