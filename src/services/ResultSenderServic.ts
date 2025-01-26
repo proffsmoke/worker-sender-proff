@@ -91,11 +91,11 @@ export class ResultSenderService {
       return resultItem;
     });
 
-console.log('Resultados finais:', results); // Mostra o array final de resultados
+    console.log('Resultados finais:', results); // Mostra o array final de resultados
 
     // Exibe o UUID completo e os resultados que estão sendo enviados
     logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
-    logger.info('Resultados a serem enviados:', inspect(results));
+    logger.info('Resultados a serem enviados:', results);
 
     // Verifica se há resultados para enviar
     if (results.length === 0) {
