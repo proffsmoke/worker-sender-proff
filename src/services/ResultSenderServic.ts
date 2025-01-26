@@ -1,31 +1,45 @@
-// src/services/ResultSenderService.ts
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
-import axios, { AxiosError } from 'axios'; // Importa o axios e AxiosError
-import { inspect } from 'util'; // Para formatar erros circulares e exibir a estrutura completa
+import axios, { AxiosError } from 'axios';
+
+interface QueueItem {
+  queueId: string;
+  email: string;
+  success: boolean | null;
+}
+
+interface EmailQueue {
+  uuid: string;
+  queueIds: QueueItem[];
+  resultSent: boolean;
+}
+
+interface ResultItem {
+  queueId: string;
+  email: string;
+  success: boolean;
+}
 
 export class ResultSenderService {
   private interval: NodeJS.Timeout | null = null;
   private isSending: boolean = false;
-  private useMock: boolean; // Define se o mock deve ser usado
+  private useMock: boolean;
 
-  constructor(useMock: boolean = false) { // Por padrão, não usa o mock
+  constructor(useMock: boolean = false) {
     this.useMock = useMock;
     this.start();
   }
 
-  // Inicia o serviço
   public start(): void {
     if (this.interval) {
       logger.warn('O serviço ResultSenderService já está em execução.');
       return;
     }
 
-    this.interval = setInterval(() => this.processResults(), 10000); // Verifica a cada 10 segundos
+    this.interval = setInterval(() => this.processResults(), 10000);
     logger.info('ResultSenderService iniciado.');
   }
 
-  // Para o serviço
   public stop(): void {
     if (this.interval) {
       clearInterval(this.interval);
@@ -34,7 +48,6 @@ export class ResultSenderService {
     }
   }
 
-  // Processa os resultados pendentes
   private async processResults(): Promise<void> {
     if (this.isSending) {
       logger.info('ResultSenderService já está processando resultados. Aguardando...');
@@ -44,96 +57,62 @@ export class ResultSenderService {
     this.isSending = true;
 
     try {
-      // Busca registros com success preenchido e resultSent = false
       const emailQueues = await EmailQueueModel.find({
-        'queueIds.success': { $exists: true, $ne: null }, // Garante que success existe e não é null
-        resultSent: false, // resultSent é false
+        'queueIds.success': { $exists: true, $ne: null },
+        resultSent: false,
       });
 
       logger.info(`Encontrados ${emailQueues.length} registros para processar.`);
 
-      // Processa cada registro
       for (const emailQueue of emailQueues) {
-        logger.info('emailQueue: ', emailQueue)
+        logger.info('Processando emailQueue:', emailQueue);
         await this.sendResults(emailQueue);
-        await new Promise((resolve) => setTimeout(resolve, 1000)); // Limita a 1 envio por segundo
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     } catch (error) {
-      // Exibe a estrutura completa do erro para depuração
-      logger.error('Erro ao processar resultados:', inspect(error, { depth: null, colors: true }));
+      logger.error('Erro ao processar resultados:', error);
     } finally {
       this.isSending = false;
     }
   }
 
-  // Envia os resultados (mock ou real)
-  private async sendResults(emailQueue: any): Promise<void> {
+  private async sendResults(emailQueue: EmailQueue): Promise<void> {
     const { uuid, queueIds } = emailQueue;
-    logger.info('queueIds a ser filtrados: ',queueIds)
 
-    // Filtra os queueIds com success preenchido
-    console.log('queueIds antes do filtro:', queueIds); // Mostra o array completo antes do filtro
+    const filteredQueueIds = queueIds.filter((q: QueueItem) => q.success != null);
+    const results: ResultItem[] = filteredQueueIds.map((q: QueueItem) => ({
+      queueId: q.queueId,
+      email: q.email,
+      success: q.success!,
+    }));
 
-    const filteredQueueIds = queueIds.filter((q: any) => {
-      console.log('Verificando item:', q); // Mostra cada item sendo verificado
-      return q.success != null; // Garante que success não seja null ou undefined
-    });
-
-    console.log('queueIds após o filtro:', filteredQueueIds); // Mostra o array após o filtro
-
-    const results = filteredQueueIds.map((q: any) => {
-      const resultItem = {
-        queueId: q.queueId,
-        email: q.email,
-        success: q.success,
-      };
-      console.log('Mapeando item:', resultItem); // Mostra cada item sendo mapeado
-      return resultItem;
-    });
-
-    console.log('Resultados finais:', results); // Mostra o array final de resultados
-
-    // Exibe o UUID completo e os resultados que estão sendo enviados
     logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
     logger.info('Resultados a serem enviados:', results);
 
-    // Verifica se há resultados para enviar
     if (results.length === 0) {
       logger.warn(`Nenhum resultado válido encontrado para enviar: uuid=${uuid}`);
       return;
     }
 
-    // Usa o mock ou o envio real
-    const sendSuccess = await this.realSendResults(uuid, results); // Usa o envio real
+    const sendSuccess = await this.realSendResults(uuid, results);
 
     if (sendSuccess) {
-      // Atualiza o campo resultSent para true
-      await EmailQueueModel.updateOne(
-        { uuid },
-        { $set: { resultSent: true } }
-      );
-
+      await EmailQueueModel.updateOne({ uuid }, { $set: { resultSent: true } });
       logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
     } else {
       logger.error(`Falha ao enviar resultados: uuid=${uuid}`);
     }
   }
 
-  // Real: Envia os resultados para o servidor
-  private async realSendResults(uuid: string, results: any[]): Promise<boolean> {
+  private async realSendResults(uuid: string, results: ResultItem[]): Promise<boolean> {
     try {
-      // Faz uma requisição POST para o servidor
-      const payload = {
-        uuid,
-        results,
-      };
+      const payload = { uuid, results };
 
       logger.info(`Real: Enviando resultados para o servidor: uuid=${uuid}`);
-      logger.info('Payload sendo enviado:', inspect(payload, { depth: null, colors: true }));
+      logger.info('Payload sendo enviado:', payload);
 
       const response = await axios.post('http://localhost:4008/api/results', payload);
 
-      // Verifica se a requisição foi bem-sucedida
       if (response.status === 200) {
         logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
         return true;
@@ -143,7 +122,6 @@ export class ResultSenderService {
       }
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        // Erro do Axios
         if (error.response) {
           logger.error('Detalhes do erro:', {
             status: error.response.status,
@@ -155,11 +133,9 @@ export class ResultSenderService {
           logger.error('Erro desconhecido:', error.message);
         }
       } else if (error instanceof Error) {
-        // Erro genérico
         logger.error('Erro desconhecido:', error.message);
       } else {
-        // Erro completamente desconhecido
-        logger.error('Erro desconhecido:', inspect(error, { depth: null, colors: true }));
+        logger.error('Erro desconhecido:', error);
       }
 
       return false;
