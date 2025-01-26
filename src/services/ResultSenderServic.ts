@@ -1,7 +1,8 @@
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 
+// Definição das interfaces
 interface QueueItem {
   queueId: string;
   email: string;
@@ -20,13 +21,59 @@ interface ResultItem {
   success: boolean;
 }
 
+// Strategy Interface
+interface ResultSenderStrategy {
+  sendResults(uuid: string, results: ResultItem[]): Promise<boolean>;
+}
+
+// Real Sender Strategy
+class RealSenderStrategy implements ResultSenderStrategy {
+  public async sendResults(uuid: string, results: ResultItem[]): Promise<boolean> {
+    try {
+      const payload = { uuid, results };
+      logger.info(`Enviando resultados reais para o servidor: uuid=${uuid}`);
+      logger.info('Payload:', payload);
+
+      const response = await axios.post('http://localhost:4008/api/results', payload);
+
+      if (response.status === 200) {
+        logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
+        return true;
+      } else {
+        logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
+        return false;
+      }
+    } catch (error) {
+      logger.error('Erro ao enviar resultados reais:', error);
+      return false;
+    }
+  }
+}
+
+// Mock Sender Strategy
+class MockSenderStrategy implements ResultSenderStrategy {
+  public async sendResults(uuid: string, results: ResultItem[]): Promise<boolean> {
+    logger.info(`Simulação de envio para uuid=${uuid} com resultados:`, results);
+    return true; // Simula um sucesso no envio
+  }
+}
+
+// Fábrica para enviar resultados
+class ResultSenderFactory {
+  public static createSender(useMock: boolean): ResultSenderStrategy {
+    return useMock ? new MockSenderStrategy() : new RealSenderStrategy();
+  }
+}
+
 export class ResultSenderService {
   private interval: NodeJS.Timeout | null = null;
   private isSending: boolean = false;
   private useMock: boolean;
+  private senderStrategy: ResultSenderStrategy;
 
   constructor(useMock: boolean = false) {
     this.useMock = useMock;
+    this.senderStrategy = ResultSenderFactory.createSender(this.useMock);
     this.start();
   }
 
@@ -94,51 +141,13 @@ export class ResultSenderService {
       return;
     }
 
-    const sendSuccess = await this.realSendResults(uuid, results);
+    const sendSuccess = await this.senderStrategy.sendResults(uuid, results);
 
     if (sendSuccess) {
       await EmailQueueModel.updateOne({ uuid }, { $set: { resultSent: true } });
       logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
     } else {
       logger.error(`Falha ao enviar resultados: uuid=${uuid}`);
-    }
-  }
-
-  private async realSendResults(uuid: string, results: ResultItem[]): Promise<boolean> {
-    try {
-      const payload = { uuid, results };
-
-      logger.info(`Real: Enviando resultados para o servidor: uuid=${uuid}`);
-      logger.info('Payload sendo enviado:', payload);
-
-      const response = await axios.post('http://localhost:4008/api/results', payload);
-
-      if (response.status === 200) {
-        logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
-        return true;
-      } else {
-        logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
-        return false;
-      }
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        if (error.response) {
-          logger.error('Detalhes do erro:', {
-            status: error.response.status,
-            data: error.response.data,
-          });
-        } else if (error.request) {
-          logger.error('Erro na requisição:', error.request);
-        } else {
-          logger.error('Erro desconhecido:', error.message);
-        }
-      } else if (error instanceof Error) {
-        logger.error('Erro desconhecido:', error.message);
-      } else {
-        logger.error('Erro desconhecido:', error);
-      }
-
-      return false;
     }
   }
 }
