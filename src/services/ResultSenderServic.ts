@@ -46,7 +46,7 @@ export class ResultSenderService {
     try {
       // Busca registros com success preenchido e resultSent = false
       const emailQueues = await EmailQueueModel.find({
-        'queueIds.success': { $ne: null }, // success não é null
+        'queueIds.success': { $exists: true, $ne: null }, // Garante que success existe e não é null
         resultSent: false, // resultSent é false
       });
 
