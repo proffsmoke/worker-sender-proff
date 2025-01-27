@@ -1,9 +1,9 @@
 import axios, { AxiosInstance } from 'axios';
-import { z } from 'zod';
+import { z } from 'zod'; // Importando Zod para validação
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
 
-// Interfaces e esquemas de validação
+// Definição das interfaces
 interface QueueItem {
   queueId: string;
   email: string;
@@ -15,6 +15,9 @@ interface EmailQueue {
   uuid: string;
   queueIds: QueueItem[];
   resultSent: boolean;
+  lastError?: string;
+  errorDetails?: string;
+  retryCount?: number;
 }
 
 interface ResultItem {
@@ -24,6 +27,7 @@ interface ResultItem {
   data?: unknown;
 }
 
+// Esquema de validação com Zod
 const ResultItemSchema = z.object({
   queueId: z.string(),
   email: z.string().email(),
@@ -40,6 +44,7 @@ const PayloadSchema = z.object({
 
 const DOMAINS = ['http://localhost:4008'];
 
+// Estratégia de rotação de domínios
 class DomainStrategy {
   private domains: string[];
   private currentIndex: number;
@@ -52,6 +57,7 @@ class DomainStrategy {
   public getNextDomain(): string {
     const domain = this.domains[this.currentIndex];
     this.currentIndex = (this.currentIndex + 1) % this.domains.length;
+    logger.debug(`Selecionado o domínio: ${domain}`);
     return domain;
   }
 }
@@ -78,7 +84,7 @@ export class ResultSenderService {
     }
 
     this.interval = setInterval(() => this.processResults(), 10000);
-    logger.info('ResultSenderService iniciado.');
+    logger.info('ResultSenderService iniciado e agendado para executar a cada 10 segundos.');
   }
 
   public stop(): void {
@@ -91,43 +97,54 @@ export class ResultSenderService {
 
   private async processResults(): Promise<void> {
     if (this.isSending) {
-      logger.info('ResultSenderService já está processando resultados. Aguardando...');
+      logger.info('ResultSenderService já está processando resultados. Aguardando a próxima iteração.');
       return;
     }
 
     this.isSending = true;
+    logger.info('Iniciando o processamento de resultados.');
 
     try {
-      logger.info('Iniciando busca de registros no banco de dados...');
+      logger.debug('Buscando registros no banco de dados com resultado não enviado e sucesso definido.');
       const emailQueues = await EmailQueueModel.find({
         'queueIds.success': { $exists: true, $ne: null },
         resultSent: false,
-      });
+      }).lean(); // Usando lean() para melhorar a performance
 
       logger.info(`Encontrados ${emailQueues.length} registros para processar.`);
+      logger.debug('Registros encontrados:', { emailQueues });
 
       const resultsByUuid: Record<string, ResultItem[]> = {};
 
       for (const emailQueue of emailQueues) {
         const { uuid, queueIds } = emailQueue;
         logger.info(`Processando emailQueue com uuid: ${uuid}`);
+        logger.debug('Dados da emailQueue:', { uuid, queueIds });
 
-        const results: ResultItem[] = queueIds
-          .filter((q: QueueItem) => q.success !== null)
-          .map((q: QueueItem) => ({
-            queueId: q.queueId,
-            email: q.email,
-            success: q.success!,
-            data: q.data,
-          }));
+        const validQueueIds = queueIds.filter((q: QueueItem) => q.success !== null);
+        logger.debug(`Filtrados ${validQueueIds.length} queueIds com sucesso definido.`);
+
+        const results: ResultItem[] = validQueueIds.map((q: QueueItem) => ({
+          queueId: q.queueId,
+          email: q.email,
+          success: q.success!,
+          data: q.data,
+        }));
+
+        logger.debug('Resultados mapeados:', { results });
 
         if (results.length > 0) {
           resultsByUuid[uuid] = [...(resultsByUuid[uuid] || []), ...results];
         }
       }
 
+      logger.debug('Resultados agrupados por UUID:', { resultsByUuid });
+
       for (const [uuid, results] of Object.entries(resultsByUuid)) {
-        if (results.length === 0) continue;
+        if (results.length === 0) {
+          logger.warn(`Nenhum resultado válido para o uuid: ${uuid}. Pulando envio.`);
+          continue;
+        }
         await this.validateAndSendResults(uuid, results);
       }
     } catch (error) {
@@ -140,9 +157,10 @@ export class ResultSenderService {
   }
 
   private async validateAndSendResults(uuid: string, results: ResultItem[]): Promise<void> {
-    try {
-      logger.info(`Validando payload para uuid: ${uuid}`);
+    logger.info(`Validando e enviando resultados para o uuid: ${uuid}`);
+    logger.debug('Resultados a serem enviados:', { uuid, results });
 
+    try {
       const payload = {
         fullPayload: {
           uuid,
@@ -155,28 +173,35 @@ export class ResultSenderService {
         },
       };
 
+      logger.debug('Payload construído:', { payload });
+
       // Validação do payload com Zod
       const validatedPayload = PayloadSchema.safeParse(payload);
 
       if (!validatedPayload.success) {
-        logger.error(`Payload inválido: ${validatedPayload.error.message}`);
-        return;
+        logger.error('Validação do payload falhou.', { errors: validatedPayload.error.errors });
+        throw new Error(`Payload inválido: ${validatedPayload.error.message}`);
       }
+
+      logger.info('Payload validado com sucesso.');
 
       const currentDomain = this.domainStrategy.getNextDomain();
       const url = `${currentDomain}/api/results`;
 
-      logger.info(`Enviando payload para URL: ${url}`);
+      logger.info(`Enviando payload para: ${url}`);
+      logger.debug('Payload enviado:', { payload: validatedPayload.data });
 
       const response = await this.axiosInstance.post(url, validatedPayload.data);
 
+      logger.info(`Resposta recebida: Status ${response.status} - ${response.statusText}`);
+      logger.debug('Dados da resposta:', { data: response.data });
+
       if (response.status !== 200) {
-        throw new Error(`Erro HTTP ${response.status}: ${response.statusText}`);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      logger.info(`Envio bem-sucedido para uuid: ${uuid}. Atualizando registros no banco de dados.`);
-
-      await EmailQueueModel.updateMany(
+      // Atualizando os registros como enviados
+      const updateResult = await EmailQueueModel.updateMany(
         { uuid },
         {
           $set: {
@@ -185,23 +210,37 @@ export class ResultSenderService {
           },
         },
       );
+
+      // Correção aplicada aqui:
+      logger.info(`Sucesso no envio: ${uuid} (${results.length} resultados). Registros atualizados: ${updateResult.modifiedCount}`);
     } catch (error) {
       const errorDetails = this.getErrorDetails(error);
-      logger.error(`Erro no envio para uuid: ${uuid}`, {
-        message: errorDetails.message,
-        stack: errorDetails.stack,
+      const truncatedError = errorDetails.message.slice(0, 200);
+
+      logger.error(`Falha no envio: ${uuid}`, {
+        error: truncatedError,
+        stack: errorDetails.stack?.split('\n').slice(0, 3).join(' '),
       });
 
-      await EmailQueueModel.updateMany(
-        { uuid },
-        {
-          $set: {
-            lastError: errorDetails.message,
-            errorDetails: JSON.stringify(errorDetails),
+      try {
+        await EmailQueueModel.updateMany(
+          { uuid },
+          {
+            $set: {
+              lastError: truncatedError,
+              errorDetails: JSON.stringify(errorDetails).slice(0, 500),
+            },
+            $inc: { retryCount: 1 },
           },
-          $inc: { retryCount: 1 },
-        },
-      );
+        );
+        logger.debug(`Registro atualizado com erros para o uuid: ${uuid}`);
+      } catch (updateError) {
+        const { message: updateMsg, stack: updateStack } = this.getErrorDetails(updateError);
+        logger.error(`Falha ao atualizar o registro de erro para o uuid: ${uuid}`, {
+          error: updateMsg,
+          stack: updateStack,
+        });
+      }
     }
   }
 
