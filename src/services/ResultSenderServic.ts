@@ -128,21 +128,22 @@ export class ResultSenderService {
       currentDomainIndex = (currentDomainIndex + 1) % DOMAINS.length;
 
       // URL corrigida
-      const url = `${currentDomain}/results`;
-
-      logger.info(`Enviando para: ${url}`, {
-        fullPayload: payload, // Log corrigido
-      });
-
+      
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
       const xd = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         signal: controller.signal
       };
-      logger.info(`url real: `, xd);
+
+      const url = `${currentDomain}/results/${xd}`;
+      
+      logger.info(`Enviando para: ${url}`);
+
+     
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      
       const response = await fetch(url, xd);
 
       clearTimeout(timeoutId);
