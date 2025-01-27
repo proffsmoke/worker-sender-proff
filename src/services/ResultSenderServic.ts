@@ -1,25 +1,20 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
-import { z, ZodError } from 'zod';
+import axios, { AxiosInstance } from 'axios';
+import { z } from 'zod';
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
 
-// Interfaces e tipos
-type QueueStatus = 'pending' | 'success' | 'failed';
-
+// Interfaces e esquemas de validação
 interface QueueItem {
   queueId: string;
   email: string;
-  status: QueueStatus;
+  success: boolean | null;
   data?: unknown;
-  lastAttempt?: Date;
 }
 
 interface EmailQueue {
   uuid: string;
   queueIds: QueueItem[];
   resultSent: boolean;
-  retryCount?: number;
-  lastError?: string;
 }
 
 interface ResultItem {
@@ -29,9 +24,8 @@ interface ResultItem {
   data?: unknown;
 }
 
-// Esquemas de validação
 const ResultItemSchema = z.object({
-  queueId: z.string().uuid(),
+  queueId: z.string(),
   email: z.string().email(),
   success: z.boolean(),
   data: z.unknown().optional(),
@@ -39,17 +33,12 @@ const ResultItemSchema = z.object({
 
 const PayloadSchema = z.object({
   fullPayload: z.object({
-    uuid: z.string().uuid(),
+    uuid: z.string(),
     results: z.array(ResultItemSchema),
   }),
 });
 
-type ValidatedPayload = z.infer<typeof PayloadSchema>;
-
-// Configurações
 const DOMAINS = ['http://localhost:4008'];
-const MAX_RETRIES = 3;
-const LOG_TRUNCATE_LIMIT = 500;
 
 class DomainStrategy {
   private domains: string[];
@@ -58,318 +47,174 @@ class DomainStrategy {
   constructor(domains: string[]) {
     this.domains = domains;
     this.currentIndex = 0;
-    logger.debug(`DomainStrategy initialized with ${domains.length} domains`);
   }
 
   public getNextDomain(): string {
     const domain = this.domains[this.currentIndex];
     this.currentIndex = (this.currentIndex + 1) % this.domains.length;
-    logger.debug(`Selected next domain: ${domain}`);
     return domain;
   }
 }
 
 export class ResultSenderService {
   private interval: NodeJS.Timeout | null = null;
-  private isProcessing: boolean = false;
+  private isSending: boolean = false;
   private domainStrategy: DomainStrategy;
   private axiosInstance: AxiosInstance;
 
   constructor() {
     this.domainStrategy = new DomainStrategy(DOMAINS);
-    this.axiosInstance = this.createAxiosInstance();
-    logger.info('ResultSenderService instance created');
-  }
-
-  private createAxiosInstance(): AxiosInstance {
-    logger.debug('Creating axios instance with timeout: 8000ms');
-    return axios.create({
+    this.axiosInstance = axios.create({
       timeout: 8000,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Service-Name': 'ResultSenderService',
-      },
+      headers: { 'Content-Type': 'application/json' },
     });
+    this.start();
   }
 
-  public start(intervalMs: number = 10000): void {
+  public start(): void {
     if (this.interval) {
-      logger.warn('Service already running. Start request ignored');
+      logger.warn('O serviço ResultSenderService já está em execução.');
       return;
     }
 
-    logger.info(`Starting service with interval: ${intervalMs}ms`);
-    this.interval = setInterval(() => this.processResults(), intervalMs);
+    this.interval = setInterval(() => this.processResults(), 10000);
+    logger.info('ResultSenderService iniciado.');
   }
 
   public stop(): void {
     if (this.interval) {
-      logger.info('Stopping service');
       clearInterval(this.interval);
       this.interval = null;
+      logger.info('ResultSenderService parado.');
     }
   }
 
   private async processResults(): Promise<void> {
-    if (this.isProcessing) {
-      logger.warn('Processing already in progress. Skipping this cycle');
+    if (this.isSending) {
+      logger.info('ResultSenderService já está processando resultados. Aguardando...');
       return;
     }
 
-    this.isProcessing = true;
-    logger.info('Starting processing cycle');
+    this.isSending = true;
 
     try {
-      const pendingQueues = await this.fetchPendingQueues();
-      logger.info(`Found ${pendingQueues.length} queues to process`);
-
-      const aggregatedResults = this.aggregateResults(pendingQueues);
-      logger.debug(`Aggregated ${Object.keys(aggregatedResults).length} UUID groups`);
-
-      await this.processAggregatedResults(aggregatedResults);
-    } catch (error) {
-      this.handleProcessingError(error);
-    } finally {
-      this.isProcessing = false;
-      logger.info('Processing cycle completed');
-    }
-  }
-
-  private async fetchPendingQueues(): Promise<EmailQueue[]> {
-    logger.debug('Querying database for pending queues');
-    try {
-      return await EmailQueueModel.find({
-        'queueIds.status': { $in: ['success', 'failed'] },
+      logger.info('Iniciando busca de registros no banco de dados...');
+      const emailQueues = await EmailQueueModel.find({
+        'queueIds.success': { $exists: true, $ne: null },
         resultSent: false,
-        $or: [
-          { retryCount: { $exists: false } },
-          { retryCount: { $lt: MAX_RETRIES } }
-        ]
       });
-    } catch (error) {
-      logger.error('Database query failed', this.formatError(error));
-      throw error;
-    }
-  }
 
-  private aggregateResults(queues: EmailQueue[]): Record<string, ResultItem[]> {
-    logger.debug('Aggregating results by UUID');
-    return queues.reduce((acc, queue) => {
-      const results = queue.queueIds
-        .filter(item => item.status !== 'pending')
-        .map(item => ({
-          queueId: item.queueId,
-          email: item.email,
-          success: item.status === 'success',
-          data: item.data
-        }));
+      logger.info(`Encontrados ${emailQueues.length} registros para processar.`);
 
-      if (results.length > 0) {
-        acc[queue.uuid] = [...(acc[queue.uuid] || []), ...results];
+      const resultsByUuid: Record<string, ResultItem[]> = {};
+
+      for (const emailQueue of emailQueues) {
+        const { uuid, queueIds } = emailQueue;
+        logger.info(`Processando emailQueue com uuid: ${uuid}`);
+
+        const results: ResultItem[] = queueIds
+          .filter((q: QueueItem) => q.success !== null)
+          .map((q: QueueItem) => ({
+            queueId: q.queueId,
+            email: q.email,
+            success: q.success!,
+            data: q.data,
+          }));
+
+        if (results.length > 0) {
+          resultsByUuid[uuid] = [...(resultsByUuid[uuid] || []), ...results];
+        }
       }
-      return acc;
-    }, {} as Record<string, ResultItem[]>);
-  }
 
-  private async processAggregatedResults(resultsByUuid: Record<string, ResultItem[]>): Promise<void> {
-    for (const [uuid, results] of Object.entries(resultsByUuid)) {
-      try {
-        logger.info(`Processing UUID: ${uuid} with ${results.length} results`);
+      for (const [uuid, results] of Object.entries(resultsByUuid)) {
+        if (results.length === 0) continue;
         await this.validateAndSendResults(uuid, results);
-      } catch (error) {
-        logger.error(`Failed to process UUID: ${uuid}`, this.formatError(error));
       }
+    } catch (error) {
+      const { message, stack } = this.getErrorDetails(error);
+      logger.error(`Erro ao processar resultados: ${message}`, { stack });
+    } finally {
+      this.isSending = false;
+      logger.info('Processamento de resultados concluído.');
     }
   }
 
   private async validateAndSendResults(uuid: string, results: ResultItem[]): Promise<void> {
-    let payload: ValidatedPayload;
-    
     try {
-      payload = this.buildAndValidatePayload(uuid, results);
-    } catch (error) {
-      await this.handleValidationError(uuid, error);
-      return;
-    }
+      logger.info(`Validando payload para uuid: ${uuid}`);
 
-    try {
-      await this.sendPayload(payload);
-      await this.markQueueAsSent(uuid);
-      logger.info(`Successfully processed UUID: ${uuid}`);
-    } catch (error) {
-      await this.handleSendError(uuid, error);
-    }
-  }
+      const payload = {
+        fullPayload: {
+          uuid,
+          results: results.map((r) => ({
+            queueId: r.queueId,
+            email: r.email,
+            success: r.success,
+            data: r.data,
+          })),
+        },
+      };
 
-  private buildAndValidatePayload(uuid: string, results: ResultItem[]): ValidatedPayload {
-    logger.debug(`Building payload for UUID: ${uuid}`);
-    const rawPayload = {
-      fullPayload: {
-        uuid,
-        results: results.map(r => ({
-          queueId: r.queueId,
-          email: r.email,
-          success: r.success,
-          data: r.data
-        }))
+      // Validação do payload com Zod
+      const validatedPayload = PayloadSchema.safeParse(payload);
+
+      if (!validatedPayload.success) {
+        logger.error(`Payload inválido: ${validatedPayload.error.message}`);
+        return;
       }
-    };
 
-    logger.debug('Raw payload constructed', { 
-      uuid,
-      payloadSample: this.truncateForLog(rawPayload)
-    });
+      const currentDomain = this.domainStrategy.getNextDomain();
+      const url = `${currentDomain}/api/results`;
 
-    const validationResult = PayloadSchema.safeParse(rawPayload);
-    
-    if (!validationResult.success) {
-      logger.error('Payload validation failed', {
-        uuid,
-        errors: validationResult.error.errors
-      });
-      throw new Error('Invalid payload structure');
-    }
+      logger.info(`Enviando payload para URL: ${url}`);
 
-    logger.debug('Payload validated successfully', {
-      uuid,
-      resultsCount: validationResult.data.fullPayload.results.length
-    });
-
-    return validationResult.data;
-  }
-
-  private async sendPayload(payload: ValidatedPayload): Promise<void> {
-    const domain = this.domainStrategy.getNextDomain();
-    const url = `${domain}/api/results`;
-    
-    logger.info(`Attempting to send to: ${url}`, {
-      endpoint: url,
-      payloadUUID: payload.fullPayload.uuid
-    });
-
-    try {
-      const response = await this.axiosInstance.post(url, payload);
-      logger.debug('API response received', {
-        status: response.status,
-        data: this.truncateForLog(response.data)
-      });
+      const response = await this.axiosInstance.post(url, validatedPayload.data);
 
       if (response.status !== 200) {
-        throw new Error(`Unexpected status code: ${response.status}`);
+        throw new Error(`Erro HTTP ${response.status}: ${response.statusText}`);
       }
+
+      logger.info(`Envio bem-sucedido para uuid: ${uuid}. Atualizando registros no banco de dados.`);
+
+      await EmailQueueModel.updateMany(
+        { uuid },
+        {
+          $set: {
+            resultSent: true,
+            lastUpdated: new Date(),
+          },
+        },
+      );
     } catch (error) {
-      logger.error('API request failed', {
-        url,
-        error: this.formatError(error)
+      const errorDetails = this.getErrorDetails(error);
+      logger.error(`Erro no envio para uuid: ${uuid}`, {
+        message: errorDetails.message,
+        stack: errorDetails.stack,
       });
-      throw error;
+
+      await EmailQueueModel.updateMany(
+        { uuid },
+        {
+          $set: {
+            lastError: errorDetails.message,
+            errorDetails: JSON.stringify(errorDetails),
+          },
+          $inc: { retryCount: 1 },
+        },
+      );
     }
   }
 
-  private async markQueueAsSent(uuid: string): Promise<void> {
-    logger.debug(`Marking UUID as sent: ${uuid}`);
-    await EmailQueueModel.updateMany(
-      { uuid },
-      {
-        $set: {
-          resultSent: true,
-          lastUpdated: new Date(),
-          status: 'completed'
-        },
-        $unset: {
-          lastError: 1,
-          errorDetails: 1
-        }
-      }
-    );
-  }
-
-  private async handleValidationError(uuid: string, error: unknown): Promise<void> {
-    const errorDetails = this.formatError(error);
-    logger.error(`Validation failed for UUID: ${uuid}`, errorDetails);
-
-    await EmailQueueModel.updateMany(
-      { uuid },
-      {
-        $set: {
-          lastError: 'Payload validation failed',
-          errorDetails: this.truncateError(errorDetails),
-          lastUpdated: new Date()
-        },
-        $inc: { retryCount: 1 }
-      }
-    );
-  }
-
-  private async handleSendError(uuid: string, error: unknown): Promise<void> {
-    const errorDetails = this.formatError(error);
-    logger.error(`Send failed for UUID: ${uuid}`, errorDetails);
-
-    await EmailQueueModel.updateMany(
-      { uuid },
-      {
-        $set: {
-          lastError: this.truncateError(errorDetails.message),
-          errorDetails: this.truncateError(errorDetails),
-          lastUpdated: new Date()
-        },
-        $inc: { retryCount: 1 }
-      }
-    );
-  }
-
-  private handleProcessingError(error: unknown): void {
-    const errorDetails = this.formatError(error);
-    logger.error('Critical processing error:', {
-      message: errorDetails.message,
-      stack: errorDetails.stack,
-      additionalInfo: 'Global processing failure'
-    });
-  }
-
-  private formatError(error: unknown): { 
-    message: string; 
-    stack?: string; 
-    isAxiosError?: boolean;
-    statusCode?: number;
-  } {
-    if (error instanceof ZodError) {
-      return {
-        message: 'Validation error',
-        stack: JSON.stringify(error.errors)
-      };
-    }
-
-    if (axios.isAxiosError(error)) {
-      return {
-        message: error.message,
-        stack: error.stack,
-        isAxiosError: true,
-        statusCode: error.response?.status
-      };
-    }
-
+  private getErrorDetails(error: unknown): { message: string; stack?: string } {
     if (error instanceof Error) {
       return {
         message: error.message,
-        stack: error.stack
+        stack: error.stack,
       };
     }
-
     return {
-      message: 'Unknown error type occurred'
+      message: 'Erro desconhecido',
     };
-  }
-
-  private truncateForLog(data: unknown): string {
-    const str = JSON.stringify(data);
-    return str.length > LOG_TRUNCATE_LIMIT 
-      ? str.substring(0, LOG_TRUNCATE_LIMIT) + '... [TRUNCATED]' 
-      : str;
-  }
-
-  private truncateError(error: any): string {
-    return JSON.stringify(error).substring(0, 1000);
   }
 }
 
