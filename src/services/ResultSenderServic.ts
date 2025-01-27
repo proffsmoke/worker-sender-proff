@@ -126,17 +126,19 @@ export class ResultSenderService {
   private async sendResults(uuid: string, results: ResultItem[]): Promise<void> {
     try {
       const payload = {
-        uuid,
-        results: results.map(r => ({
-          queueId: r.queueId,
-          email: r.email,
-          success: r.success,
-          data: r.data
-        })),
+        fullPayload: {
+          uuid,
+          results: results.map(r => ({
+            queueId: r.queueId,
+            email: r.email,
+            success: r.success,
+            data: r.data
+          })),
+        },
       };
 
       const currentDomain = this.domainStrategy.getNextDomain();
-      const url = `${currentDomain}/results`;
+      const url = `${currentDomain}/api/results`;
 
       logger.info(`Enviando para: ${url}`);
 
