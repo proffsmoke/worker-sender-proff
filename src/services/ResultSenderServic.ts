@@ -21,7 +21,7 @@ interface ResultItem {
 }
 
 // Domínios alternados
-const DOMAINS = ['http://localhost:4008'];
+const DOMAINS = ['http://localhost:4008/api'];
 let currentDomainIndex = 0;
 
 // Serviço para enviar resultados
@@ -136,7 +136,7 @@ export class ResultSenderService {
       const currentDomain = DOMAINS[currentDomainIndex];
       currentDomainIndex = (currentDomainIndex + 1) % DOMAINS.length; // Alterna entre os domínios
 
-      const url = `${currentDomain}/api/results`;
+      const url = `${currentDomain}/results`;
       logger.info(`Enviando payload para a URL: ${url}`);
 
       // Envia os resultados para o servidor
