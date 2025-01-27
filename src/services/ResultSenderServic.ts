@@ -21,29 +21,20 @@ interface ResultItem {
   success: boolean;
 }
 
-// Função utilitária para limpar objetos de referências circulares
-function cleanObject(obj: any): any {
-  const seen = new WeakSet();
-
-  const replacer = (key: string, value: any) => {
-    if (typeof value === 'object' && value !== null) {
-      if (seen.has(value)) {
+// Função utilitária para evitar referências circulares
+const replacerFunc = () => {
+  const visited = new WeakSet();
+  return (key: string, value: any) => {
+    if (typeof value === "object" && value !== null) {
+      if (visited.has(value)) {
         logger.warn(`Referência circular detectada na chave: ${key}`);
         return '[Circular Reference]';
       }
-      seen.add(value);
+      visited.add(value);
     }
     return value;
   };
-
-  try {
-    const cleaned = JSON.parse(JSON.stringify(obj, replacer));
-    return cleaned;
-  } catch (error) {
-    logger.error('Erro ao limpar objeto:', error);
-    return null;
-  }
-}
+};
 
 // Serviço para enviar resultados
 export class ResultSenderService {
@@ -116,19 +107,19 @@ export class ResultSenderService {
         resultsByUuid[uuid].push(...results);
       }
 
-      logger.info('Resultados agrupados por uuid:', cleanObject(resultsByUuid));
+      logger.info('Resultados agrupados por uuid:', JSON.stringify(resultsByUuid, replacerFunc()));
 
       // Envia os resultados agrupados por uuid
       for (const [uuid, results] of Object.entries(resultsByUuid)) {
         logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
-        logger.info('Resultados a serem enviados:', cleanObject(results));
+        logger.info('Resultados a serem enviados:', JSON.stringify(results, replacerFunc()));
 
         if (results.length === 0) {
           logger.warn(`Nenhum resultado válido encontrado para enviar: uuid=${uuid}`);
           continue;
         }
 
-        await this.sendResults(uuid, cleanObject(results));
+        await this.sendResults(uuid, results);
       }
     } catch (error) {
       logger.error('Erro ao processar resultados:', error);
@@ -151,11 +142,11 @@ export class ResultSenderService {
         })),
       };
 
-      logger.info('Payload construído:', cleanObject(payload));
+      logger.info('Payload construído:', JSON.stringify(payload, replacerFunc()));
 
       // Envia os resultados para o servidor
       logger.info('Enviando payload para o servidor...');
-      const response = await axios.post('http://localhost:4008/api/results', cleanObject(payload), {
+      const response = await axios.post('http://localhost:4008/api/results', payload, {
         headers: {
           'Content-Type': 'application/json',
         },
@@ -163,7 +154,7 @@ export class ResultSenderService {
 
       // Verifica se a resposta existe e se contém dados
       if (response && response.data) {
-        logger.info('Resposta do servidor:', JSON.stringify(response.data));
+        logger.info('Resposta do servidor:', JSON.stringify(response.data, replacerFunc()));
 
         if (response.status === 200) {
           logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
