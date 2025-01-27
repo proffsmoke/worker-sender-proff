@@ -82,61 +82,65 @@ export class ResultSenderService {
 
       logger.info(`Encontrados ${emailQueues.length} registros para processar.`);
 
-      // Processa cada registro
+      // Agrupa os resultados por uuid
+      const resultsByUuid: { [uuid: string]: ResultItem[] } = {};
+
       for (const emailQueue of emailQueues) {
-        logger.info('Processando emailQueue:', cleanObject(emailQueue));
-        await this.sendResults(emailQueue);
-        await new Promise((resolve) => setTimeout(resolve, 1000)); // Delay entre envios
+        const { uuid, queueIds } = emailQueue;
+
+        // Filtra os resultados válidos
+        const filteredQueueIds = queueIds.filter((q: QueueItem) => q.success != null);
+        const results: ResultItem[] = filteredQueueIds.map((q: QueueItem) => ({
+          queueId: q.queueId,
+          email: q.email,
+          success: q.success!,
+        }));
+
+        // Agrupa os resultados por uuid
+        if (!resultsByUuid[uuid]) {
+          resultsByUuid[uuid] = [];
+        }
+        resultsByUuid[uuid].push(...results);
+      }
+
+      // Envia os resultados agrupados por uuid
+      for (const [uuid, results] of Object.entries(resultsByUuid)) {
+        logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
+        logger.info('Resultados a serem enviados:', cleanObject(results));
+
+        if (results.length === 0) {
+          logger.warn(`Nenhum resultado válido encontrado para enviar: uuid=${uuid}`);
+          continue;
+        }
+
+        try {
+          // Constrói o payload seguro (sem referências circulares)
+          const payload = {
+            uuid,
+            results,
+          };
+
+          logger.info('Payload:', cleanObject(payload));
+
+          // Envia os resultados para o servidor
+          const response = await axios.post('http://localhost:4008/api/results', payload);
+
+          if (response.status === 200) {
+            logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
+            // Marca o registro como enviado no banco de dados
+            await EmailQueueModel.updateMany({ uuid }, { $set: { resultSent: true } });
+            logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
+          } else {
+            logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
+          }
+        } catch (error) {
+          logger.error('Erro ao enviar resultados:', error);
+        }
       }
     } catch (error) {
       logger.error('Erro ao processar resultados:', error);
     } finally {
       this.isSending = false;
-    }
-  }
-
-  // Envia os resultados para o servidor
-  private async sendResults(emailQueue: EmailQueue): Promise<void> {
-    const { uuid, queueIds } = emailQueue;
-
-    // Filtra os resultados válidos
-    const filteredQueueIds = queueIds.filter((q: QueueItem) => q.success != null);
-    const results: ResultItem[] = filteredQueueIds.map((q: QueueItem) => ({
-      queueId: q.queueId,
-      email: q.email,
-      success: q.success!,
-    }));
-
-    logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
-    logger.info('Resultados a serem enviados:', cleanObject(results));
-
-    if (results.length === 0) {
-      logger.warn(`Nenhum resultado válido encontrado para enviar: uuid=${uuid}`);
-      return;
-    }
-
-    try {
-      // Constrói o payload seguro (sem referências circulares)
-      const payload = {
-        uuid,
-        results: results.map(r => ({ queueId: r.queueId, email: r.email, success: r.success })),
-      };
-
-      logger.info('Payload:', cleanObject(payload));
-
-      // Envia os resultados para o servidor
-      const response = await axios.post('http://localhost:4008/api/results', payload);
-
-      if (response.status === 200) {
-        logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
-        // Marca o registro como enviado no banco de dados
-        await EmailQueueModel.updateOne({ uuid }, { $set: { resultSent: true } });
-        logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
-      } else {
-        logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
-      }
-    } catch (error) {
-      logger.error('Erro ao enviar resultados:', error);
     }
   }
 }
