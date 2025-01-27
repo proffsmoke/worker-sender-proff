@@ -226,7 +226,7 @@ export class ResultSenderService {
       if (errorDetails.response?.status === 404) {
         logger.warn(`Recurso não encontrado (404) para uuid: ${uuid}. Mensagem do servidor: "${errorDetails.response.data?.message || 'Nenhuma mensagem informada.'}"`);
       } else if (errorDetails.code === 'ECONNREFUSED') {
-        logger.error(`Servidor indisponível: ${errorDetails.message}`);
+        logger.error(`Servidor indisponível: ${errorDetails}`);
       } else {
         logger.error(`Falha no envio: ${uuid}`, {
           error: truncatedError,
