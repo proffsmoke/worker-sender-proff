@@ -1,3 +1,4 @@
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios';
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
 
@@ -22,25 +23,35 @@ interface ResultItem {
 }
 
 const DOMAINS = ['http://localhost:4008'];
-let currentDomainIndex = 0;
 
-function getErrorDetails(error: unknown): { message: string; stack?: string } {
-  if (error instanceof Error) {
-    return {
-      message: error.message,
-      stack: error.stack
-    };
+class DomainStrategy {
+  private domains: string[];
+  private currentIndex: number;
+
+  constructor(domains: string[]) {
+    this.domains = domains;
+    this.currentIndex = 0;
   }
-  return {
-    message: 'Erro desconhecido'
-  };
+
+  public getNextDomain(): string {
+    const domain = this.domains[this.currentIndex];
+    this.currentIndex = (this.currentIndex + 1) % this.domains.length;
+    return domain;
+  }
 }
 
 export class ResultSenderService {
   private interval: NodeJS.Timeout | null = null;
   private isSending: boolean = false;
+  private domainStrategy: DomainStrategy;
+  private axiosInstance: AxiosInstance;
 
   constructor() {
+    this.domainStrategy = new DomainStrategy(DOMAINS);
+    this.axiosInstance = axios.create({
+      timeout: 8000,
+      headers: { 'Content-Type': 'application/json' },
+    });
     this.start();
   }
 
@@ -104,7 +115,7 @@ export class ResultSenderService {
         await this.sendResults(uuid, results);
       }
     } catch (error) {
-      const { message, stack } = getErrorDetails(error);
+      const { message, stack } = this.getErrorDetails(error);
       logger.error(`Erro ao processar resultados: ${message}`, { stack });
     } finally {
       this.isSending = false;
@@ -124,33 +135,15 @@ export class ResultSenderService {
         })),
       };
 
-      const currentDomain = DOMAINS[currentDomainIndex];
-      currentDomainIndex = (currentDomainIndex + 1) % DOMAINS.length;
+      const currentDomain = this.domainStrategy.getNextDomain();
+      const url = `${currentDomain}/results`;
 
-      // URL corrigida
-      
-      const controller = new AbortController();
-      const xd = {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      };
-
-      const url = `${currentDomain}/results/${xd}`;
-      
       logger.info(`Enviando para: ${url}`);
 
-     
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-      
-      const response = await fetch(url, xd);
+      const response = await this.axiosInstance.post(url, payload);
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText.slice(0, 200)}...`);
+      if (response.status !== 200) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       await EmailQueueModel.updateMany(
@@ -166,7 +159,7 @@ export class ResultSenderService {
       logger.info(`Sucesso no envio: ${uuid} (${results.length} resultados)`);
 
     } catch (error) {
-      const errorDetails = getErrorDetails(error);
+      const errorDetails = this.getErrorDetails(error);
       const truncatedError = errorDetails.message.slice(0, 200);
       
       logger.error(`Falha no envio: ${uuid}`, {
@@ -185,6 +178,18 @@ export class ResultSenderService {
         }
       );
     }
+  }
+
+  private getErrorDetails(error: unknown): { message: string; stack?: string } {
+    if (error instanceof Error) {
+      return {
+        message: error.message,
+        stack: error.stack
+      };
+    }
+    return {
+      message: 'Erro desconhecido'
+    };
   }
 }
 
