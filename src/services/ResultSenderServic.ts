@@ -24,15 +24,26 @@ interface ResultItem {
 // Função utilitária para limpar objetos de referências circulares
 function cleanObject(obj: any): any {
   const seen = new WeakSet();
-  return JSON.parse(JSON.stringify(obj, (key, value) => {
+
+  const replacer = (key: string, value: any) => {
     if (typeof value === 'object' && value !== null) {
       if (seen.has(value)) {
-        return; // Remove referências circulares
+        logger.warn(`Referência circular detectada na chave: ${key}`);
+        return '[Circular Reference]';
       }
       seen.add(value);
     }
     return value;
-  }));
+  };
+
+  try {
+    const cleaned = JSON.parse(JSON.stringify(obj, replacer));
+    logger.info('Objeto limpo com sucesso:', cleaned);
+    return cleaned;
+  } catch (error) {
+    logger.error('Erro ao limpar objeto:', error);
+    return null;
+  }
 }
 
 // Serviço para enviar resultados
@@ -74,7 +85,7 @@ export class ResultSenderService {
     this.isSending = true;
 
     try {
-      // Busca registros no banco de dados que precisam ser processados
+      logger.info('Iniciando busca de registros no banco de dados...');
       const emailQueues = await EmailQueueModel.find({
         'queueIds.success': { $exists: true, $ne: null },
         resultSent: false,
@@ -87,6 +98,7 @@ export class ResultSenderService {
 
       for (const emailQueue of emailQueues) {
         const { uuid, queueIds } = emailQueue;
+        logger.info(`Processando emailQueue com uuid: ${uuid}`);
 
         // Filtra os resultados válidos
         const filteredQueueIds = queueIds.filter((q: QueueItem) => q.success != null);
@@ -96,12 +108,16 @@ export class ResultSenderService {
           success: q.success!,
         }));
 
+        logger.info(`Filtrados ${results.length} resultados válidos para uuid: ${uuid}`);
+
         // Agrupa os resultados por uuid
         if (!resultsByUuid[uuid]) {
           resultsByUuid[uuid] = [];
         }
         resultsByUuid[uuid].push(...results);
       }
+
+      logger.info('Resultados agrupados por uuid:', cleanObject(resultsByUuid));
 
       // Envia os resultados agrupados por uuid
       for (const [uuid, results] of Object.entries(resultsByUuid)) {
@@ -120,9 +136,10 @@ export class ResultSenderService {
             results,
           };
 
-          logger.info('Payload:', cleanObject(payload));
+          logger.info('Payload construído:', cleanObject(payload));
 
           // Envia os resultados para o servidor
+          logger.info('Enviando payload para o servidor...');
           const response = await axios.post('http://localhost:4008/api/results', payload);
 
           if (response.status === 200) {
@@ -141,6 +158,7 @@ export class ResultSenderService {
       logger.error('Erro ao processar resultados:', error);
     } finally {
       this.isSending = false;
+      logger.info('Processamento de resultados concluído.');
     }
   }
 }
