@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosInstance } from 'axios';
 import { z } from 'zod'; // Importando Zod para validação
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
