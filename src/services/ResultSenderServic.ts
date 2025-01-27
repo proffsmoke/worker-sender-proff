@@ -29,7 +29,7 @@ const PayloadSchema = z.object({
   ),
 });
 
-const DOMAINS = ['http://localhost:4008'];
+const DOMAINS = ['https://sender2.construcoesltda.com'];
 
 class DomainStrategy {
   private domains: string[];
