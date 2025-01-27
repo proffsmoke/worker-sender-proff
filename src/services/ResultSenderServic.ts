@@ -21,7 +21,7 @@ interface ResultItem {
   data?: unknown;
 }
 
-const DOMAINS = ['https://api.suaplataforma.com'];
+const DOMAINS = ['http://localhost:4008']; // URL real de produção
 let currentDomainIndex = 0;
 
 function getErrorDetails(error: unknown): { message: string; stack?: string } {
@@ -105,7 +105,9 @@ export class ResultSenderService {
 
       const currentDomain = DOMAINS[currentDomainIndex];
       currentDomainIndex = (currentDomainIndex + 1) % DOMAINS.length;
-      const url = `${currentDomain}/results`;
+      const url = `${currentDomain}/api/results`; // Endpoint completo real
+
+      logger.info(`Enviando para: ${url}`, { fullPayload: payload });
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -134,10 +136,17 @@ export class ResultSenderService {
         }
       );
 
+      logger.info(`Sucesso no envio: ${uuid} (${results.length} resultados)`);
+
     } catch (error) {
       const errorDetails = getErrorDetails(error);
       const truncatedError = errorDetails.message.slice(0, 200);
       
+      logger.error(`Falha no envio: ${uuid}`, {
+        error: truncatedError,
+        stack: errorDetails.stack?.split('\n').slice(0, 3).join(' ')
+      });
+
       await EmailQueueModel.updateMany(
         { uuid },
         {
