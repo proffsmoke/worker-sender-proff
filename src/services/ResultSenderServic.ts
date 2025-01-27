@@ -21,14 +21,13 @@ interface ResultItem {
   success: boolean;
 }
 
-// Função utilitária para evitar referências circulares
+// Função utilitária para lidar com referências circulares no JSON.stringify
 const replacerFunc = () => {
   const visited = new WeakSet();
   return (key: string, value: any) => {
     if (typeof value === "object" && value !== null) {
       if (visited.has(value)) {
-        logger.warn(`Referência circular detectada na chave: ${key}`);
-        return '[Circular Reference]';
+        return; // Evita referências circulares
       }
       visited.add(value);
     }
@@ -122,7 +121,7 @@ export class ResultSenderService {
         await this.sendResults(uuid, results);
       }
     } catch (error) {
-      logger.error('Erro ao processar resultados:', error);
+      logger.error('Erro ao processar resultados:', JSON.stringify(error, replacerFunc()));
     } finally {
       this.isSending = false;
       logger.info('Processamento de resultados concluído.');
@@ -168,7 +167,7 @@ export class ResultSenderService {
         logger.error('Resposta do servidor inválida ou sem dados.');
       }
     } catch (error) {
-      logger.error('Erro ao enviar resultados:', error);
+      logger.error('Erro ao enviar resultados:', JSON.stringify(error, replacerFunc()));
     }
   }
 }
