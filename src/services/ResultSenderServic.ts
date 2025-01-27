@@ -127,17 +127,11 @@ export class ResultSenderService {
       const currentDomain = DOMAINS[currentDomainIndex];
       currentDomainIndex = (currentDomainIndex + 1) % DOMAINS.length;
 
-      // URL corrigida (única alteração significativa)
-      const url = `${currentDomain}/api/results`;
+      // URL corrigida
+      const url = `${currentDomain}/results`;
 
       logger.info(`Enviando para: ${url}`, {
-        fullPayload: {
-          ...payload,
-          results: payload.results.map(r => ({
-            ...r,
-            data: typeof r.data === 'object' ? JSON.stringify(r.data).slice(0, 100) + '...' : r.data
-          }))
-        }
+        fullPayload: payload, // Log corrigido
       });
 
       const controller = new AbortController();
