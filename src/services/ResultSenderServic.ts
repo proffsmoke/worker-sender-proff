@@ -72,7 +72,7 @@ export class ResultSenderService {
   constructor() {
     this.domainStrategy = new DomainStrategy(DOMAINS);
     this.axiosInstance = axios.create({
-      timeout: 8000,
+      timeout: 15000, // Aumente o timeout para 15 segundos
       headers: { 'Content-Type': 'application/json' },
     });
     this.start();
@@ -225,24 +225,19 @@ export class ResultSenderService {
       // Verifica se a resposta tem um status 404 para tratar de forma diferente
       if (errorDetails.response?.status === 404) {
         logger.warn(`Recurso não encontrado (404) para uuid: ${uuid}. Mensagem do servidor: "${errorDetails.response.data?.message || 'Nenhuma mensagem informada.'}"`);
-      }
-
-      // Log de erro padrão
-      logger.error(`Falha no envio: ${uuid}`, {
-        error: truncatedError,
-        stack: errorDetails.stack?.split('\n').slice(0, 3).join(' '),
-        // Adicionando mais detalhes do erro de forma segura (sem circularidade)
-        ...(errorDetails.response && {
-          response: {
+      } else if (errorDetails.code === 'ECONNREFUSED') {
+        logger.error(`Servidor indisponível: ${errorDetails.message}`);
+      } else {
+        logger.error(`Falha no envio: ${uuid}`, {
+          error: truncatedError,
+          stack: errorDetails.stack?.split('\n').slice(0, 3).join(' '),
+          response: errorDetails.response ? {
             status: errorDetails.response.status,
             statusText: errorDetails.response.statusText,
-            headers: errorDetails.response.headers,
             data: errorDetails.response.data,
-          }
-        }),
-        // Evitar logar 'request' por completo, pois pode conter estruturas circulares
-        ...(errorDetails.request && { request: util.inspect(errorDetails.request, { depth: 2 }) }),
-      });
+          } : undefined,
+        });
+      }
 
       // 6) Atualiza o registro no banco com informações de erro
       try {
@@ -251,7 +246,6 @@ export class ResultSenderService {
           {
             $set: {
               lastError: truncatedError,
-              // Armazena uma parte do erro (500 caracteres) para evitar grandes blobs
               errorDetails: JSON.stringify({
                 message: errorDetails.message,
                 responseData: errorDetails.response?.data,
@@ -289,13 +283,11 @@ export class ResultSenderService {
         message: error.message,
         stack: error.stack,
         code: error.code,
-        // Vamos filtrar apenas alguns campos do config para evitar logs gigantes
         config: {
           method: error.config?.method,
           url: error.config?.url,
           headers: error.config?.headers,
         },
-        // Não logamos 'data' do config pra evitar duplicação ou circularidade
         request: error.request,
         response: error.response
           ? {
