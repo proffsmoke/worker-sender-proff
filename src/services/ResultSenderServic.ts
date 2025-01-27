@@ -124,7 +124,12 @@ export class ResultSenderService {
         await this.sendResults(uuid, results);
       }
     } catch (error) {
-      logger.error('Erro ao processar resultados:', stringify(error, replacerFunc(), 2));
+      // Trata erros desconhecidos
+      if (error instanceof Error) {
+        logger.error('Erro ao processar resultados:', stringify(error.message, replacerFunc(), 2));
+      } else {
+        logger.error('Erro desconhecido ao processar resultados:', stringify(error, replacerFunc(), 2));
+      }
     } finally {
       this.isSending = false;
       logger.info('Processamento de resultados concluído.');
@@ -176,12 +181,29 @@ export class ResultSenderService {
     } catch (error) {
       // Exibe detalhes do erro
       logger.error('Erro ao enviar resultados:', stringify(error, replacerFunc(), 2));
-      if (error.response) {
-        logger.error('Detalhes da resposta do servidor:', stringify(error.response.data, replacerFunc(), 2));
-      } else if (error.request) {
-        logger.error('Requisição feita, mas sem resposta do servidor:', stringify(error.request, replacerFunc(), 2));
-      } else {
-        logger.error('Erro ao configurar a requisição:', stringify(error.message, replacerFunc(), 2));
+
+      // Verifica se o erro é do tipo AxiosError
+      if (axios.isAxiosError(error)) {
+        // Erro relacionado à resposta do servidor
+        if (error.response) {
+          logger.error('Detalhes da resposta do servidor:', stringify(error.response.data, replacerFunc(), 2));
+        }
+        // Erro relacionado à requisição feita, mas sem resposta
+        else if (error.request) {
+          logger.error('Requisição feita, mas sem resposta do servidor:', stringify(error.request, replacerFunc(), 2));
+        }
+        // Erro ao configurar a requisição
+        else {
+          logger.error('Erro ao configurar a requisição:', stringify(error.message, replacerFunc(), 2));
+        }
+      }
+      // Se não for um erro do Axios, trata como um erro genérico
+      else if (error instanceof Error) {
+        logger.error('Erro genérico:', stringify(error.message, replacerFunc(), 2));
+      }
+      // Caso o erro seja de um tipo desconhecido
+      else {
+        logger.error('Erro desconhecido:', stringify(error, replacerFunc(), 2));
       }
     }
   }
