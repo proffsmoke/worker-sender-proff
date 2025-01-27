@@ -84,17 +84,35 @@ export class ResultSenderService {
   private async processResults(): Promise<void> {
     if (this.isSending) return;
     this.isSending = true;
-  
+
     try {
-      // Gera dados fake para teste
-      const uuid = '0529790e-7fc5-45b8-8f54-df42306e433d';
-      const results: ResultItem[] = [
-        { queueId: 'E77CC40AE3', email: 'proff@yopmail.com', success: true },
-        { queueId: 'ECA7340AE6', email: 'proff2@yopmail.com', success: false },
-      ];
-  
-      logger.info('Usando dados fake para teste.');
-      await this.validateAndSendResults(uuid, results);
+      const emailQueues = await EmailQueueModel.find({
+        'queueIds.success': { $exists: true, $ne: null },
+        resultSent: false,
+      }).lean();
+
+      const resultsByUuid: Record<string, ResultItem[]> = {};
+
+      for (const emailQueue of emailQueues) {
+        const { uuid, queueIds } = emailQueue;
+        const validQueueIds = queueIds.filter((q: QueueItem) => q.success !== null);
+
+        resultsByUuid[uuid] = [
+          ...(resultsByUuid[uuid] || []),
+          ...validQueueIds.map((q: QueueItem) => ({
+            queueId: q.queueId,
+            email: q.email,
+            success: q.success!,
+            data: q.data,
+          })),
+        ];
+      }
+
+      for (const [uuid, results] of Object.entries(resultsByUuid)) {
+        if (results.length > 0) {
+          await this.validateAndSendResults(uuid, results);
+        }
+      }
     } catch (error) {
       const { message, stack } = this.getErrorDetails(error);
       logger.error(`Erro ao processar resultados: ${message}`, { stack });
@@ -102,7 +120,6 @@ export class ResultSenderService {
       this.isSending = false;
     }
   }
-  
 
   private async validateAndSendResults(uuid: string, results: ResultItem[]): Promise<void> {
     try {
