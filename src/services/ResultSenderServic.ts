@@ -161,16 +161,20 @@ export class ResultSenderService {
         },
       });
 
-      // Corrigido: Usar response.data em vez de response
-      logger.info('Resposta do servidor:', JSON.stringify(response.data));
+      // Verifica se a resposta existe e se contém dados
+      if (response && response.data) {
+        logger.info('Resposta do servidor:', JSON.stringify(response.data));
 
-      if (response.status === 200) {
-        logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
-        // Marca o registro como enviado no banco de dados
-        await EmailQueueModel.updateMany({ uuid }, { $set: { resultSent: true } });
-        logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
+        if (response.status === 200) {
+          logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
+          // Marca o registro como enviado no banco de dados
+          await EmailQueueModel.updateMany({ uuid }, { $set: { resultSent: true } });
+          logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
+        } else {
+          logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
+        }
       } else {
-        logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
+        logger.error('Resposta do servidor inválida ou sem dados.');
       }
     } catch (error) {
       logger.error('Erro ao enviar resultados:', error);
