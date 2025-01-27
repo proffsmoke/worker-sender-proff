@@ -109,7 +109,7 @@ export class ResultSenderService {
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
-
+      logger.info(`url: `, url);
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
