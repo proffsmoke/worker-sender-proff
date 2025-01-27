@@ -159,8 +159,8 @@ export class ResultSenderService {
 
   private async validateAndSendResults(uuid: string, results: ResultItem[]): Promise<void> {
     logger.info(`Validando e enviando resultados para o uuid: ${uuid}`);
-    logger.debug('Resultados a serem enviados:', { uuid, results });
-
+    logger.debug('Resultados a serem enviados:', JSON.stringify({ uuid, results }, null, 2));
+  
     try {
       // 1) Montar o payload
       const payload = {
@@ -174,36 +174,36 @@ export class ResultSenderService {
           })),
         },
       };
-
+  
       logger.info('Payload construído com sucesso.');
-      logger.debug('Payload construído:', { payload });
-
+      logger.debug('Payload construído:', JSON.stringify(payload, null, 2));
+  
       // 2) Validar com Zod
       const validatedPayload = PayloadSchema.safeParse(payload);
       if (!validatedPayload.success) {
-        logger.error('Validação do payload falhou.', { errors: validatedPayload.error.errors });
+        logger.error('Validação do payload falhou.', JSON.stringify(validatedPayload.error.errors, null, 2));
         throw new Error(`Payload inválido: ${validatedPayload.error.message}`);
       }
-
+  
       logger.info('Payload validado com sucesso.');
-
+  
       // 3) Selecionar domínio e enviar
       const currentDomain = this.domainStrategy.getNextDomain();
       const url = `${currentDomain}/api/results`;
-
+  
       logger.info(`Enviando payload para: ${url}`);
-      logger.debug('Payload enviado:', { payload: validatedPayload.data });
-
+      logger.debug('Payload enviado:', JSON.stringify(validatedPayload.data, null, 2));
+  
       const response = await this.axiosInstance.post(url, validatedPayload.data);
-
+  
       logger.info(`Resposta recebida: Status ${response.status} - ${response.statusText}`);
-      logger.debug('Dados da resposta:', { data: response.data });
-
+      logger.debug('Dados da resposta:', JSON.stringify(response.data, null, 2));
+  
       // Se a resposta não for 200, lançar erro (tratado no catch)
       if (response.status !== 200) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-
+  
       // 4) Atualizar registro como enviado
       const updateResult = await EmailQueueModel.updateMany(
         { uuid },
@@ -214,19 +214,19 @@ export class ResultSenderService {
           },
         },
       );
-
+  
       // Logar quantidade de registros modificados
       logger.info(`Sucesso no envio: ${uuid} (${results.length} resultados). Registros atualizados: ${updateResult.modifiedCount}`);
     } catch (error) {
       // 5) Lidar com erros (incluindo 404, 500, etc.)
       const errorDetails = this.getAxiosErrorDetails(error);
       const truncatedError = errorDetails.message.slice(0, 200);
-
+  
       // Verifica se a resposta tem um status 404 para tratar de forma diferente
       if (errorDetails.response?.status === 404) {
         logger.warn(`Recurso não encontrado (404) para uuid: ${uuid}. Mensagem do servidor: "${errorDetails.response.data?.message || 'Nenhuma mensagem informada.'}"`);
       } else if (errorDetails.code === 'ECONNREFUSED') {
-        logger.error(`Servidor indisponível: ${errorDetails}`);
+        logger.error(`Servidor indisponível: ${errorDetails.message}`);
       } else {
         logger.error(`Falha no envio: ${uuid}`, {
           error: truncatedError,
@@ -234,11 +234,11 @@ export class ResultSenderService {
           response: errorDetails.response ? {
             status: errorDetails.response.status,
             statusText: errorDetails.response.statusText,
-            data: errorDetails.response.data,
+            data: JSON.stringify(errorDetails.response.data, null, 2),
           } : undefined,
         });
       }
-
+  
       // 6) Atualiza o registro no banco com informações de erro
       try {
         await EmailQueueModel.updateMany(
