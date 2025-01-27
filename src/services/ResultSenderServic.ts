@@ -162,6 +162,7 @@ export class ResultSenderService {
     logger.debug('Resultados a serem enviados:', { uuid, results });
 
     try {
+      // 1) Montar o payload
       const payload = {
         fullPayload: {
           uuid,
@@ -177,9 +178,8 @@ export class ResultSenderService {
       logger.info('Payload construído com sucesso.');
       logger.debug('Payload construído:', { payload });
 
-      // Validação do payload com Zod
+      // 2) Validar com Zod
       const validatedPayload = PayloadSchema.safeParse(payload);
-
       if (!validatedPayload.success) {
         logger.error('Validação do payload falhou.', { errors: validatedPayload.error.errors });
         throw new Error(`Payload inválido: ${validatedPayload.error.message}`);
@@ -187,6 +187,7 @@ export class ResultSenderService {
 
       logger.info('Payload validado com sucesso.');
 
+      // 3) Selecionar domínio e enviar
       const currentDomain = this.domainStrategy.getNextDomain();
       const url = `${currentDomain}/api/results`;
 
@@ -198,11 +199,12 @@ export class ResultSenderService {
       logger.info(`Resposta recebida: Status ${response.status} - ${response.statusText}`);
       logger.debug('Dados da resposta:', { data: response.data });
 
+      // Se a resposta não for 200, lançar erro (tratado no catch)
       if (response.status !== 200) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      // Atualizando os registros como enviados
+      // 4) Atualizar registro como enviado
       const updateResult = await EmailQueueModel.updateMany(
         { uuid },
         {
@@ -213,18 +215,24 @@ export class ResultSenderService {
         },
       );
 
-      // Correção aplicada aqui:
+      // Logar quantidade de registros modificados
       logger.info(`Sucesso no envio: ${uuid} (${results.length} resultados). Registros atualizados: ${updateResult.modifiedCount}`);
     } catch (error) {
+      // 5) Lidar com erros (incluindo 404, 500, etc.)
       const errorDetails = this.getAxiosErrorDetails(error);
       const truncatedError = errorDetails.message.slice(0, 200);
 
-      // Usando util.inspect para evitar erros de circularidade
+      // Verifica se a resposta tem um status 404 para tratar de forma diferente
+      if (errorDetails.response?.status === 404) {
+        logger.warn(`Recurso não encontrado (404) para uuid: ${uuid}. Mensagem do servidor: "${errorDetails.response.data?.message || 'Nenhuma mensagem informada.'}"`);
+      }
+
+      // Log de erro padrão
       logger.error(`Falha no envio: ${uuid}`, {
         error: truncatedError,
         stack: errorDetails.stack?.split('\n').slice(0, 3).join(' '),
-        // Adicionando mais detalhes do erro de forma segura
-        ...(errorDetails.response && { 
+        // Adicionando mais detalhes do erro de forma segura (sem circularidade)
+        ...(errorDetails.response && {
           response: {
             status: errorDetails.response.status,
             statusText: errorDetails.response.statusText,
@@ -232,16 +240,22 @@ export class ResultSenderService {
             data: errorDetails.response.data,
           }
         }),
+        // Evitar logar 'request' por completo, pois pode conter estruturas circulares
         ...(errorDetails.request && { request: util.inspect(errorDetails.request, { depth: 2 }) }),
       });
 
+      // 6) Atualiza o registro no banco com informações de erro
       try {
         await EmailQueueModel.updateMany(
           { uuid },
           {
             $set: {
               lastError: truncatedError,
-              errorDetails: JSON.stringify(errorDetails).slice(0, 500),
+              // Armazena uma parte do erro (500 caracteres) para evitar grandes blobs
+              errorDetails: JSON.stringify({
+                message: errorDetails.message,
+                responseData: errorDetails.response?.data,
+              }).slice(0, 500),
             },
             $inc: { retryCount: 1 },
           },
@@ -275,14 +289,22 @@ export class ResultSenderService {
         message: error.message,
         stack: error.stack,
         code: error.code,
-        config: error.config,
+        // Vamos filtrar apenas alguns campos do config para evitar logs gigantes
+        config: {
+          method: error.config?.method,
+          url: error.config?.url,
+          headers: error.config?.headers,
+        },
+        // Não logamos 'data' do config pra evitar duplicação ou circularidade
         request: error.request,
-        response: error.response ? {
-          status: error.response.status,
-          statusText: error.response.statusText,
-          headers: error.response.headers,
-          data: error.response.data,
-        } : undefined,
+        response: error.response
+          ? {
+              status: error.response.status,
+              statusText: error.response.statusText,
+              headers: error.response.headers,
+              data: error.response.data,
+            }
+          : undefined,
       };
     } else {
       return this.getErrorDetails(error);
