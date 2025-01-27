@@ -1,23 +1,13 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosInstance } from 'axios';
 import { z } from 'zod';
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
-import util from 'util';
 
 interface QueueItem {
   queueId: string;
   email: string;
   success: boolean | null;
   data?: unknown;
-}
-
-interface EmailQueue {
-  uuid: string;
-  queueIds: QueueItem[];
-  resultSent: boolean;
-  lastError?: string;
-  errorDetails?: string;
-  retryCount?: number;
 }
 
 interface ResultItem {
@@ -27,16 +17,16 @@ interface ResultItem {
   data?: unknown;
 }
 
-const ResultItemSchema = z.object({
-  queueId: z.string(),
-  email: z.string().email(),
-  success: z.boolean(),
-  data: z.unknown().optional(),
-});
-
 const PayloadSchema = z.object({
-  uuid: z.string(),
-  results: z.array(ResultItemSchema),
+  uuid: z.string().uuid(), // Validação de UUID
+  results: z.array(
+    z.object({
+      queueId: z.string(),
+      email: z.string().email(), // Validação de e-mail
+      success: z.boolean(),
+      data: z.unknown().optional(),
+    })
+  ),
 });
 
 const DOMAINS = ['http://localhost:4008'];
@@ -114,7 +104,7 @@ export class ResultSenderService {
             email: q.email,
             success: q.success!,
             data: q.data,
-          }))
+          })),
         ];
       }
 
@@ -133,26 +123,19 @@ export class ResultSenderService {
 
   private async validateAndSendResults(uuid: string, results: ResultItem[]): Promise<void> {
     try {
-      const payload = {
-        uuid,
-        results: results.map(r => ({
-          queueId: r.queueId,
-          email: r.email,
-          success: r.success,
-          data: r.data,
-        })),
-      };
+      const payload = { uuid, results };
 
       const validatedPayload = PayloadSchema.safeParse(payload);
       if (!validatedPayload.success) {
-        logger.error('Validação falhou:', validatedPayload.error);
-        throw new Error(`Payload inválido: ${validatedPayload.error}`);
+        const validationError = validatedPayload.error.format();
+        logger.error('Falha na validação do payload:', validationError);
+        throw new Error(`Payload inválido: ${JSON.stringify(validationError)}`);
       }
 
       const currentDomain = this.domainStrategy.getNextDomain();
       const url = `${currentDomain}/api/results`;
 
-      logger.info(`Enviando para: ${url}`, payload);
+      logger.info(`Enviando para: ${url}`, validatedPayload.data);
       const response = await this.axiosInstance.post(url, validatedPayload.data);
 
       await EmailQueueModel.updateMany(
@@ -183,7 +166,7 @@ export class ResultSenderService {
   }
 
   private getErrorDetails(error: unknown): { message: string; stack?: string } {
-    return error instanceof Error 
+    return error instanceof Error
       ? { message: error.message, stack: error.stack }
       : { message: 'Erro desconhecido' };
   }
