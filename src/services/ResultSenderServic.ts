@@ -145,7 +145,7 @@ export class ResultSenderService {
       // Limpa o payload de referências circulares
       const cleanedPayload = JSON.parse(JSON.stringify(payload, replacerFunc()));
 
-      logger.info('Payload construído:', cleanedPayload);
+      logger.info('Payload construído:', JSON.stringify(cleanedPayload, replacerFunc()));
 
       // Envia os resultados para o servidor
       logger.info('Enviando payload para o servidor...');
