@@ -21,14 +21,19 @@ interface ResultItem {
   data?: unknown;
 }
 
-const DOMAINS = ['http://localhost:4008']; // URL real de produção
+const DOMAINS = ['http://localhost:4008'];
 let currentDomainIndex = 0;
 
 function getErrorDetails(error: unknown): { message: string; stack?: string } {
   if (error instanceof Error) {
-    return { message: error.message, stack: error.stack };
+    return {
+      message: error.message,
+      stack: error.stack
+    };
   }
-  return { message: 'Erro desconhecido' };
+  return {
+    message: 'Erro desconhecido'
+  };
 }
 
 export class ResultSenderService {
@@ -40,31 +45,46 @@ export class ResultSenderService {
   }
 
   public start(): void {
-    if (this.interval) return;
+    if (this.interval) {
+      logger.warn('O serviço ResultSenderService já está em execução.');
+      return;
+    }
+
     this.interval = setInterval(() => this.processResults(), 10000);
+    logger.info('ResultSenderService iniciado.');
   }
 
   public stop(): void {
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
+      logger.info('ResultSenderService parado.');
     }
   }
 
   private async processResults(): Promise<void> {
-    if (this.isSending) return;
+    if (this.isSending) {
+      logger.info('ResultSenderService já está processando resultados. Aguardando...');
+      return;
+    }
+
     this.isSending = true;
 
     try {
+      logger.info('Iniciando busca de registros no banco de dados...');
       const emailQueues = await EmailQueueModel.find({
         'queueIds.success': { $exists: true, $ne: null },
         resultSent: false,
       });
 
+      logger.info(`Encontrados ${emailQueues.length} registros para processar.`);
+
       const resultsByUuid: Record<string, ResultItem[]> = {};
 
       for (const emailQueue of emailQueues) {
         const { uuid, queueIds } = emailQueue;
+        logger.info(`Processando emailQueue com uuid: ${uuid}`);
+
         const results: ResultItem[] = queueIds
           .filter((q: QueueItem) => q.success !== null)
           .map((q: QueueItem) => ({
@@ -88,6 +108,7 @@ export class ResultSenderService {
       logger.error(`Erro ao processar resultados: ${message}`, { stack });
     } finally {
       this.isSending = false;
+      logger.info('Processamento de resultados concluído.');
     }
   }
 
@@ -105,11 +126,23 @@ export class ResultSenderService {
 
       const currentDomain = DOMAINS[currentDomainIndex];
       currentDomainIndex = (currentDomainIndex + 1) % DOMAINS.length;
-      const url = `${currentDomain}/api/results/${JSON.stringify(payload)}`; // Endpoint completo real
+
+      // URL corrigida (única alteração significativa)
+      const url = `${currentDomain}/api/results`;
+
+      logger.info(`Enviando para: ${url}`, {
+        fullPayload: {
+          ...payload,
+          results: payload.results.map(r => ({
+            ...r,
+            data: typeof r.data === 'object' ? JSON.stringify(r.data).slice(0, 100) + '...' : r.data
+          }))
+        }
+      });
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
-      logger.info(`url: `, url);
+
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
