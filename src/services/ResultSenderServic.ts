@@ -2,6 +2,7 @@ import axios, { AxiosInstance, AxiosError } from 'axios';
 import { z } from 'zod'; // Importando Zod para validação
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
+import util from 'util'; // Importando util para inspect
 
 // Definição das interfaces
 interface QueueItem {
@@ -190,7 +191,7 @@ export class ResultSenderService {
       const url = `${currentDomain}/api/results`;
 
       logger.info(`Enviando payload para: ${url}`);
-      logger.debug('Payload enviado:', { payload: JSON.stringify(validatedPayload.data, null, 2) });
+      logger.debug('Payload enviado:', { payload: validatedPayload.data });
 
       const response = await this.axiosInstance.post(url, validatedPayload.data);
 
@@ -218,17 +219,20 @@ export class ResultSenderService {
       const errorDetails = this.getAxiosErrorDetails(error);
       const truncatedError = errorDetails.message.slice(0, 200);
 
+      // Usando util.inspect para evitar erros de circularidade
       logger.error(`Falha no envio: ${uuid}`, {
         error: truncatedError,
         stack: errorDetails.stack?.split('\n').slice(0, 3).join(' '),
-        // Adicionando mais detalhes do erro
-        ...(errorDetails.response && { response: {
-          status: errorDetails.response.status,
-          statusText: errorDetails.response.statusText,
-          headers: errorDetails.response.headers,
-          data: errorDetails.response.data,
-        }}),
-        ...(errorDetails.request && { request: errorDetails.request }),
+        // Adicionando mais detalhes do erro de forma segura
+        ...(errorDetails.response && { 
+          response: {
+            status: errorDetails.response.status,
+            statusText: errorDetails.response.statusText,
+            headers: errorDetails.response.headers,
+            data: errorDetails.response.data,
+          }
+        }),
+        ...(errorDetails.request && { request: util.inspect(errorDetails.request, { depth: 2 }) }),
       });
 
       try {
