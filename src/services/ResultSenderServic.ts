@@ -21,7 +21,7 @@ interface ResultItem {
 }
 
 // Domínios alternados
-const DOMAINS = ['http://localhost:4008', 'http://backup-server:4008'];
+const DOMAINS = ['http://localhost:4008'];
 let currentDomainIndex = 0;
 
 // Serviço para enviar resultados
