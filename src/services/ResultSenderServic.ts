@@ -38,7 +38,6 @@ function cleanObject(obj: any): any {
 
   try {
     const cleaned = JSON.parse(JSON.stringify(obj, replacer));
-    logger.info('Objeto limpo com sucesso:', cleaned);
     return cleaned;
   } catch (error) {
     logger.error('Erro ao limpar objeto:', error);
@@ -129,36 +128,49 @@ export class ResultSenderService {
           continue;
         }
 
-        try {
-          // Constrói o payload seguro (sem referências circulares)
-          const payload = {
-            uuid,
-            results,
-          };
-
-          logger.info('Payload construído:', cleanObject(payload));
-
-          // Envia os resultados para o servidor
-          logger.info('Enviando payload para o servidor...');
-          const response = await axios.post('http://localhost:4008/api/results', payload);
-
-          if (response.status === 200) {
-            logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
-            // Marca o registro como enviado no banco de dados
-            await EmailQueueModel.updateMany({ uuid }, { $set: { resultSent: true } });
-            logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
-          } else {
-            logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
-          }
-        } catch (error) {
-          logger.error('Erro ao enviar resultados:', error);
-        }
+        await this.sendResults(uuid, results);
       }
     } catch (error) {
       logger.error('Erro ao processar resultados:', error);
     } finally {
       this.isSending = false;
       logger.info('Processamento de resultados concluído.');
+    }
+  }
+
+  // Envia os resultados para o servidor
+  private async sendResults(uuid: string, results: ResultItem[]): Promise<void> {
+    try {
+      // Constrói o payload seguro (sem referências circulares)
+      const payload = {
+        uuid,
+        results: results.map(r => ({
+          queueId: r.queueId,
+          email: r.email,
+          success: r.success,
+        })),
+      };
+
+      logger.info('Payload construído:', cleanObject(payload));
+
+      // Envia os resultados para o servidor
+      logger.info('Enviando payload para o servidor...');
+      const response = await axios.post('http://localhost:4008/api/results', payload, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.status === 200) {
+        logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
+        // Marca o registro como enviado no banco de dados
+        await EmailQueueModel.updateMany({ uuid }, { $set: { resultSent: true } });
+        logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
+      } else {
+        logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
+      }
+    } catch (error) {
+      logger.error('Erro ao enviar resultados:', error);
     }
   }
 }
