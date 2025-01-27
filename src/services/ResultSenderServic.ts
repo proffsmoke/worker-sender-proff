@@ -128,7 +128,7 @@ export class ResultSenderService {
           continue;
         }
 
-        await this.sendResults(uuid, results);
+        await this.sendResults(uuid, cleanObject(results));
       }
     } catch (error) {
       logger.error('Erro ao processar resultados:', error);
@@ -155,7 +155,7 @@ export class ResultSenderService {
 
       // Envia os resultados para o servidor
       logger.info('Enviando payload para o servidor...');
-      const response = await axios.post('http://localhost:4008/api/results', payload, {
+      const response = await axios.post('http://localhost:4008/api/results', cleanObject(payload), {
         headers: {
           'Content-Type': 'application/json',
         },
