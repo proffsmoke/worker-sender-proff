@@ -108,12 +108,13 @@ export class ResultSenderService {
         resultsByUuid[uuid].push(...results);
       }
 
-      logger.info('Resultados agrupados por uuid:', stringify(resultsByUuid));
+      // Exibe os resultados agrupados
+      logger.info('Resultados agrupados por uuid:', stringify(resultsByUuid, replacerFunc(), 2));
 
       // Envia os resultados agrupados por uuid
       for (const [uuid, results] of Object.entries(resultsByUuid)) {
         logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
-        logger.info('Resultados a serem enviados:', stringify(results));
+        logger.info('Resultados a serem enviados:', stringify(results, replacerFunc(), 2));
 
         if (results.length === 0) {
           logger.warn(`Nenhum resultado válido encontrado para enviar: uuid=${uuid}`);
@@ -123,7 +124,7 @@ export class ResultSenderService {
         await this.sendResults(uuid, results);
       }
     } catch (error) {
-      logger.error('Erro ao processar resultados:', stringify(error));
+      logger.error('Erro ao processar resultados:', stringify(error, replacerFunc(), 2));
     } finally {
       this.isSending = false;
       logger.info('Processamento de resultados concluído.');
@@ -144,9 +145,10 @@ export class ResultSenderService {
       };
 
       // Limpa o payload de referências circulares
-      const cleanedPayload = JSON.parse(stringify(payload));
+      const cleanedPayload = JSON.parse(stringify(payload, replacerFunc(), 2));
 
-      logger.info('Payload construído:', stringify(cleanedPayload));
+      // Exibe o payload construído
+      logger.info('Payload construído:', stringify(cleanedPayload, replacerFunc(), 2));
 
       // Envia os resultados para o servidor
       logger.info('Enviando payload para o servidor...');
@@ -158,7 +160,7 @@ export class ResultSenderService {
 
       // Verifica se a resposta existe e se contém dados
       if (response && response.data) {
-        logger.info('Resposta do servidor:', stringify(response.data));
+        logger.info('Resposta do servidor:', stringify(response.data, replacerFunc(), 2));
 
         if (response.status === 200) {
           logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
@@ -172,7 +174,15 @@ export class ResultSenderService {
         logger.error('Resposta do servidor inválida ou sem dados.');
       }
     } catch (error) {
-      logger.error('Erro ao enviar resultados:', stringify(error));
+      // Exibe detalhes do erro
+      logger.error('Erro ao enviar resultados:', stringify(error, replacerFunc(), 2));
+      if (error.response) {
+        logger.error('Detalhes da resposta do servidor:', stringify(error.response.data, replacerFunc(), 2));
+      } else if (error.request) {
+        logger.error('Requisição feita, mas sem resposta do servidor:', stringify(error.request, replacerFunc(), 2));
+      } else {
+        logger.error('Erro ao configurar a requisição:', stringify(error.message, replacerFunc(), 2));
+      }
     }
   }
 }
