@@ -1,6 +1,5 @@
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
-import axios from 'axios';
 
 // Definição das interfaces
 interface QueueItem {
@@ -21,20 +20,9 @@ interface ResultItem {
   success: boolean;
 }
 
-// Função utilitária para evitar referências circulares
-const replacerFunc = () => {
-  const visited = new WeakSet();
-  return (key: string, value: any) => {
-    if (typeof value === "object" && value !== null) {
-      if (visited.has(value)) {
-        logger.warn(`Referência circular detectada na chave: ${key}`);
-        return '[Circular Reference]';
-      }
-      visited.add(value);
-    }
-    return value;
-  };
-};
+// Domínios alternados
+const DOMAINS = ['http://localhost:4008', 'http://backup-server:4008'];
+let currentDomainIndex = 0;
 
 // Serviço para enviar resultados
 export class ResultSenderService {
@@ -107,12 +95,12 @@ export class ResultSenderService {
         resultsByUuid[uuid].push(...results);
       }
 
-      logger.info('Resultados agrupados por uuid:', JSON.stringify(resultsByUuid, replacerFunc()));
+      logger.info('Resultados agrupados por uuid:', JSON.stringify(resultsByUuid));
 
       // Envia os resultados agrupados por uuid
       for (const [uuid, results] of Object.entries(resultsByUuid)) {
         logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
-        logger.info('Resultados a serem enviados:', JSON.stringify(results, replacerFunc()));
+        logger.info('Resultados a serem enviados:', JSON.stringify(results));
 
         if (results.length === 0) {
           logger.warn(`Nenhum resultado válido encontrado para enviar: uuid=${uuid}`);
@@ -132,7 +120,7 @@ export class ResultSenderService {
   // Envia os resultados para o servidor
   private async sendResults(uuid: string, results: ResultItem[]): Promise<void> {
     try {
-      // Constrói o payload seguro (sem referências circulares)
+      // Constrói o payload
       const payload = {
         uuid,
         results: results.map(r => ({
@@ -142,33 +130,35 @@ export class ResultSenderService {
         })),
       };
 
-      // Limpa o payload de referências circulares
-      const cleanedPayload = JSON.parse(JSON.stringify(payload, replacerFunc()));
+      logger.info('Payload construído:', payload);
 
-      logger.info('Payload construído:', cleanedPayload);
+      // Seleciona o domínio atual e alterna para o próximo
+      const currentDomain = DOMAINS[currentDomainIndex];
+      currentDomainIndex = (currentDomainIndex + 1) % DOMAINS.length; // Alterna entre os domínios
+
+      const url = `${currentDomain}/api/results`;
+      logger.info(`Enviando payload para a URL: ${url}`);
 
       // Envia os resultados para o servidor
-      logger.info('Enviando payload para o servidor...');
-      const response = await axios.post('http://localhost:4008/api/results', `xdd`, {
+      const response = await fetch(url, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify(payload),
       });
 
-      // Verifica se a resposta existe e se contém dados
-      if (response && response.data) {
-        logger.info('Resposta do servidor:', JSON.stringify(response.data, replacerFunc()));
+      // Verifica se a resposta foi bem-sucedida
+      if (response.ok) {
+        const responseData = await response.json();
+        logger.info('Resposta do servidor:', responseData);
 
-        if (response.status === 200) {
-          logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
-          // Marca o registro como enviado no banco de dados
-          await EmailQueueModel.updateMany({ uuid }, { $set: { resultSent: true } });
-          logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
-        } else {
-          logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
-        }
+        logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
+        // Marca o registro como enviado no banco de dados
+        await EmailQueueModel.updateMany({ uuid }, { $set: { resultSent: true } });
+        logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
       } else {
-        logger.error('Resposta do servidor inválida ou sem dados.');
+        logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
       }
     } catch (error) {
       logger.error('Erro ao enviar resultados:', error);
