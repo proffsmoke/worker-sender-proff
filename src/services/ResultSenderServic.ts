@@ -1,7 +1,9 @@
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosError } from 'axios';
+import { z } from 'zod'; // Importando Zod para validação
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
 
+// Definição das interfaces
 interface QueueItem {
   queueId: string;
   email: string;
@@ -21,6 +23,21 @@ interface ResultItem {
   success: boolean;
   data?: unknown;
 }
+
+// Esquema de validação com Zod
+const ResultItemSchema = z.object({
+  queueId: z.string(),
+  email: z.string().email(),
+  success: z.boolean(),
+  data: z.unknown().optional(),
+});
+
+const PayloadSchema = z.object({
+  fullPayload: z.object({
+    uuid: z.string(),
+    results: z.array(ResultItemSchema),
+  }),
+});
 
 const DOMAINS = ['http://localhost:4008'];
 
@@ -102,7 +119,7 @@ export class ResultSenderService {
             queueId: q.queueId,
             email: q.email,
             success: q.success!,
-            data: q.data
+            data: q.data,
           }));
 
         if (results.length > 0) {
@@ -112,7 +129,7 @@ export class ResultSenderService {
 
       for (const [uuid, results] of Object.entries(resultsByUuid)) {
         if (results.length === 0) continue;
-        await this.sendResults(uuid, results);
+        await this.validateAndSendResults(uuid, results);
       }
     } catch (error) {
       const { message, stack } = this.getErrorDetails(error);
@@ -123,26 +140,33 @@ export class ResultSenderService {
     }
   }
 
-  private async sendResults(uuid: string, results: ResultItem[]): Promise<void> {
+  private async validateAndSendResults(uuid: string, results: ResultItem[]): Promise<void> {
     try {
       const payload = {
         fullPayload: {
           uuid,
-          results: results.map(r => ({
+          results: results.map((r) => ({
             queueId: r.queueId,
             email: r.email,
             success: r.success,
-            data: r.data
+            data: r.data,
           })),
         },
       };
+
+      // Validação do payload com Zod
+      const validatedPayload = PayloadSchema.safeParse(payload);
+
+      if (!validatedPayload.success) {
+        throw new Error(`Payload inválido: ${validatedPayload.error.message}`);
+      }
 
       const currentDomain = this.domainStrategy.getNextDomain();
       const url = `${currentDomain}/api/results`;
 
       logger.info(`Enviando para: ${url}`);
 
-      const response = await this.axiosInstance.post(url, payload);
+      const response = await this.axiosInstance.post(url, validatedPayload.data);
 
       if (response.status !== 200) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -150,23 +174,22 @@ export class ResultSenderService {
 
       await EmailQueueModel.updateMany(
         { uuid },
-        { 
-          $set: { 
+        {
+          $set: {
             resultSent: true,
-            lastUpdated: new Date()
-          }
-        }
+            lastUpdated: new Date(),
+          },
+        },
       );
 
       logger.info(`Sucesso no envio: ${uuid} (${results.length} resultados)`);
-
     } catch (error) {
       const errorDetails = this.getErrorDetails(error);
       const truncatedError = errorDetails.message.slice(0, 200);
-      
+
       logger.error(`Falha no envio: ${uuid}`, {
         error: truncatedError,
-        stack: errorDetails.stack?.split('\n').slice(0, 3).join(' ')
+        stack: errorDetails.stack?.split('\n').slice(0, 3).join(' '),
       });
 
       await EmailQueueModel.updateMany(
@@ -174,10 +197,10 @@ export class ResultSenderService {
         {
           $set: {
             lastError: truncatedError,
-            errorDetails: JSON.stringify(errorDetails).slice(0, 500)
+            errorDetails: JSON.stringify(errorDetails).slice(0, 500),
           },
-          $inc: { retryCount: 1 }
-        }
+          $inc: { retryCount: 1 },
+        },
       );
     }
   }
@@ -186,11 +209,11 @@ export class ResultSenderService {
     if (error instanceof Error) {
       return {
         message: error.message,
-        stack: error.stack
+        stack: error.stack,
       };
     }
     return {
-      message: 'Erro desconhecido'
+      message: 'Erro desconhecido',
     };
   }
 }
