@@ -6,6 +6,7 @@ interface QueueItem {
   queueId: string;
   email: string;
   success: boolean | null;
+  data?: unknown; // Adicionado campo opcional para dados adicionais
 }
 
 interface EmailQueue {
@@ -18,11 +19,25 @@ interface ResultItem {
   queueId: string;
   email: string;
   success: boolean;
+  data?: unknown; // Adicionado campo opcional para dados adicionais
 }
 
 // Domínios alternados
 const DOMAINS = ['http://localhost:4008/api'];
 let currentDomainIndex = 0;
+
+// Helper para tratamento seguro de erros
+function getErrorDetails(error: unknown): { message: string; stack?: string } {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      stack: error.stack
+    };
+  }
+  return {
+    message: 'Erro desconhecido'
+  };
+}
 
 // Serviço para enviar resultados
 export class ResultSenderService {
@@ -71,103 +86,97 @@ export class ResultSenderService {
 
       logger.info(`Encontrados ${emailQueues.length} registros para processar.`);
 
-      // Agrupa os resultados por uuid
-      const resultsByUuid: { [uuid: string]: ResultItem[] } = {};
+      const resultsByUuid: Record<string, ResultItem[]> = {};
 
       for (const emailQueue of emailQueues) {
         const { uuid, queueIds } = emailQueue;
         logger.info(`Processando emailQueue com uuid: ${uuid}`);
 
-        // Filtra os resultados válidos
-        const filteredQueueIds = queueIds.filter((q: QueueItem) => q.success != null);
-        const results: ResultItem[] = filteredQueueIds.map((q: QueueItem) => ({
-          queueId: q.queueId,
-          email: q.email,
-          success: q.success!,
-        }));
+        const results: ResultItem[] = queueIds
+          .filter((q: QueueItem) => q.success !== null)
+          .map((q: QueueItem) => ({
+            queueId: q.queueId,
+            email: q.email,
+            success: q.success!,
+            data: q.data // Inclui dados adicionais
+          }));
 
-        logger.info(`Filtrados ${results.length} resultados válidos para uuid: ${uuid}`);
-
-        // Agrupa os resultados por uuid
-        if (!resultsByUuid[uuid]) {
-          resultsByUuid[uuid] = [];
+        if (results.length > 0) {
+          resultsByUuid[uuid] = [...(resultsByUuid[uuid] || []), ...results];
         }
-        resultsByUuid[uuid].push(...results);
       }
 
-      logger.info('Resultados agrupados por uuid:', JSON.stringify(resultsByUuid));
-
-      // Envia os resultados agrupados por uuid
+      // Envia os resultados agrupados
       for (const [uuid, results] of Object.entries(resultsByUuid)) {
-        logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
-        logger.info('Resultados a serem enviados:', JSON.stringify(results));
-
-        if (results.length === 0) {
-          logger.warn(`Nenhum resultado válido encontrado para enviar: uuid=${uuid}`);
-          continue;
-        }
-
+        if (results.length === 0) continue;
         await this.sendResults(uuid, results);
       }
     } catch (error) {
-      logger.error('Erro ao processar resultados:', error);
+      const { message, stack } = getErrorDetails(error);
+      logger.error(`Erro ao processar resultados: ${message}`, { stack });
     } finally {
       this.isSending = false;
       logger.info('Processamento de resultados concluído.');
     }
   }
 
-  // Envia os resultados para o servidor
+  // Envia os resultados para o servidor (versão corrigida)
   private async sendResults(uuid: string, results: ResultItem[]): Promise<void> {
     try {
-      // 1. Constrói o payload com os dados necessários
       const payload = {
         uuid,
         results: results.map(r => ({
           queueId: r.queueId,
           email: r.email,
           success: r.success,
+          data: r.data // Inclui dados adicionais no payload
         })),
       };
-  
-      // Loga o payload construído
-      logger.info('Payload construído:', payload);
-  
-      // 2. Seleciona o domínio atual e alterna para o próximo
+
       const currentDomain = DOMAINS[currentDomainIndex];
-      currentDomainIndex = (currentDomainIndex + 1) % DOMAINS.length; // Alterna entre os domínios
-  
-      // 3. Constrói a URL completa para enviar os resultados
+      currentDomainIndex = (currentDomainIndex + 1) % DOMAINS.length;
+
       const url = `${currentDomain}/results`;
-      logger.info(`Enviando payload para a URL: ${url}`);
-  
-      // 4. Envia os resultados para o servidor usando fetch
+      logger.info(`Enviando para: ${url}`);
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+
       const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: controller.signal
       });
-  
-      // 5. Verifica se a resposta foi bem-sucedida
-      if (response.ok) {
-        const responseData = await response.json();
-        logger.info('Resposta do servidor:', responseData);
-  
-        // Loga o sucesso do envio
-        logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
-  
-        // 6. Marca o registro como enviado no banco de dados
-        await EmailQueueModel.updateMany({ uuid }, { $set: { resultSent: true } });
-        logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
-      } else {
-        // Loga o erro caso a resposta não seja bem-sucedida
-        logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorBody}`);
       }
+
+      await EmailQueueModel.updateMany(
+        { uuid }, 
+        { $set: { resultSent: true } }
+      );
+
+      logger.info(`Resultados enviados com sucesso: ${uuid}`);
+
     } catch (error) {
-      // 7. Captura e loga qualquer erro que ocorra durante o processo
-      logger.error('Erro ao enviar resultados:', error);
+      const { message, stack } = getErrorDetails(error);
+      logger.error(`Falha no envio: ${uuid}`, { message, stack });
+
+      await EmailQueueModel.updateMany(
+        { uuid },
+        { 
+          $set: { 
+            lastError: message,
+            errorDetails: JSON.stringify(error)
+          },
+          $inc: { retryCount: 1 }
+        }
+      );
     }
   }
 }
