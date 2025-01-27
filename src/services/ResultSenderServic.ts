@@ -3,12 +3,26 @@ import { z } from 'zod';
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
 
+interface QueueItem {
+  queueId: string;
+  email: string;
+  success: boolean | null;
+  data?: unknown;
+}
+
+interface ResultItem {
+  queueId: string;
+  email: string;
+  success: boolean;
+  data?: unknown;
+}
+
 const PayloadSchema = z.object({
-  uuid: z.string().uuid(),
+  uuid: z.string().uuid(), // Validação de UUID
   results: z.array(
     z.object({
       queueId: z.string(),
-      email: z.string().email(),
+      email: z.string().email(), // Validação de e-mail
       success: z.boolean(),
       data: z.unknown().optional(),
     })
@@ -19,21 +33,24 @@ const DOMAINS = ['http://localhost:4008'];
 
 class DomainStrategy {
   private domains: string[];
-  private currentIndex: number = 0;
+  private currentIndex: number;
 
   constructor(domains: string[]) {
     this.domains = domains;
+    this.currentIndex = 0;
   }
 
   public getNextDomain(): string {
     const domain = this.domains[this.currentIndex];
     this.currentIndex = (this.currentIndex + 1) % this.domains.length;
-    logger.debug(`Domínio selecionado: ${domain}`);
+    logger.debug(`Selecionado o domínio: ${domain}`);
     return domain;
   }
 }
 
 export class ResultSenderService {
+  private interval: NodeJS.Timeout | null = null;
+  private isSending: boolean = false;
   private domainStrategy: DomainStrategy;
   private axiosInstance: AxiosInstance;
 
@@ -43,36 +60,98 @@ export class ResultSenderService {
       timeout: 15000,
       headers: { 'Content-Type': 'application/json' },
     });
+    this.start();
   }
 
-  public async sendResults(uuid: string, results: any[]): Promise<void> {
+  public start(): void {
+    if (this.interval) {
+      logger.warn('O serviço ResultSenderService já está em execução.');
+      return;
+    }
+
+    this.interval = setInterval(() => this.processResults(), 10000);
+    logger.info('ResultSenderService iniciado.');
+  }
+
+  public stop(): void {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
+      logger.info('ResultSenderService parado.');
+    }
+  }
+
+  private async processResults(): Promise<void> {
+    if (this.isSending) return;
+    this.isSending = true;
+  
+    try {
+      // Gera dados fake para teste
+      const uuid = '0529790e-7fc5-45b8-8f54-df42306e433d';
+      const results: ResultItem[] = [
+        { queueId: 'E77CC40AE3', email: 'proff@yopmail.com', success: true },
+        { queueId: 'ECA7340AE6', email: 'proff2@yopmail.com', success: false },
+      ];
+  
+      logger.info('Usando dados fake para teste.');
+      await this.validateAndSendResults(uuid, results);
+    } catch (error) {
+      const { message, stack } = this.getErrorDetails(error);
+      logger.error(`Erro ao processar resultados: ${message}`, { stack });
+    } finally {
+      this.isSending = false;
+    }
+  }
+  
+
+  private async validateAndSendResults(uuid: string, results: ResultItem[]): Promise<void> {
     try {
       const payload = { uuid, results };
 
-      // Validação do payload
       const validatedPayload = PayloadSchema.safeParse(payload);
       if (!validatedPayload.success) {
         const validationError = validatedPayload.error.format();
-        logger.error('Payload inválido:', validationError);
+        logger.error('Falha na validação do payload:', validationError);
         throw new Error(`Payload inválido: ${JSON.stringify(validationError)}`);
       }
 
       const currentDomain = this.domainStrategy.getNextDomain();
       const url = `${currentDomain}/api/results`;
 
-      logger.info(`Enviando payload para: ${url}`, validatedPayload.data);
-
+      logger.info(`Enviando para: ${url}`, validatedPayload.data);
       const response = await this.axiosInstance.post(url, validatedPayload.data);
-      logger.info(`Resposta recebida: ${response.status} - ${response.statusText}`);
+
+      await EmailQueueModel.updateMany(
+        { uuid },
+        { $set: { resultSent: true, lastUpdated: new Date() } }
+      );
+
+      logger.info(`Sucesso: ${uuid} (${results.length} resultados)`);
+
     } catch (error) {
       const errorDetails = this.getAxiosErrorDetails(error);
-      logger.error(`Erro ao enviar resultados`, {
-        uuid,
-        message: errorDetails.message,
+      logger.error(`Falha no envio: ${uuid}`, {
+        error: errorDetails.message,
         url: errorDetails.config?.url,
-        response: errorDetails.response || 'Sem resposta do servidor',
       });
+
+      await EmailQueueModel.updateMany(
+        { uuid },
+        {
+          $set: {
+            lastError: errorDetails.message.slice(0, 200),
+            errorDetails: JSON.stringify(errorDetails.response?.data || {}).slice(0, 500),
+          },
+          $inc: { retryCount: 1 },
+        }
+      );
     }
+  }
+
+  private getErrorDetails(error: unknown): { message: string; stack?: string } {
+    return error instanceof Error
+      ? { message: error.message, stack: error.stack }
+      : { message: 'Erro desconhecido' };
   }
 
   private getAxiosErrorDetails(error: unknown): any {
@@ -83,7 +162,7 @@ export class ResultSenderService {
           config: error.config,
           response: error.response?.data,
         }
-      : { message: 'Erro desconhecido', ...(error instanceof Error ? { stack: error.stack } : {}) };
+      : this.getErrorDetails(error);
   }
 }
 
