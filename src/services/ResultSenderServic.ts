@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError } from 'axios';
 import { z } from 'zod'; // Importando Zod para validação
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
@@ -173,6 +173,7 @@ export class ResultSenderService {
         },
       };
 
+      logger.info('Payload construído com sucesso.');
       logger.debug('Payload construído:', { payload });
 
       // Validação do payload com Zod
@@ -189,7 +190,7 @@ export class ResultSenderService {
       const url = `${currentDomain}/api/results`;
 
       logger.info(`Enviando payload para: ${url}`);
-      logger.debug('Payload enviado:', { payload: validatedPayload.data });
+      logger.debug('Payload enviado:', { payload: JSON.stringify(validatedPayload.data, null, 2) });
 
       const response = await this.axiosInstance.post(url, validatedPayload.data);
 
@@ -214,12 +215,20 @@ export class ResultSenderService {
       // Correção aplicada aqui:
       logger.info(`Sucesso no envio: ${uuid} (${results.length} resultados). Registros atualizados: ${updateResult.modifiedCount}`);
     } catch (error) {
-      const errorDetails = this.getErrorDetails(error);
+      const errorDetails = this.getAxiosErrorDetails(error);
       const truncatedError = errorDetails.message.slice(0, 200);
 
       logger.error(`Falha no envio: ${uuid}`, {
         error: truncatedError,
         stack: errorDetails.stack?.split('\n').slice(0, 3).join(' '),
+        // Adicionando mais detalhes do erro
+        ...(errorDetails.response && { response: {
+          status: errorDetails.response.status,
+          statusText: errorDetails.response.statusText,
+          headers: errorDetails.response.headers,
+          data: errorDetails.response.data,
+        }}),
+        ...(errorDetails.request && { request: errorDetails.request }),
       });
 
       try {
@@ -254,6 +263,26 @@ export class ResultSenderService {
     return {
       message: 'Erro desconhecido',
     };
+  }
+
+  private getAxiosErrorDetails(error: unknown): any {
+    if (axios.isAxiosError(error)) {
+      return {
+        message: error.message,
+        stack: error.stack,
+        code: error.code,
+        config: error.config,
+        request: error.request,
+        response: error.response ? {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          headers: error.response.headers,
+          data: error.response.data,
+        } : undefined,
+      };
+    } else {
+      return this.getErrorDetails(error);
+    }
   }
 }
 
