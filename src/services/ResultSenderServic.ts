@@ -107,7 +107,7 @@ export class ResultSenderService {
       currentDomainIndex = (currentDomainIndex + 1) % DOMAINS.length;
       const url = `${currentDomain}/api/results`; // Endpoint completo real
 
-      logger.info(`Enviando para: ${url}`, { fullPayload: payload });
+      logger.info(`Enviando para: ${url}/${payload}`);
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
