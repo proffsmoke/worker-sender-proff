@@ -123,62 +123,92 @@ export class ResultSenderService {
   // Envia os resultados para o servidor (versão corrigida)
   private async sendResults(uuid: string, results: ResultItem[]): Promise<void> {
     try {
+      // Construção do payload com dados completos
       const payload = {
         uuid,
         results: results.map(r => ({
           queueId: r.queueId,
           email: r.email,
           success: r.success,
-          data: r.data // Inclui dados adicionais no payload
+          data: r.data // Inclui dados adicionais
         })),
       };
-
+  
+      // Rotação de domínios
       const currentDomain = DOMAINS[currentDomainIndex];
       currentDomainIndex = (currentDomainIndex + 1) % DOMAINS.length;
-
+  
+      // Construção da URL
       const url = `${currentDomain}/results`;
-      logger.info(`Enviando para: ${url}`);
-
+  
+      // Log detalhado com payload formatado
+      logger.info(`Enviando para: ${url}`, {
+        fullPayload: {
+          ...payload,
+          results: payload.results.map(r => ({
+            ...r,
+            data: typeof r.data === 'object' ? JSON.stringify(r.data).slice(0, 100) + '...' : r.data
+          }))
+        }
+      });
+  
+      // Configuração do timeout
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+  
+      // Envio da requisição
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         signal: controller.signal
       });
-
-      clearTimeout(timeout);
-
+  
+      clearTimeout(timeoutId);
+  
+      // Tratamento da resposta
       if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorBody}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText.slice(0, 200)}...`);
       }
-
-      await EmailQueueModel.updateMany(
-        { uuid }, 
-        { $set: { resultSent: true } }
-      );
-
-      logger.info(`Resultados enviados com sucesso: ${uuid}`);
-
-    } catch (error) {
-      const { message, stack } = getErrorDetails(error);
-      logger.error(`Falha no envio: ${uuid}`, { message, stack });
-
+  
+      // Atualização do banco de dados
       await EmailQueueModel.updateMany(
         { uuid },
         { 
           $set: { 
-            lastError: message,
-            errorDetails: JSON.stringify(error)
+            resultSent: true,
+            lastUpdated: new Date()
+          }
+        }
+      );
+  
+      logger.info(`Sucesso no envio: ${uuid} (${results.length} resultados)`);
+  
+    } catch (error) {
+      // Tratamento seguro de erros
+      const errorDetails = getErrorDetails(error);
+      const truncatedError = errorDetails.message.slice(0, 200);
+      
+      logger.error(`Falha no envio: ${uuid}`, {
+        error: truncatedError,
+        stack: errorDetails.stack?.split('\n').slice(0, 3).join(' ') // Stack trace resumido
+      });
+  
+      // Atualização de status com retentativa
+      await EmailQueueModel.updateMany(
+        { uuid },
+        {
+          $set: {
+            lastError: truncatedError,
+            errorDetails: JSON.stringify(errorDetails).slice(0, 500)
           },
           $inc: { retryCount: 1 }
         }
       );
     }
   }
+  
 }
 
 export default ResultSenderService;
