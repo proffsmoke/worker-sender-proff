@@ -21,6 +21,20 @@ interface ResultItem {
   success: boolean;
 }
 
+// Função utilitária para limpar objetos de referências circulares
+function cleanObject(obj: any): any {
+  const seen = new WeakSet();
+  return JSON.parse(JSON.stringify(obj, (key, value) => {
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) {
+        return; // Remove referências circulares
+      }
+      seen.add(value);
+    }
+    return value;
+  }));
+}
+
 // Serviço para enviar resultados
 export class ResultSenderService {
   private interval: NodeJS.Timeout | null = null;
@@ -70,7 +84,7 @@ export class ResultSenderService {
 
       // Processa cada registro
       for (const emailQueue of emailQueues) {
-        logger.info('Processando emailQueue:', emailQueue);
+        logger.info('Processando emailQueue:', cleanObject(emailQueue));
         await this.sendResults(emailQueue);
         await new Promise((resolve) => setTimeout(resolve, 1000)); // Delay entre envios
       }
@@ -94,7 +108,7 @@ export class ResultSenderService {
     }));
 
     logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
-    logger.info('Resultados a serem enviados:', results);
+    logger.info('Resultados a serem enviados:', cleanObject(results));
 
     if (results.length === 0) {
       logger.warn(`Nenhum resultado válido encontrado para enviar: uuid=${uuid}`);
@@ -108,7 +122,7 @@ export class ResultSenderService {
         results: results.map(r => ({ queueId: r.queueId, email: r.email, success: r.success })),
       };
 
-      logger.info('Payload:', payload);
+      logger.info('Payload:', cleanObject(payload));
 
       // Envia os resultados para o servidor
       const response = await axios.post('http://localhost:4008/api/results', payload);
