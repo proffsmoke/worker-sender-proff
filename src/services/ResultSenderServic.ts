@@ -1,6 +1,7 @@
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
 import axios from 'axios';
+import stringify from 'json-stringify-safe'; // Biblioteca para serialização segura
 
 // Definição das interfaces
 interface QueueItem {
@@ -107,12 +108,12 @@ export class ResultSenderService {
         resultsByUuid[uuid].push(...results);
       }
 
-      logger.info('Resultados agrupados por uuid:', JSON.stringify(resultsByUuid, replacerFunc()));
+      logger.info('Resultados agrupados por uuid:', stringify(resultsByUuid));
 
       // Envia os resultados agrupados por uuid
       for (const [uuid, results] of Object.entries(resultsByUuid)) {
         logger.info(`Preparando para enviar resultados: uuid=${uuid}, total de resultados=${results.length}`);
-        logger.info('Resultados a serem enviados:', JSON.stringify(results, replacerFunc()));
+        logger.info('Resultados a serem enviados:', stringify(results));
 
         if (results.length === 0) {
           logger.warn(`Nenhum resultado válido encontrado para enviar: uuid=${uuid}`);
@@ -122,7 +123,7 @@ export class ResultSenderService {
         await this.sendResults(uuid, results);
       }
     } catch (error) {
-      logger.error('Erro ao processar resultados:', error);
+      logger.error('Erro ao processar resultados:', stringify(error));
     } finally {
       this.isSending = false;
       logger.info('Processamento de resultados concluído.');
@@ -143,9 +144,9 @@ export class ResultSenderService {
       };
 
       // Limpa o payload de referências circulares
-      const cleanedPayload = JSON.parse(JSON.stringify(payload, replacerFunc()));
+      const cleanedPayload = JSON.parse(stringify(payload));
 
-      logger.info('Payload construído:', JSON.stringify(cleanedPayload, replacerFunc()));
+      logger.info('Payload construído:', stringify(cleanedPayload));
 
       // Envia os resultados para o servidor
       logger.info('Enviando payload para o servidor...');
@@ -157,7 +158,7 @@ export class ResultSenderService {
 
       // Verifica se a resposta existe e se contém dados
       if (response && response.data) {
-        logger.info('Resposta do servidor:', JSON.stringify(response.data, replacerFunc()));
+        logger.info('Resposta do servidor:', stringify(response.data));
 
         if (response.status === 200) {
           logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
@@ -171,7 +172,7 @@ export class ResultSenderService {
         logger.error('Resposta do servidor inválida ou sem dados.');
       }
     } catch (error) {
-      logger.error('Erro ao enviar resultados:', error);
+      logger.error('Erro ao enviar resultados:', stringify(error));
     }
   }
 }
