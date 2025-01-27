@@ -120,7 +120,7 @@ export class ResultSenderService {
   // Envia os resultados para o servidor
   private async sendResults(uuid: string, results: ResultItem[]): Promise<void> {
     try {
-      // Constrói o payload
+      // 1. Constrói o payload com os dados necessários
       const payload = {
         uuid,
         results: results.map(r => ({
@@ -129,17 +129,19 @@ export class ResultSenderService {
           success: r.success,
         })),
       };
-
+  
+      // Loga o payload construído
       logger.info('Payload construído:', payload);
-
-      // Seleciona o domínio atual e alterna para o próximo
+  
+      // 2. Seleciona o domínio atual e alterna para o próximo
       const currentDomain = DOMAINS[currentDomainIndex];
       currentDomainIndex = (currentDomainIndex + 1) % DOMAINS.length; // Alterna entre os domínios
-
+  
+      // 3. Constrói a URL completa para enviar os resultados
       const url = `${currentDomain}/results`;
       logger.info(`Enviando payload para a URL: ${url}`);
-
-      // Envia os resultados para o servidor
+  
+      // 4. Envia os resultados para o servidor usando fetch
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -147,20 +149,24 @@ export class ResultSenderService {
         },
         body: JSON.stringify(payload),
       });
-
-      // Verifica se a resposta foi bem-sucedida
+  
+      // 5. Verifica se a resposta foi bem-sucedida
       if (response.ok) {
         const responseData = await response.json();
         logger.info('Resposta do servidor:', responseData);
-
+  
+        // Loga o sucesso do envio
         logger.info(`Resultados enviados com sucesso: uuid=${uuid}`);
-        // Marca o registro como enviado no banco de dados
+  
+        // 6. Marca o registro como enviado no banco de dados
         await EmailQueueModel.updateMany({ uuid }, { $set: { resultSent: true } });
         logger.info(`Resultados marcados como enviados: uuid=${uuid}`);
       } else {
+        // Loga o erro caso a resposta não seja bem-sucedida
         logger.error(`Falha ao enviar resultados: uuid=${uuid}, status=${response.status}`);
       }
     } catch (error) {
+      // 7. Captura e loga qualquer erro que ocorra durante o processo
       logger.error('Erro ao enviar resultados:', error);
     }
   }
