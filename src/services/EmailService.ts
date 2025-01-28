@@ -4,6 +4,7 @@ import LogParser, { LogEntry } from '../log-parser';
 import dotenv from 'dotenv';
 import { EventEmitter } from 'events';
 import EmailLog from '../models/EmailLog';
+import EmailQueueModel from '../models/EmailQueueModel';
 
 dotenv.config();
 
@@ -31,12 +32,18 @@ interface SendEmailResult {
   recipient: RecipientStatus;
 }
 
+export interface TestEmailResult {
+  success: boolean;
+  mailId?: string;
+}
+
 class EmailService extends EventEmitter {
   private static instance: EmailService;
   private transporter: nodemailer.Transporter;
   private logParser: LogParser;
   private pendingSends: Map<string, RecipientStatus>;
   private uuidResults: Map<string, RecipientStatus[]>;
+  private testEmailMailId: string | null = null; // Armazena o mailId do teste atual
 
   private constructor(logParser: LogParser) {
     super();
@@ -51,6 +58,7 @@ class EmailService extends EventEmitter {
     this.pendingSends = new Map();
     this.uuidResults = new Map();
     this.logParser.on('log', this.handleLogEntry.bind(this));
+    this.logParser.on('testEmailLog', this.handleTestEmailLog.bind(this));
   }
 
   public static getInstance(logParser?: LogParser): EmailService {
@@ -71,100 +79,112 @@ class EmailService extends EventEmitter {
     };
   }
 
-  // EmailService.ts
+  public async sendEmail(params: SendEmailParams, uuid?: string): Promise<SendEmailResult> {
+    const { fromName, emailDomain, to, bcc = [], subject, html, clientName, mailerId } = params;
 
-public async sendEmail(params: SendEmailParams, uuid?: string): Promise<SendEmailResult> {
-  const { fromName, emailDomain, to, bcc = [], subject, html, clientName, mailerId } = params;
+    const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`;
+    const from = `"${fromName}" <${fromEmail}>`;
 
-  const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`;
-  const from = `"${fromName}" <${fromEmail}>`;
+    const recipient = to.toLowerCase();
 
-  const recipient = to.toLowerCase();
+    try {
+      const mailOptions = {
+        from,
+        to: recipient,
+        bcc,
+        subject: clientName ? `[${clientName}] ${subject}` : subject,
+        html,
+      };
 
-  try {
-    const mailOptions = {
-      from,
-      to: recipient,
-      bcc,
-      subject: clientName ? `[${clientName}] ${subject}` : subject,
-      html,
-    };
+      logger.info(`Preparando para enviar email: ${JSON.stringify(mailOptions)}`);
 
-    logger.info(`Preparando para enviar email: ${JSON.stringify(mailOptions)}`);
+      const info = await this.transporter.sendMail(mailOptions);
 
-    const info = await this.transporter.sendMail(mailOptions);
-
-    const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
-    if (!queueIdMatch || !queueIdMatch[1]) {
-      throw new Error('Não foi possível extrair o queueId da resposta');
-    }
-
-    const queueId = queueIdMatch[1];
-    logger.info(`Email enviado com sucesso! Detalhes: 
-      - De: ${from}
-      - Para: ${recipient}
-      - Bcc: ${bcc.join(', ')}
-      - QueueId: ${queueId}
-    `);
-
-    const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
-
-    this.pendingSends.set(queueId, recipientStatus);
-
-    if (uuid) {
-      if (!this.uuidResults.has(uuid)) {
-        this.uuidResults.set(uuid, []);
+      // Extrair queueId
+      const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
+      if (!queueIdMatch || !queueIdMatch[1]) {
+        throw new Error('Não foi possível extrair o queueId da resposta');
       }
-      this.uuidResults.get(uuid)?.push(recipientStatus);
-      logger.info(`Associado queueId ${queueId} ao UUID ${uuid}`);
+      const queueId = queueIdMatch[1];
 
-      // Salvar a associação no EmailLog
-      await this.saveQueueIdToEmailLog(queueId, uuid);
-    }
+      // Extrair mailId
+      const mailId = info.messageId;
+      if (!mailId) {
+        throw new Error('Não foi possível extrair o mailId da resposta');
+      }
 
-    logger.info(`Dados de envio associados com sucesso para queueId=${queueId}.`);
+      logger.info(`Email enviado com sucesso! Detalhes:
+        - De: ${from}
+        - Para: ${recipient}
+        - Bcc: ${bcc.join(', ')}
+        - QueueId: ${queueId}
+        - MailId: ${mailId}
+      `);
 
-    return {
-      queueId,
-      recipient: recipientStatus,
-    };
-  } catch (error: any) {
-    logger.error(`Erro ao enviar email: ${error.message}`, error);
+      const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
 
-    const recipientStatus = this.createRecipientStatus(recipient, false, error.message);
-    return {
-      queueId: '',
-      recipient: recipientStatus,
-    };
-  }
-}
+      this.pendingSends.set(queueId, recipientStatus);
 
-private async saveQueueIdToEmailLog(queueId: string, mailId: string): Promise<void> {
-  try {
-    logger.info(`Tentando salvar queueId=${queueId} e mailId=${mailId} no EmailLog.`);
+      if (uuid) {
+        // Se for um teste, armazena o mailId
+        this.testEmailMailId = mailId;
 
-    const existingLog = await EmailLog.findOne({ queueId });
+        if (!this.uuidResults.has(uuid)) {
+          this.uuidResults.set(uuid, []);
+        }
+        this.uuidResults.get(uuid)?.push(recipientStatus);
+        logger.info(`Associado queueId ${queueId} e mailId ${mailId} ao UUID ${uuid}`);
 
-    if (!existingLog) {
-      const emailLog = new EmailLog({
-        mailId, // UUID
+        // Salvar a associação no EmailLog, usando o mailId como UUID, e incluindo o queueId
+        await this.saveQueueIdAndMailIdToEmailLog(queueId, mailId, recipient);
+      }
+
+      logger.info(`Dados de envio associados com sucesso para queueId=${queueId} e mailId=${mailId}.`);
+
+      return {
         queueId,
-        email: 'no-reply@unknown.com', // E-mail padrão
-        success: null, // Inicialmente null
-        updated: false,
-        sentAt: new Date(),
-        expireAt: new Date(Date.now() + 30 * 60 * 1000), // Expira em 30 minutos
-      });
+        recipient: recipientStatus,
+      };
+    } catch (error: any) {
+      logger.error(`Erro ao enviar email: ${error.message}`, error);
 
-      await emailLog.save();
-      logger.info(`Log salvo no EmailLog: queueId=${queueId}, mailId=${mailId}`);
-    } else {
-      logger.info(`Log já existe no EmailLog: queueId=${queueId}`);
+      const recipientStatus = this.createRecipientStatus(recipient, false, error.message);
+      return {
+        queueId: '',
+        recipient: recipientStatus,
+      };
     }
-  } catch (error) {
-    logger.error(`Erro ao salvar log no EmailLog:`, error);
   }
-}
+
+  private async saveQueueIdAndMailIdToEmailLog(queueId: string, mailId: string, recipient: string): Promise<void> {
+    try {
+      logger.info(`Tentando salvar queueId=${queueId}, mailId=${mailId} e recipient=${recipient} no EmailLog.`);
+
+      const existingLog = await EmailLog.findOne({ mailId });
+
+      if (!existingLog) {
+        const emailLog = new EmailLog({
+          mailId, // Usar mailId como identificador único
+          queueId,
+          email: recipient, // Email do destinatário
+          success: null, // Inicialmente null
+          updated: false,
+          sentAt: new Date(),
+          expireAt: new Date(Date.now() + 30 * 60 * 1000), // Expira em 30 minutos
+        });
+
+        await emailLog.save();
+        logger.info(`Log salvo no EmailLog: queueId=${queueId}, mailId=${mailId}, recipient=${recipient}`);
+      } else {
+        logger.info(`Log já existe no EmailLog para mailId=${mailId}. Atualizando queueId=${queueId} e recipient=${recipient}`);
+        existingLog.queueId = queueId;
+        existingLog.email = recipient;
+        await existingLog.save();
+      }
+    } catch (error) {
+      logger.error(`Erro ao salvar log no EmailLog:`, error);
+    }
+  }
 
   private async handleLogEntry(logEntry: LogEntry): Promise<void> {
     const recipientStatus = this.pendingSends.get(logEntry.queueId);
@@ -186,6 +206,35 @@ private async saveQueueIdToEmailLog(queueId: string, mailId: string): Promise<vo
     this.emit('queueProcessed', logEntry.queueId, recipientStatus);
   }
 
+  // Novo método para lidar especificamente com logs do email de teste
+  private async handleTestEmailLog(logEntry: { mailId: string; success: boolean }): Promise<void> {
+    if (logEntry.mailId === this.testEmailMailId) {
+      logger.info(`Log de teste recebido para mailId=${logEntry.mailId}. Resultado: ${logEntry.success}`);
+      this.emit('testEmailProcessed', logEntry);
+    }
+  }
+
+  // **Modificado para usar 'testEmailProcessed'**
+  public async waitForTestEmailResult(uuid: string): Promise<TestEmailResult> {
+    return new Promise((resolve) => {
+      const onTestEmailProcessed = (result: { mailId: string; success: boolean }) => {
+        if (result.mailId === this.testEmailMailId) {
+          this.removeListener('testEmailProcessed', onTestEmailProcessed);
+          resolve({ success: result.success, mailId: result.mailId });
+        }
+      };
+
+      this.on('testEmailProcessed', onTestEmailProcessed);
+
+      // Timeout para o caso de o log não ser encontrado
+      setTimeout(() => {
+        this.removeListener('testEmailProcessed', onTestEmailProcessed);
+        resolve({ success: false, mailId: this.testEmailMailId || undefined });
+      }, 60000);
+    });
+  }
+
+  // Mantido como antes, mas agora não é mais usado diretamente pelo MailerService
   public async waitForUUIDCompletion(uuid: string): Promise<{
     uuid: string;
     recipients: RecipientStatus[];
@@ -197,7 +246,7 @@ private async saveQueueIdToEmailLog(queueId: string, mailId: string): Promise<vo
   }> {
     return new Promise((resolve) => {
       const results = this.uuidResults.get(uuid) || [];
-  
+
       const onQueueProcessed = (queueId: string, recipientStatus: RecipientStatus) => {
         // Atualiza o resultado no array de resultados do UUID
         const existingResultIndex = results.findIndex((r) => r.queueId === queueId);
@@ -206,51 +255,51 @@ private async saveQueueIdToEmailLog(queueId: string, mailId: string): Promise<vo
         } else {
           results.push(recipientStatus); // Adiciona um novo resultado
         }
-  
+
         // Verifica se todos os queueIds foram processados
-        const allQueueIdsProcessed = Array.from(this.pendingSends.keys()).every((qId) => 
+        const allQueueIdsProcessed = Array.from(this.pendingSends.keys()).every((qId) =>
           !this.uuidResults.get(uuid)?.some((r) => r.queueId === qId)
         );
-  
+
         if (allQueueIdsProcessed) {
           this.removeListener('queueProcessed', onQueueProcessed);
-  
+
           // Cria o resumo consolidado
           const summary = {
             total: results.length,
             success: results.filter((r) => r.success).length,
             failed: results.filter((r) => !r.success).length,
           };
-  
+
           // Retorna o resumo completo
           resolve({
             uuid,
             recipients: results,
             summary,
           });
-  
+
           // Exibe o resumo no log
           logger.info('Resumo Completo:');
           logger.info(`UUID: ${uuid}`);
           logger.info('Recipients:');
           results.forEach((recipient) => {
             logger.info(`- Recipient: ${recipient.recipient}`);
-            logger.info(`  Success: ${recipient.success}`);
-            logger.info(`  QueueId: ${recipient.queueId}`);
+            logger.info(`   Success: ${recipient.success}`);
+            logger.info(`   QueueId: ${recipient.queueId}`);
             if (recipient.error) {
-              logger.info(`  Error: ${recipient.error}`);
+              logger.info(`   Error: ${recipient.error}`);
             }
             if (recipient.logEntry) {
-              logger.info(`  Log Completo: ${JSON.stringify(recipient.logEntry)}`);
+              logger.info(`   Log Completo: ${JSON.stringify(recipient.logEntry)}`);
             }
           });
           logger.info('Summary:');
-          logger.info(`  Total: ${summary.total}`);
-          logger.info(`  Success: ${summary.success}`);
-          logger.info(`  Failed: ${summary.failed}`);
+          logger.info(`   Total: ${summary.total}`);
+          logger.info(`   Success: ${summary.success}`);
+          logger.info(`   Failed: ${summary.failed}`);
         }
       };
-  
+
       this.on('queueProcessed', onQueueProcessed);
     });
   }
