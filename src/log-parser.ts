@@ -8,6 +8,11 @@ import EmailStats from './models/EmailStats'; // Modelo para atualizar estatíst
 import StateManager from './services/StateManager';
 import EmailQueueModel from './models/EmailQueueModel';
 
+/**
+ * Expressão regular simples para validar email.
+ */
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
 export interface LogEntry {
   timestamp: string;
   queueId: string;
@@ -78,11 +83,20 @@ class LogParser extends EventEmitter {
     return 'Desconhecido';
   }
 
+  private isValidEmail(email: string): boolean {
+    return EMAIL_REGEX.test(email);
+  }
+
   private parseLogLine(line: string): LogEntry | null {
     const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<([^>]+)>, .*, status=(\w+)/);
     if (!match) return null;
   
     const [, queueId, email, result] = match;
+
+    if (!this.isValidEmail(email)) {
+      logger.warn(`Email inválido detectado: ${email}`);
+      return null;
+    }
   
     const mailIdMatch = line.match(/message-id=<(.*)>/);
     const mailId = mailIdMatch ? mailIdMatch[1] : undefined;
@@ -96,7 +110,6 @@ class LogParser extends EventEmitter {
       mailId,
     };
   }
-  
 
   private async handleLogLine(line: string): Promise<void> {
     try {
