@@ -90,7 +90,7 @@ class LogParser extends EventEmitter {
   private parseLogLine(line: string): LogEntry | null {
     const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<([^>]+)>, .*, status=(\w+)/);
     if (!match) return null;
-  
+
     const [, queueId, email, result] = match;
 
     if (!this.isValidEmail(email)) {
@@ -130,6 +130,7 @@ class LogParser extends EventEmitter {
           return;
         }
 
+        // Adicionando o log ao cache, com verificações para remoção de logs antigos
         this.recentLogs.push(logEntry);
         this.logHashes.add(logHash);
 
