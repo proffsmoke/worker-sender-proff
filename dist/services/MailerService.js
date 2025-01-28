@@ -8,6 +8,7 @@ const config_1 = __importDefault(require("../config"));
 const EmailService_1 = __importDefault(require("./EmailService"));
 const log_parser_1 = __importDefault(require("../log-parser"));
 const BlockManagerService_1 = __importDefault(require("./BlockManagerService"));
+const EmailStats_1 = __importDefault(require("../models/EmailStats")); // Importado para atualizar estatísticas
 const uuid_1 = require("uuid");
 class MailerService {
     constructor() {
@@ -130,6 +131,8 @@ class MailerService {
             logger_1.default.info(`UUID gerado para o teste: ${requestUuid}`);
             const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
             logger_1.default.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
+            // Incrementar a contagem de emails enviados
+            await EmailStats_1.default.incrementSent();
             const logEntry = await this.waitForLogEntry(result.queueId);
             logger_1.default.info(`Esperando log para queueId=${result.queueId}. Conteúdo aguardado: ${JSON.stringify(logEntry)}`);
             if (logEntry && logEntry.success) {
@@ -145,6 +148,8 @@ class MailerService {
         }
         catch (error) {
             logger_1.default.error(`Erro ao enviar email de teste: ${error.message}`, error);
+            // Incrementar falhas em caso de erro
+            await EmailStats_1.default.incrementFail();
             this.blockMailer('blocked_temporary', `Erro ao enviar email de teste: ${error.message}`);
             return { success: false, recipients: [] };
         }

@@ -3,6 +3,7 @@ import config from '../config';
 import EmailService from './EmailService';
 import LogParser, { LogEntry } from '../log-parser';
 import BlockManagerService from './BlockManagerService';
+import EmailStats from '../models/EmailStats'; // Importado para atualizar estatísticas
 import { v4 as uuidv4 } from 'uuid';
 
 interface RecipientStatus {
@@ -48,7 +49,7 @@ class MailerService {
     return MailerService.instance;
   }
 
-  initialize() {
+  initialize(): void {
     this.sendInitialTestEmail();
   }
 
@@ -164,6 +165,9 @@ class MailerService {
 
       logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
 
+      // Incrementar a contagem de emails enviados
+      await EmailStats.incrementSent();
+
       const logEntry = await this.waitForLogEntry(result.queueId);
       logger.info(`Esperando log para queueId=${result.queueId}. Conteúdo aguardado: ${JSON.stringify(logEntry)}`);
 
@@ -178,6 +182,10 @@ class MailerService {
       }
     } catch (error: any) {
       logger.error(`Erro ao enviar email de teste: ${error.message}`, error);
+
+      // Incrementar falhas em caso de erro
+      await EmailStats.incrementFail();
+
       this.blockMailer('blocked_temporary', `Erro ao enviar email de teste: ${error.message}`);
       return { success: false, recipients: [] };
     }

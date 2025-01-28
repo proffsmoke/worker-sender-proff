@@ -3,10 +3,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+const os_1 = __importDefault(require("os")); // Adicionado para obter o hostname
 const EmailLog_1 = __importDefault(require("../models/EmailLog"));
-const logger_1 = __importDefault(require("../utils/logger"));
-const config_1 = __importDefault(require("../config"));
+const EmailStats_1 = __importDefault(require("../models/EmailStats"));
 const MailerService_1 = __importDefault(require("../services/MailerService"));
+const logger_1 = __importDefault(require("../utils/logger"));
 class StatusController {
     /**
      * Obtém o status atual do sistema, incluindo métricas de envio de emails e logs recentes.
@@ -16,120 +17,46 @@ class StatusController {
      */
     async getStatus(req, res, next) {
         try {
-            // Obter informações do MailerService
-            const version = MailerService_1.default.getVersion(); // Versão do MailerService
-            const createdAt = MailerService_1.default.getCreatedAt().getTime(); // Tempo de criação do MailerService
-            const domain = config_1.default.mailer.noreplyEmail.split('@')[1] || 'unknown.com'; // Domínio do email
-            const status = MailerService_1.default.getStatus(); // Status atual do MailerService
-            const blockReason = MailerService_1.default.getBlockReason(); // Razão do bloqueio, se houver
-            // Pipeline de agregação para separar emails de teste e envios em massa
-            const aggregationResult = await EmailLog_1.default.aggregate([
-                {
-                    $project: {
-                        type: {
-                            $cond: [
-                                { $eq: [{ $size: { $objectToArray: { $ifNull: ['$detail', {}] } } }, 0] },
-                                'test', // Se não houver detalhes, é um email de teste
-                                'mass', // Caso contrário, é um envio em massa
-                            ],
-                        },
-                        success: 1,
-                        detail: 1,
-                    },
-                },
-                {
-                    $facet: {
-                        testEmails: [
-                            { $match: { type: 'test' } }, // Filtra emails de teste
-                            {
-                                $group: {
-                                    _id: null,
-                                    sent: { $sum: 1 }, // Total de emails de teste enviados
-                                    successSent: { $sum: { $cond: ['$success', 1, 0] } }, // Emails de teste com sucesso
-                                    failSent: { $sum: { $cond: ['$success', 0, 1] } }, // Emails de teste falhados
-                                },
-                            },
-                        ],
-                        massEmails: [
-                            { $match: { type: 'mass' } }, // Filtra envios em massa
-                            { $project: { detailArray: { $objectToArray: '$detail' } } }, // Converte o objeto "detail" em array
-                            { $unwind: '$detailArray' }, // Desestrutura o array para processar cada destinatário
-                            {
-                                $group: {
-                                    _id: null,
-                                    sent: { $sum: 1 }, // Total de envios em massa
-                                    successSent: { $sum: { $cond: ['$detailArray.v.success', 1, 0] } }, // Envios em massa com sucesso
-                                    failSent: { $sum: { $cond: ['$detailArray.v.success', 0, 1] } }, // Envios em massa falhados
-                                },
-                            },
-                        ],
-                    },
-                },
-                {
-                    $project: {
-                        sent: {
-                            $add: [
-                                { $ifNull: [{ $arrayElemAt: ['$testEmails.sent', 0] }, 0] }, // Total de emails de teste
-                                { $ifNull: [{ $arrayElemAt: ['$massEmails.sent', 0] }, 0] }, // Total de envios em massa
-                            ],
-                        },
-                        successSent: {
-                            $add: [
-                                { $ifNull: [{ $arrayElemAt: ['$testEmails.successSent', 0] }, 0] }, // Sucessos em emails de teste
-                                { $ifNull: [{ $arrayElemAt: ['$massEmails.successSent', 0] }, 0] }, // Sucessos em envios em massa
-                            ],
-                        },
-                        failSent: {
-                            $add: [
-                                { $ifNull: [{ $arrayElemAt: ['$testEmails.failSent', 0] }, 0] }, // Falhas em emails de teste
-                                { $ifNull: [{ $arrayElemAt: ['$massEmails.failSent', 0] }, 0] }, // Falhas em envios em massa
-                            ],
-                        },
-                    },
-                },
-            ]);
-            // Extrair métricas do resultado da agregação
-            let sent = 0;
-            let successSent = 0;
-            let failSent = 0;
-            if (aggregationResult.length > 0) {
-                sent = aggregationResult[0].sent;
-                successSent = aggregationResult[0].successSent;
-                failSent = aggregationResult[0].failSent;
-            }
-            // Buscar os últimos 100 logs de email para exibição no status
+            // Obter informações do sistema
+            const version = MailerService_1.default.getVersion();
+            const createdAt = MailerService_1.default.getCreatedAt().getTime();
+            // Calcular o domínio do hostname do sistema
+            const hostname = os_1.default.hostname();
+            const domainParts = hostname.split('.').slice(1);
+            const domain = domainParts.length > 0 ? domainParts.join('.') : 'unknown.com';
+            const status = MailerService_1.default.getStatus();
+            const blockReason = MailerService_1.default.getBlockReason();
+            // Obter métricas diretamente do modelo de estatísticas
+            const stats = await EmailStats_1.default.findOne({});
+            const sent = stats?.sent || 0;
+            const successSent = stats?.successSent || 0;
+            const failSent = stats?.failSent || 0;
+            // Buscar os últimos 100 logs de email
             const emailLogs = await EmailLog_1.default.find()
-                .sort({ sentAt: -1 }) // Ordena por data de envio (mais recentes primeiro)
-                .limit(100) // Limita a 100 registros
-                .lean(); // Retorna objetos JavaScript simples
-            // Adicionar logs para depuração
-            logger_1.default.debug(`Total emails enviados (sent): ${sent}`);
-            logger_1.default.debug(`Emails enviados com sucesso (successSent): ${successSent}`);
-            logger_1.default.debug(`Emails falhados (failSent): ${failSent}`);
-            // Preparar a resposta JSON
+                .sort({ sentAt: -1 })
+                .limit(100)
+                .lean();
+            logger_1.default.debug(`Métricas obtidas: sent=${sent}, successSent=${successSent}, failSent=${failSent}`);
+            // Construir resposta JSON
             const response = {
                 version,
                 createdAt,
                 sent,
-                left: 0, // Se houver uma fila, ajuste este valor
+                left: 0, // Valor fixo, pode ser ajustado conforme necessário
                 successSent,
                 failSent,
                 domain,
                 status,
-                emailLogs, // Inclui os últimos logs de email
+                emailLogs,
             };
-            // Incluir a razão do bloqueio, se o Mailer estiver bloqueado
+            // Adicionar razão do bloqueio, se aplicável
             if (status === 'blocked_permanently' || status === 'blocked_temporary') {
                 response.blockReason = blockReason;
             }
-            // Retornar a resposta
             res.json(response);
         }
         catch (error) {
-            // Tratamento de erros
-            if (error instanceof Error) {
-                logger_1.default.error(`Erro ao obter status: ${error.message}`, { stack: error.stack });
-            }
+            logger_1.default.error(`Erro ao obter status: ${error}`);
             res.status(500).json({ success: false, message: 'Erro ao obter status.' });
         }
     }
