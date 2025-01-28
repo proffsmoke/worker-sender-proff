@@ -97,9 +97,15 @@ class LogParser extends EventEmitter {
       logger.warn(`Email inválido detectado: ${email}`);
       return null;
     }
-  
+
     const mailIdMatch = line.match(/message-id=<(.*)>/);
     const mailId = mailIdMatch ? mailIdMatch[1] : undefined;
+
+    logger.info(`Dados extraídos do log:`);
+    logger.info(`queueId: ${queueId}`);
+    logger.info(`email: ${email}`);
+    logger.info(`result: ${result}`);
+    logger.info(`mailId: ${mailId}`);
 
     return {
       timestamp: new Date().toISOString(),
@@ -117,7 +123,8 @@ class LogParser extends EventEmitter {
       const logEntry = this.parseLogLine(line);
       if (logEntry) {
         const logHash = `${logEntry.timestamp}-${logEntry.queueId}-${logEntry.result}`;
-        logger.info(`logEntry extraido:`, logEntry)
+        logger.info(`logEntry extraído: ${JSON.stringify(logEntry)}`);
+
         if (this.logHashes.has(logHash)) {
           logger.info(`Log duplicado ignorado: ${logHash}`);
           return;
@@ -134,18 +141,24 @@ class LogParser extends EventEmitter {
           }
         }
 
-        logger.info(`Log analisado: ${JSON.stringify(logEntry)}`);
+        logger.info(`Log processado e adicionado ao cache: ${JSON.stringify(logEntry)}`);
         this.emit('log', logEntry);
 
         // Atualizar estatísticas (sucesso ou falha)
         if (logEntry.success) {
+          logger.info(`Email enviado com sucesso: ${logEntry.email}`);
           await EmailStats.incrementSuccess();
         } else {
+          logger.info(`Falha no envio do email: ${logEntry.email}`);
           await EmailStats.incrementFail();
         }
 
         // Salvar log no banco e atualizar o modelo EmailQueue
-        await this.processLogEntry(logEntry);
+        if (logEntry.success) {
+          await this.processLogEntry(logEntry);
+        } else {
+          logger.info(`Log não será salvo, email com status: ${logEntry.result}`);
+        }
       }
     } catch (error) {
       logger.error(`Erro ao processar a linha do log: ${line}`, error);
@@ -154,6 +167,8 @@ class LogParser extends EventEmitter {
 
   private async processLogEntry(logEntry: LogEntry): Promise<void> {
     const { queueId, success } = logEntry;
+
+    logger.info(`Iniciando o processamento do log: ${JSON.stringify(logEntry)}`);
 
     try {
       const mailId = await this.getMailIdByQueueId(queueId);
@@ -165,7 +180,6 @@ class LogParser extends EventEmitter {
           { 'queueIds.queueId': queueId },
           { $set: { 'queueIds.$.success': success } }
         );
-
         logger.info(`Campo success atualizado no EmailQueueModel para queueId=${queueId}: success=${success}`);
 
         // Salvar log no EmailLog
@@ -181,6 +195,7 @@ class LogParser extends EventEmitter {
   private async getMailIdByQueueId(queueId: string): Promise<string | null> {
     try {
       const emailQueue = await EmailQueueModel.findOne({ 'queueIds.queueId': queueId });
+      logger.info(`EmailQueue encontrado para queueId=${queueId}: ${JSON.stringify(emailQueue)}`);
       return emailQueue ? emailQueue.uuid : null;
     } catch (error) {
       logger.error(`Erro ao buscar mailId para queueId=${queueId}:`, error);
@@ -190,6 +205,9 @@ class LogParser extends EventEmitter {
 
   private async saveLogToEmailLog(logEntry: LogEntry, mailId: string): Promise<void> {
     const { queueId, email, success } = logEntry;
+
+    logger.info(`Salvando log no EmailLog para queueId=${queueId}:`);
+    logger.info(`email: ${email}, success: ${success}, mailId: ${mailId}`);
 
     try {
       const existingLog = await EmailLog.findOne({ queueId });
@@ -205,7 +223,7 @@ class LogParser extends EventEmitter {
         await emailLog.save();
         logger.info(`Log salvo no EmailLog: queueId=${queueId}, email=${email}, success=${success}, mailId=${mailId}`);
       } else {
-        logger.info(`Log já existe no EmailLog: queueId=${queueId}`);
+        logger.info(`Log já existe no EmailLog para queueId=${queueId}`);
       }
     } catch (error) {
       logger.error(`Erro ao salvar log no EmailLog:`, error);
