@@ -104,7 +104,7 @@ class LogParser extends EventEmitter {
       const logEntry = this.parseLogLine(line);
       if (logEntry) {
         const logHash = `${logEntry.timestamp}-${logEntry.queueId}-${logEntry.result}`;
-
+        logger.info(`logEntry extraido:`, logEntry)
         if (this.logHashes.has(logHash)) {
           logger.info(`Log duplicado ignorado: ${logHash}`);
           return;
