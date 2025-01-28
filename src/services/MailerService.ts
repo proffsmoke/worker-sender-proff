@@ -156,48 +156,52 @@ class MailerService {
       html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
       clientName: 'Prasminha camarada',
     };
-
+  
     try {
       const requestUuid = uuidv4();
       logger.info(`UUID gerado para o teste: ${requestUuid}`);
-
+  
       const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
-
+  
       logger.info(`Email de teste enviado com queueId=${result.queueId}`, { result });
-
+  
       // Incrementar a contagem de emails enviados
       await EmailStats.incrementSent();
-
+  
+      // Espera pela entrada do log associado ao queueId
       const logEntry = await this.waitForLogEntry(result.queueId);
       logger.info(`Esperando log para queueId=${result.queueId}. Conteúdo aguardado: ${JSON.stringify(logEntry)}`);
-
+  
+      // Se logEntry for encontrado e sucesso
       if (logEntry && logEntry.success) {
         logger.info(`Email de teste enviado com sucesso. Status do Mailer: health`);
         this.unblockMailer();
         return { success: true, recipients: [result.recipient] };
       } else {
+        // LogEntry não encontrado ou falhou
         logger.warn(`Falha ao enviar email de teste. LogEntry: ${JSON.stringify(logEntry)}`);
         this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
         return { success: false, recipients: [result.recipient] };
       }
     } catch (error: any) {
       logger.error(`Erro ao enviar email de teste: ${error.message}`, error);
-
+  
       // Incrementar falhas em caso de erro
       await EmailStats.incrementFail();
-
+  
       this.blockMailer('blocked_temporary', `Erro ao enviar email de teste: ${error.message}`);
       return { success: false, recipients: [] };
     }
   }
-
+  
+  // Método ajustado para aguardar o log de forma eficiente e correta
   private async waitForLogEntry(queueId: string): Promise<LogEntry | null> {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         logger.warn(`Timeout ao aguardar logEntry para queueId=${queueId}. Nenhuma entrada encontrada após 60 segundos.`);
         resolve(null);
       }, 60000);
-
+  
       this.logParser.once('log', (logEntry: LogEntry) => {
         if (logEntry.queueId === queueId) {
           clearTimeout(timeout);
@@ -206,6 +210,7 @@ class MailerService {
       });
     });
   }
+  
 }
 
 export default MailerService.getInstance();
