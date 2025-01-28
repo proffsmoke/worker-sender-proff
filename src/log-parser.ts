@@ -11,7 +11,7 @@ import EmailQueueModel from './models/EmailQueueModel';
 /**
  * Expressão regular simples para validar email.
  */
-const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA218]{2,}$/;
 
 export interface LogEntry {
   timestamp: string;
@@ -168,72 +168,62 @@ class LogParser extends EventEmitter {
 
   private async processLogEntry(logEntry: LogEntry): Promise<void> {
     const { queueId, success } = logEntry;
-
+  
     logger.info(`Iniciando o processamento do log: ${JSON.stringify(logEntry)}`);
-
+  
     try {
-      const mailId = await this.getMailIdByQueueId(queueId);
-      logger.info(`mailId obtido para queueId=${queueId}: ${mailId}`);
-
-      if (mailId) {
+      // Buscar o `mailId` correto para o `queueId` associado ao `email`
+      const emailQueue = await EmailQueueModel.findOne({ 'queueIds.queueId': queueId });
+      const emailInfo = emailQueue?.queueIds.find((item) => item.queueId === queueId);
+  
+      if (emailInfo) {
+        // Garantir que o `mailId` seja uma string
+        const mailId = emailQueue?.uuid ?? '';  // Aqui, retornamos uma string vazia se `mailId` for undefined
+        const email = emailInfo.email;
+  
         // Atualizar campo de sucesso no EmailQueueModel
         await EmailQueueModel.updateOne(
           { 'queueIds.queueId': queueId },
           { $set: { 'queueIds.$.success': success } }
         );
         logger.info(`Campo success atualizado no EmailQueueModel para queueId=${queueId}: success=${success}`);
-
-        // Salvar log no EmailLog
-        await this.saveLogToEmailLog(logEntry, mailId);
+  
+        // Salvar log no EmailLog com o email correto
+        if (mailId) { // Garantir que mailId não é vazio
+          await this.saveLogToEmailLog(logEntry, mailId, email);
+        } else {
+          logger.warn(`Não foi possível encontrar mailId para queueId: ${queueId}`);
+        }
       } else {
-        logger.warn(`mailId não encontrado para queueId=${queueId}. Log não será salvo.`);
+        logger.warn(`Não encontrou o email para queueId: ${queueId}`);
       }
     } catch (error) {
-      logger.error(`Erro ao processar logEntry para queueId=${queueId}:`, error);
+      logger.error(`Erro ao processar logEntry: ${JSON.stringify(logEntry)}`, error);
     }
   }
+  
 
-  private async getMailIdByQueueId(queueId: string): Promise<string | null> {
+  private async saveLogToEmailLog(logEntry: LogEntry, mailId: string | undefined, email: string): Promise<void> {
+    if (!mailId) {
+      logger.warn(`mailId não fornecido para o log: ${JSON.stringify(logEntry)}`);
+      return; // Não salva o log se mailId for undefined
+    }
+  
     try {
-      const emailQueue = await EmailQueueModel.findOne({ 'queueIds.queueId': queueId });
-      logger.info(`EmailQueue encontrado para queueId=${queueId}: ${JSON.stringify(emailQueue)}`);
-      return emailQueue ? emailQueue.uuid : null;
+      const emailLog = new EmailLog({
+        mailId,
+        queueId: logEntry.queueId,
+        email,
+        success: logEntry.success,
+        sentAt: new Date(logEntry.timestamp),
+      });
+      await emailLog.save();
+      logger.info(`Log de email salvo com sucesso: ${JSON.stringify(emailLog)}`);
     } catch (error) {
-      logger.error(`Erro ao buscar mailId para queueId=${queueId}:`, error);
-      return null;
+      logger.error(`Erro ao salvar log de email: ${JSON.stringify(logEntry)}`, error);
     }
   }
-
-  private async saveLogToEmailLog(logEntry: LogEntry, mailId: string): Promise<void> {
-    const { queueId, email, success } = logEntry;
-
-    logger.info(`Salvando log no EmailLog para queueId=${queueId}:`);
-    logger.info(`email: ${email}, success: ${success}, mailId: ${mailId}`);
-
-    try {
-      const existingLog = await EmailLog.findOne({ queueId });
-      if (!existingLog) {
-        const emailLog = new EmailLog({
-          mailId,
-          queueId,
-          email,
-          success,
-          sentAt: new Date(),
-        });
-
-        await emailLog.save();
-        logger.info(`Log salvo no EmailLog: queueId=${queueId}, email=${email}, success=${success}, mailId=${mailId}`);
-      } else {
-        logger.info(`Log já existe no EmailLog para queueId=${queueId}`);
-      }
-    } catch (error) {
-      logger.error(`Erro ao salvar log no EmailLog:`, error);
-    }
-  }
-
-  public getRecentLogs(): LogEntry[] {
-    return this.recentLogs;
-  }
+  
 }
 
 export default LogParser;
