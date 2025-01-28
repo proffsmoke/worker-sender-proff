@@ -79,11 +79,11 @@ class LogParser extends EventEmitter {
   }
 
   private parseLogLine(line: string): LogEntry | null {
-    const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(.*)/);
+    const match = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<([^>]+)>, .*, status=(\w+)/);
     if (!match) return null;
-
+  
     const [, queueId, email, result] = match;
-
+  
     const mailIdMatch = line.match(/message-id=<(.*)>/);
     const mailId = mailIdMatch ? mailIdMatch[1] : undefined;
 
@@ -96,6 +96,7 @@ class LogParser extends EventEmitter {
       mailId,
     };
   }
+  
 
   private async handleLogLine(line: string): Promise<void> {
     try {
