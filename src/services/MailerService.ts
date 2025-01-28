@@ -163,8 +163,6 @@ class MailerService {
         const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
         const queueId = result.queueId
         logger.info(`Email de teste enviado com queueId=${queueId}`);
-        // Incrementar a contagem de emails enviados
-        await EmailStats.incrementSent();
 
         // Aguarda até 60 segundos pela entrada de log correspondente
         const logEntry = await this.waitForLogEntry(queueId, 60000);
