@@ -18,11 +18,11 @@ interface ResultItem {
 }
 
 const PayloadSchema = z.object({
-  uuid: z.string().uuid(), // Validação de UUID
+  uuid: z.string().uuid(),
   results: z.array(
     z.object({
       queueId: z.string(),
-      email: z.string().email(), // Validação de e-mail
+      email: z.string().email(),
       success: z.boolean(),
       data: z.unknown().optional(),
     })
@@ -114,8 +114,8 @@ export class ResultSenderService {
         }
       }
     } catch (error) {
-      const { message, stack } = this.getErrorDetails(error);
-      logger.error(`Erro ao processar resultados: ${message}`, { stack });
+      const errorDetails = this.getErrorDetails(error);
+      logger.error(`Erro ao processar resultados: ${errorDetails.message}`, { stack: errorDetails.stack });
     } finally {
       this.isSending = false;
     }
@@ -166,20 +166,27 @@ export class ResultSenderService {
   }
 
   private getErrorDetails(error: unknown): { message: string; stack?: string } {
-    return error instanceof Error
-      ? { message: error.message, stack: error.stack }
-      : { message: 'Erro desconhecido' };
+    if (error instanceof Error) {
+      return { message: error.message, stack: error.stack };
+    }
+    return { message: 'Erro desconhecido', stack: String(error) };
   }
 
-  private getAxiosErrorDetails(error: unknown): any {
-    return axios.isAxiosError(error)
-      ? {
-          message: error.message,
-          code: error.code,
-          config: error.config,
-          response: error.response?.data,
-        }
-      : this.getErrorDetails(error);
+  private getAxiosErrorDetails(error: unknown): { 
+    message: string;
+    code?: string;
+    config?: any;
+    response?: any;
+  } {
+    if (axios.isAxiosError(error)) {
+      return {
+        message: error.message,
+        code: error.code,
+        config: error.config,
+        response: error.response?.data,
+      };
+    }
+    return this.getErrorDetails(error);
   }
 }
 
