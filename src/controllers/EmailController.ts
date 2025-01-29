@@ -46,7 +46,7 @@ async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void>
 
     for (const emailData of emailList) {
       const { email, subject, html, clientName } = emailData;
-
+    
       // Cria o payload do e-mail, agora com o HTML pronto
       const emailPayload: EmailPayload = {
         emailDomain,
@@ -55,30 +55,37 @@ async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void>
         subject,
         html,  // O HTML agora vem pronto no objeto
       };
-
+    
       // Só inclui clientName se ele estiver presente
       if (clientName) {
         emailPayload.clientName = clientName;
       }
-
+    
       // Envia o e-mail e obtém o resultado
       const result = await emailService.sendEmail(emailPayload, uuid);
-
-      // Adiciona o resultado ao array de queueIds (com email e success como null)
-      emailQueue.queueIds.push({
-        queueId: result.queueId,
-        email,
-        success: null, // Deixa como null por enquanto
-      });
-
-      logger.info(`E-mail enviado com sucesso:`, {
-        uuid,
-        queueId: result.queueId,
-        email,
-        subject,
-        clientName,
-      });
+    
+      // Verifica se o queueId já está presente no array de queueIds
+      const existingQueueId = emailQueue.queueIds.some(item => item.queueId === result.queueId);
+      if (!existingQueueId) {
+        // Só adiciona o novo queueId se ele não existir no array
+        emailQueue.queueIds.push({
+          queueId: result.queueId,
+          email,
+          success: null, // Deixa como null por enquanto
+        });
+    
+        logger.info(`E-mail enviado com sucesso:`, {
+          uuid,
+          queueId: result.queueId,
+          email,
+          subject,
+          clientName,
+        });
+      } else {
+        logger.info(`O queueId ${result.queueId} já está presente para o UUID=${uuid}, não será duplicado.`);
+      }
     }
+    
 
     // Tenta salvar o documento no banco de dados
     await this.saveEmailQueue(emailQueue, uuid);
