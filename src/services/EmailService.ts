@@ -78,75 +78,79 @@ class EmailService extends EventEmitter {
     }
 
 
-public async sendEmail(params: SendEmailParams, uuid?: string): Promise<SendEmailResult> {
-  const { fromName, emailDomain, to, subject, html } = params;
-
-  const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`;
-  const from = `"${fromName}" <${fromEmail}>`;
-
-  const recipient = to.toLowerCase();
-
-  try {
-    // Criação do objeto de envio do e-mail
-    const mailOptions = {
-      from,
-      to: recipient,
-      subject,  // O subject será exatamente o que foi passado
-      html,     // O HTML será exatamente o que foi passado
-    };
-
-    logger.info(`Preparando para enviar email: ${JSON.stringify(mailOptions)}`);
-
-    const info = await this.transporter.sendMail(mailOptions);
-
-    // Extrair queueId
-    const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
-    if (!queueIdMatch || !queueIdMatch[1]) {
-      throw new Error('Não foi possível extrair o queueId da resposta');
-    }
-    const queueId = queueIdMatch[1];
-
-    // Extrair mailId
-    const mailId = info.messageId;
-    if (!mailId) {
-      throw new Error('Não foi possível extrair o mailId da resposta');
-    }
-
-    logger.info(`Email enviado com sucesso! Detalhes:
-        - De: ${from}
-        - Para: ${recipient}
-        - QueueId: ${queueId}
-        - MailId: ${mailId}
-    `);
-
-    const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
-
-    this.pendingSends.set(queueId, recipientStatus);
-
-    if (uuid) {
-      // Se for um teste, armazena o mailId
-      this.testEmailMailId = mailId;
-
-      // Salvar a associação no EmailLog, usando o mailId como UUID, e incluindo o queueId
-      await this.saveQueueIdAndMailIdToEmailLog(queueId, mailId, recipient);
-    }
-
-    logger.info(`Dados de envio associados com sucesso para queueId=${queueId} e mailId=${mailId}.`);
-
-    return {
-      queueId,
-      recipient: recipientStatus,
-    };
-  } catch (error: any) {
-    logger.error(`Erro ao enviar email: ${error.message}`, error);
-
-    const recipientStatus = this.createRecipientStatus(recipient, false, error.message);
-    return {
-      queueId: '',
-      recipient: recipientStatus,
-    };
-  }
-}
+    public async sendEmail(params: SendEmailParams, uuid?: string, existingQueueIds: any[] = []): Promise<SendEmailResult> {
+        const { fromName, emailDomain, to, subject, html } = params;
+      
+        const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`;
+        const from = `"${fromName}" <${fromEmail}>`;
+      
+        const recipient = to.toLowerCase();
+      
+        try {
+          // Criação do objeto de envio do e-mail
+          const mailOptions = {
+            from,
+            to: recipient,
+            subject,
+            html,
+          };
+      
+          logger.info(`Preparando para enviar email: ${JSON.stringify(mailOptions)}`);
+      
+          const info = await this.transporter.sendMail(mailOptions);
+      
+          // Extrair queueId
+          const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
+          if (!queueIdMatch || !queueIdMatch[1]) {
+            throw new Error('Não foi possível extrair o queueId da resposta');
+          }
+          const queueId = queueIdMatch[1];
+      
+          // Extrair mailId
+          const mailId = info.messageId;
+          if (!mailId) {
+            throw new Error('Não foi possível extrair o mailId da resposta');
+          }
+      
+          // **Verificar se o queueId já existe (antes de salvar no EmailLog):**
+          if (existingQueueIds.some(item => item.queueId === queueId)) {
+            logger.info(`O queueId ${queueId} já está presente, não será duplicado.`);
+            return {
+              queueId,
+              recipient: this.createRecipientStatus(recipient, false, "Duplicate queueId"),
+            };
+          }
+      
+          logger.info(`Email enviado com sucesso! Detalhes:
+              - De: ${from}
+              - Para: ${recipient}
+              - QueueId: ${queueId}
+              - MailId: ${mailId}
+            `);
+      
+          const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
+      
+          this.pendingSends.set(queueId, recipientStatus);
+      
+          // Salvar a associação no EmailLog, usando o mailId como UUID, e incluindo o queueId
+          await this.saveQueueIdAndMailIdToEmailLog(queueId, mailId, recipient);
+      
+          logger.info(`Dados de envio associados com sucesso para queueId=${queueId} e mailId=${mailId}.`);
+      
+          return {
+            queueId,
+            recipient: recipientStatus,
+          };
+        } catch (error: any) {
+          logger.error(`Erro ao enviar email: ${error.message}`, error);
+      
+          const recipientStatus = this.createRecipientStatus(recipient, false, error.message);
+          return {
+            queueId: '',
+            recipient: recipientStatus,
+          };
+        }
+      }
 
     private async saveQueueIdAndMailIdToEmailLog(queueId: string, mailId: string, recipient: string): Promise<void> {
         try {
