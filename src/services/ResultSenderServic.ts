@@ -3,7 +3,6 @@ import { z } from 'zod';
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
 
-// Interfaces mantidas conforme original
 interface QueueItem {
   queueId: string;
   email: string;
@@ -83,37 +82,49 @@ export class ResultSenderService {
     }
   }
 
-  private async processResults(): Promise<void> {
-    if (this.isSending) {
-      logger.debug(`${logPrefix} Processamento já em andamento`);
-      return;
-    }
-    
-    this.isSending = true;
-    logger.info(`${logPrefix} Iniciando ciclo de processamento`);
-
-    try {
-      const emailQueues = await EmailQueueModel.find({
-        'queueIds.success': { $exists: true, $ne: null },
-        resultSent: false,
-      }).lean();
-
-      logger.info(`${logPrefix} Filas encontradas: ${emailQueues.length}`);
-
-      const resultsByUuid = this.groupResultsByUuid(emailQueues);
-      await this.processUuidResults(resultsByUuid);
-
-    } catch (error) {
-      const errorDetails = this.getErrorDetails(error);
-      logger.error(`${logPrefix} Erro no processamento geral`, {
-        message: errorDetails.message,
-        stack: errorDetails.stack
-      });
-    } finally {
-      this.isSending = false;
-      logger.info(`${logPrefix} Ciclo de processamento finalizado`);
-    }
+  // Substitua o método processResults por:
+private async processResults(): Promise<void> {
+  if (this.isSending) {
+    logger.debug(`${logPrefix} Processamento já em andamento`);
+    return;
   }
+  
+  this.isSending = true;
+  logger.info(`${logPrefix} Iniciando ciclo de processamento`);
+
+  try {
+    const emailQueues = await EmailQueueModel.find({
+      'queueIds.success': { $exists: true, $ne: null },
+      resultSent: false,
+      $expr: {
+        $gt: [
+          { $size: {
+            $filter: {
+              input: "$queueIds",
+              cond: { $ne: ["$$this.success", null] }
+            }
+          }},
+          0
+        ]
+      }
+    }).lean();
+
+    logger.info(`${logPrefix} Filas encontradas: ${emailQueues.length}`);
+
+    const resultsByUuid = this.groupResultsByUuid(emailQueues);
+    await this.processUuidResults(resultsByUuid);
+
+  } catch (error) {
+    const errorDetails = this.getErrorDetails(error);
+    logger.error(`${logPrefix} Erro no processamento geral`, {
+      message: errorDetails.message,
+      stack: errorDetails.stack
+    });
+  } finally {
+    this.isSending = false;
+    logger.info(`${logPrefix} Ciclo de processamento finalizado`);
+  }
+}
 
   private groupResultsByUuid(emailQueues: any[]): Record<string, ResultItem[]> {
     const results: Record<string, ResultItem[]> = {};
@@ -130,7 +141,9 @@ export class ResultSenderService {
 
       if (validResults.length > 0) {
         results[queue.uuid] = validResults;
-        logger.debug(`${logPrefix} UUID ${queue.uuid} tem ${validResults.length} resultados`);
+        logger.debug(`${logPrefix} UUID ${queue.uuid} tem ${validResults.length} resultados válidos`);
+      } else {
+        logger.warn(`${logPrefix} UUID ${queue.uuid} ignorado - sem resultados válidos`);
       }
     }
 
@@ -177,10 +190,10 @@ export class ResultSenderService {
 
   private async sendResults(domain: string, uuid: string, payload: any): Promise<void> {
     const url = `${domain}/api/results`;
-    logger.info(`${logPrefix} Enviando resultados para ${url}`, {
+    logger.info(`${logPrefix} Enviando ${payload.results.length} resultados para ${url}`, {
       uuid,
-      resultCount: payload.results.length,
-      domain
+      domain,
+      firstQueueId: payload.results[0]?.queueId
     });
 
     const response = await this.axiosInstance.post(url, payload);
@@ -188,24 +201,29 @@ export class ResultSenderService {
     logger.info(`${logPrefix} Resposta recebida de ${domain}`, {
       status: response.status,
       uuid,
-      responseData: response.data
+      responseSummary: response.data?.success ? 'Sucesso' : 'Erro'
     });
   }
 
   private async markAsSent(uuid: string, resultCount: number): Promise<void> {
-    const updateResult = await EmailQueueModel.updateMany(
+    const updateResult = await EmailQueueModel.updateOne(
       { uuid },
-      { $set: { resultSent: true, lastUpdated: new Date() } }
+      { 
+        $set: { 
+          resultSent: true,
+          lastUpdated: new Date(),
+          'queueIds.$[].success': null
+        }
+      }
     );
 
-    logger.info(`${logPrefix} UUID ${uuid} marcado como enviado`, {
+    logger.info(`${logPrefix} UUID ${uuid} atualizado`, {
       resultCount,
       matched: updateResult.matchedCount,
       modified: updateResult.modifiedCount
     });
   }
 
-  // Métodos de tratamento de erro mantidos com melhorias
   private getErrorDetails(error: unknown): { message: string; stack?: string } {
     if (error instanceof Error) {
       return { message: error.message, stack: error.stack };
