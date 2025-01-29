@@ -3,6 +3,7 @@ import { z } from 'zod';
 import EmailQueueModel from '../models/EmailQueueModel';
 import logger from '../utils/logger';
 
+// Interfaces mantidas conforme original
 interface QueueItem {
   queueId: string;
   email: string;
@@ -17,19 +18,20 @@ interface ResultItem {
   data?: unknown;
 }
 
+const logPrefix = '[resultservice]';
+const DOMAINS = ['https://sender2.construcoesltda.com'];
+
 const PayloadSchema = z.object({
   uuid: z.string().uuid(),
   results: z.array(
     z.object({
-      queueId: z.string(),
-      email: z.string().email(),
+      queueId: z.string().min(1, "ID da fila inválido"),
+      email: z.string().email("Formato de e-mail inválido"),
       success: z.boolean(),
       data: z.unknown().optional(),
     })
-  ),
+  ).nonempty("A lista de resultados não pode estar vazia"),
 });
-
-const DOMAINS = ['https://sender2.construcoesltda.com'];
 
 class DomainStrategy {
   private domains: string[];
@@ -43,7 +45,7 @@ class DomainStrategy {
   public getNextDomain(): string {
     const domain = this.domains[this.currentIndex];
     this.currentIndex = (this.currentIndex + 1) % this.domains.length;
-    logger.debug(`Selecionado o domínio: ${domain}`);
+    logger.debug(`${logPrefix} Domínio selecionado: ${domain}`);
     return domain;
   }
 }
@@ -65,25 +67,30 @@ export class ResultSenderService {
 
   public start(): void {
     if (this.interval) {
-      logger.warn('O serviço ResultSenderService já está em execução.');
+      logger.warn(`${logPrefix} Serviço já está em execução`);
       return;
     }
 
     this.interval = setInterval(() => this.processResults(), 10000);
-    logger.info('ResultSenderService iniciado.');
+    logger.info(`${logPrefix} Serviço iniciado com intervalo de 10s`);
   }
 
   public stop(): void {
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
-      logger.info('ResultSenderService parado.');
+      logger.info(`${logPrefix} Serviço parado`);
     }
   }
 
   private async processResults(): Promise<void> {
-    if (this.isSending) return;
+    if (this.isSending) {
+      logger.debug(`${logPrefix} Processamento já em andamento`);
+      return;
+    }
+    
     this.isSending = true;
+    logger.info(`${logPrefix} Iniciando ciclo de processamento`);
 
     try {
       const emailQueues = await EmailQueueModel.find({
@@ -91,80 +98,114 @@ export class ResultSenderService {
         resultSent: false,
       }).lean();
 
-      const resultsByUuid: Record<string, ResultItem[]> = {};
+      logger.info(`${logPrefix} Filas encontradas: ${emailQueues.length}`);
 
-      for (const emailQueue of emailQueues) {
-        const { uuid, queueIds } = emailQueue;
-        const validQueueIds = queueIds.filter((q: QueueItem) => q.success !== null);
+      const resultsByUuid = this.groupResultsByUuid(emailQueues);
+      await this.processUuidResults(resultsByUuid);
 
-        resultsByUuid[uuid] = [
-          ...(resultsByUuid[uuid] || []),
-          ...validQueueIds.map((q: QueueItem) => ({
-            queueId: q.queueId,
-            email: q.email,
-            success: q.success!,
-            data: q.data,
-          })),
-        ];
-      }
-
-      for (const [uuid, results] of Object.entries(resultsByUuid)) {
-        if (results.length > 0) {
-          await this.validateAndSendResults(uuid, results);
-        }
-      }
     } catch (error) {
       const errorDetails = this.getErrorDetails(error);
-      logger.error(`Erro ao processar resultados: ${errorDetails.message}`, { stack: errorDetails.stack });
+      logger.error(`${logPrefix} Erro no processamento geral`, {
+        message: errorDetails.message,
+        stack: errorDetails.stack
+      });
     } finally {
       this.isSending = false;
+      logger.info(`${logPrefix} Ciclo de processamento finalizado`);
+    }
+  }
+
+  private groupResultsByUuid(emailQueues: any[]): Record<string, ResultItem[]> {
+    const results: Record<string, ResultItem[]> = {};
+
+    for (const queue of emailQueues) {
+      const validResults = queue.queueIds
+        .filter((q: QueueItem) => q.success !== null)
+        .map((q: QueueItem) => ({
+          queueId: q.queueId,
+          email: q.email,
+          success: q.success!,
+          data: q.data
+        }));
+
+      if (validResults.length > 0) {
+        results[queue.uuid] = validResults;
+        logger.debug(`${logPrefix} UUID ${queue.uuid} tem ${validResults.length} resultados`);
+      }
+    }
+
+    return results;
+  }
+
+  private async processUuidResults(resultsByUuid: Record<string, ResultItem[]>): Promise<void> {
+    for (const [uuid, results] of Object.entries(resultsByUuid)) {
+      try {
+        logger.info(`${logPrefix} Processando UUID ${uuid} com ${results.length} resultados`);
+        await this.validateAndSendResults(uuid, results);
+        
+      } catch (error) {
+        const errorDetails = this.getAxiosErrorDetails(error);
+        logger.error(`${logPrefix} Falha no UUID ${uuid}`, {
+          error: errorDetails.message,
+          code: errorDetails.code,
+          attempts: errorDetails.response?.retryCount || 1
+        });
+      }
     }
   }
 
   private async validateAndSendResults(uuid: string, results: ResultItem[]): Promise<void> {
-    try {
-      const payload = { uuid, results };
-
-      const validatedPayload = PayloadSchema.safeParse(payload);
-      if (!validatedPayload.success) {
-        const validationError = validatedPayload.error.format();
-        logger.error('Falha na validação do payload:', validationError);
-        throw new Error(`Payload inválido: ${JSON.stringify(validationError)}`);
-      }
-
-      const currentDomain = this.domainStrategy.getNextDomain();
-      const url = `${currentDomain}/api/results`;
-
-      logger.info(`Enviando para: ${url}`, validatedPayload.data);
-      const response = await this.axiosInstance.post(url, validatedPayload.data);
-
-      await EmailQueueModel.updateMany(
-        { uuid },
-        { $set: { resultSent: true, lastUpdated: new Date() } }
-      );
-
-      logger.info(`Sucesso: ${uuid} (${results.length} resultados)`);
-
-    } catch (error) {
-      const errorDetails = this.getAxiosErrorDetails(error);
-      logger.error(`Falha no envio: ${uuid}`, {
-        error: errorDetails.message,
-        url: errorDetails.config?.url,
+    const validation = PayloadSchema.safeParse({ uuid, results });
+    
+    if (!validation.success) {
+      const errors = validation.error.errors
+        .map(err => `${err.path.join('.')}: ${err.message}`)
+        .join(', ');
+      
+      logger.error(`${logPrefix} Validação falhou para ${uuid}`, {
+        errors,
+        resultCount: results.length,
+        sampleEmail: results[0]?.email
       });
-
-      await EmailQueueModel.updateMany(
-        { uuid },
-        {
-          $set: {
-            lastError: errorDetails.message.slice(0, 200),
-            errorDetails: JSON.stringify(errorDetails.response?.data || {}).slice(0, 500),
-          },
-          $inc: { retryCount: 1 },
-        }
-      );
+      throw new Error(`Erro de validação: ${errors}`);
     }
+
+    const domain = this.domainStrategy.getNextDomain();
+    await this.sendResults(domain, uuid, validation.data);
+    await this.markAsSent(uuid, results.length);
   }
 
+  private async sendResults(domain: string, uuid: string, payload: any): Promise<void> {
+    const url = `${domain}/api/results`;
+    logger.info(`${logPrefix} Enviando resultados para ${url}`, {
+      uuid,
+      resultCount: payload.results.length,
+      domain
+    });
+
+    const response = await this.axiosInstance.post(url, payload);
+    
+    logger.info(`${logPrefix} Resposta recebida de ${domain}`, {
+      status: response.status,
+      uuid,
+      responseData: response.data
+    });
+  }
+
+  private async markAsSent(uuid: string, resultCount: number): Promise<void> {
+    const updateResult = await EmailQueueModel.updateMany(
+      { uuid },
+      { $set: { resultSent: true, lastUpdated: new Date() } }
+    );
+
+    logger.info(`${logPrefix} UUID ${uuid} marcado como enviado`, {
+      resultCount,
+      matched: updateResult.matchedCount,
+      modified: updateResult.modifiedCount
+    });
+  }
+
+  // Métodos de tratamento de erro mantidos com melhorias
   private getErrorDetails(error: unknown): { message: string; stack?: string } {
     if (error instanceof Error) {
       return { message: error.message, stack: error.stack };
