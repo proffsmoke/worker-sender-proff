@@ -10,6 +10,7 @@ interface EmailPayload {
     subject: string;
     html: string;
     clientName?: string;
+    sender?: string;
 }
 
 class EmailController {
@@ -18,13 +19,13 @@ class EmailController {
     }
 
     async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void> {
-        const { emailDomain, emailList, fromName, uuid } = req.body;
+        const { emailDomain, emailList, fromName, uuid, subject, htmlContent, sender } = req.body;
 
         try {
             logger.info(`Iniciando envio de e-mails para UUID=${uuid}`);
 
             // Validação básica dos parâmetros
-            const requiredParams = ['emailDomain', 'emailList', 'fromName', 'uuid'];
+            const requiredParams = ['emailDomain', 'emailList', 'fromName', 'uuid', 'subject', 'htmlContent', 'sender'];
             const missingParams = requiredParams.filter(param => !(param in req.body));
 
             if (missingParams.length > 0) {
@@ -58,14 +59,15 @@ class EmailController {
             const queueIdMap = new Map(emailQueue.queueIds.map(item => [item.queueId, item]));
 
             for (const emailData of uniqueEmailList) {
-                const { email, subject, htmlContent: html, clientName, sender } = emailData;
+                const { email, clientName } = emailData;
 
                 const emailPayload: EmailPayload = {
                     emailDomain,
                     fromName,
                     to: email,
                     subject,
-                    html,
+                    html: htmlContent,
+                    sender,
                 };
 
                 if (clientName) {
