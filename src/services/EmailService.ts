@@ -84,6 +84,7 @@ class EmailService extends EventEmitter {
     public async sendEmail(params: SendEmailParams, uuid?: string, existingQueueIds: any[] = []): Promise<SendEmailResult> {
         const appQueueId = this.generateUUID(); // Gere um ID único para a fila
         const emailQueueEntry = new EmailQueueModel({
+            uuid,
             appQueueId,
             params,
             status: 'queued',
