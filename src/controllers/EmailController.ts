@@ -20,62 +20,62 @@ class EmailController {
 
     async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void> {
         const { emailDomain, emailList, fromName, uuid, subject, htmlContent, sender } = req.body;
-    
+
         try {
             logger.info(`Iniciando envio de e-mails para UUID=${uuid}`);
-    
+
             // Validação básica dos parâmetros
             const requiredParams = ['emailDomain', 'emailList', 'fromName', 'uuid', 'subject', 'htmlContent', 'sender'];
             const missingParams = requiredParams.filter(param => !(param in req.body));
-    
+
             if (missingParams.length > 0) {
                 throw new Error(`Parâmetros obrigatórios ausentes: ${missingParams.join(', ')}.`);
             }
-    
+
             const emailService = EmailService.getInstance();
-    
+
             // Cria ou atualiza o documento no banco de dados
             let emailQueue = await EmailQueueModel.findOne({ uuid });
-    
+
             if (!emailQueue) {
                 emailQueue = new EmailQueueModel({ uuid, queueIds: [] });
                 logger.info(`Novo documento criado para UUID=${uuid}`);
             } else {
                 logger.info(`Documento existente encontrado para UUID=${uuid}`);
             }
-    
+
             // **1. Remover Duplicatas da `emailList` e garantir que todos os e-mails sejam processados:**
             const uniqueEmailList = [];
             const emailMap = new Map(); // Usar um Map para rastrear os e-mails únicos
-    
+
             for (const emailData of emailList) {
                 if (!emailMap.has(emailData.email)) {
                     emailMap.set(emailData.email, emailData); // Adiciona o emailData completo ao Map
                     uniqueEmailList.push(emailData);
                 }
             }
-    
+
             // **2. Usar um Map para Acompanhar os `queueIds`:**
             const queueIdMap = new Map(emailQueue.queueIds.map(item => [item.queueId, item]));
-    
+
             for (const emailData of uniqueEmailList) {
                 const { email, clientName } = emailData;
-    
+
                 const emailPayload: EmailPayload = {
                     emailDomain,
                     fromName,
                     to: email,
-                    subject, // Passando o subject diretamente
-                    html: htmlContent, // Passando o htmlContent diretamente
+                    subject,
+                    html: htmlContent,
                     sender,
                 };
-    
+
                 if (clientName) {
                     emailPayload.clientName = clientName;
                 }
-    
+
                 const result = await emailService.sendEmail(emailPayload, uuid, emailQueue.queueIds);
-    
+
                 if (!queueIdMap.has(result.queueId)) {
                     const queueIdData = {
                         queueId: result.queueId,
@@ -84,7 +84,7 @@ class EmailController {
                     };
                     emailQueue.queueIds.push(queueIdData);
                     queueIdMap.set(result.queueId, queueIdData);
-    
+
                     logger.info(`E-mail enviado com sucesso:`, {
                         uuid,
                         queueId: result.queueId,
@@ -96,10 +96,10 @@ class EmailController {
                     logger.info(`O queueId ${result.queueId} já está presente para o UUID=${uuid}, não será duplicado.`);
                 }
             }
-    
+
             await this.saveEmailQueue(emailQueue, uuid);
             this.sendSuccessResponse(res, emailQueue);
-    
+
         } catch (error) {
             this.handleError(res, error);
         }

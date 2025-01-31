@@ -43,9 +43,6 @@ class EmailService extends EventEmitter {
     private logParser: LogParser;
     private pendingSends: Map<string, RecipientStatus>;
     private testEmailMailId: string | null = null;
-    private isProcessing: boolean = false;
-    private tokens: number = 3;
-    private lastRefill: number = Date.now();
 
     private constructor(logParser: LogParser) {
         super();
@@ -60,7 +57,6 @@ class EmailService extends EventEmitter {
         this.pendingSends = new Map();
         this.logParser.on('log', this.handleLogEntry.bind(this));
         this.logParser.on('testEmailLog', this.handleTestEmailLog.bind(this));
-        this.startBackgroundProcessor();
     }
 
     public static getInstance(logParser?: LogParser): EmailService {
@@ -82,91 +78,6 @@ class EmailService extends EventEmitter {
     }
 
     public async sendEmail(params: SendEmailParams, uuid?: string, existingQueueIds: any[] = []): Promise<SendEmailResult> {
-        const appQueueId = this.generateUUID(); // Gere um ID único para a fila
-        const emailQueueEntry = new EmailQueueModel({
-            uuid,
-            appQueueId,
-            params,
-            status: 'queued',
-            createdAt: new Date(),
-        });
-        await emailQueueEntry.save();
-
-        return {
-            queueId: appQueueId,
-            recipient: this.createRecipientStatus(params.to, true, undefined, appQueueId),
-        };
-    }
-
-    private generateUUID(): string {
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-            const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-        });
-    }
-
-    private startBackgroundProcessor() {
-        setInterval(() => this.refillTokens(), 1000); // Recarrega tokens a cada segundo
-        this.processQueue(); // Inicia o processamento contínuo
-    }
-
-    private refillTokens() {
-        const now = Date.now();
-        const elapsed = now - this.lastRefill;
-        if (elapsed >= 1000) {
-            this.tokens = 3; // Recarrega para 3 tokens a cada segundo
-            this.lastRefill = now;
-        }
-    }
-
-    private async processQueue() {
-        while (true) {
-            if (this.tokens > 0 && !this.isProcessing) {
-                this.isProcessing = true;
-                const email = await EmailQueueModel.findOneAndUpdate(
-                    { status: 'queued' },
-                    { status: 'processing' },
-                    { sort: { createdAt: 1 }, new: true }
-                );
-
-                if (email) {
-                    this.tokens--;
-                    this.sendQueuedEmail(email)
-                        .finally(() => this.isProcessing = false);
-                } else {
-                    this.isProcessing = false;
-                }
-            }
-            await new Promise(resolve => setTimeout(resolve, 100)); // Evita bloqueio
-        }
-    }
-
-    private async sendQueuedEmail(email: any) {
-        try {
-            const { params } = email;
-            const smtpQueueId = await this.sendViaTransporter(params);
-    
-            email.status = 'sent';
-            email.smtpQueueId = smtpQueueId;
-            await email.save();
-    
-            // Atualiza o EmailLog com o queueId real do SMTP
-            await this.saveQueueIdAndMailIdToEmailLog(smtpQueueId, email.mailId, params.to);
-        } catch (error) {
-            // Verifica se o erro é uma instância de Error antes de acessar a propriedade 'message'
-            if (error instanceof Error) {
-                email.status = 'failed';
-                email.error = error.message;
-            } else {
-                // Caso o erro não seja uma instância de Error, converte para string
-                email.status = 'failed';
-                email.error = String(error);
-            }
-            await email.save();
-        }
-    }
-
-    private async sendViaTransporter(params: SendEmailParams): Promise<string> {
         const { fromName, emailDomain, to, subject, html, sender } = params;
 
         const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`;
@@ -174,22 +85,70 @@ class EmailService extends EventEmitter {
 
         const recipient = to.toLowerCase();
 
-        const mailOptions = {
-            from,
-            to: recipient,
-            subject,
-            html,
-        };
+        try {
+            // Criação do objeto de envio do e-mail
+            const mailOptions = {
+                from,
+                to: recipient,
+                subject,
+                html,
+            };
 
-        logger.info(`Preparando para enviar email: ${JSON.stringify(mailOptions)}`);
+            logger.info(`Preparando para enviar email: ${JSON.stringify(mailOptions)}`);
 
-        const info = await this.transporter.sendMail(mailOptions);
+            const info = await this.transporter.sendMail(mailOptions);
 
-        const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
-        if (!queueIdMatch || !queueIdMatch[1]) {
-            throw new Error('Não foi possível extrair o queueId da resposta');
+            // Extrair queueId
+            const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
+            if (!queueIdMatch || !queueIdMatch[1]) {
+                throw new Error('Não foi possível extrair o queueId da resposta');
+            }
+            const queueId = queueIdMatch[1];
+
+            // Extrair mailId
+            const mailId = info.messageId;
+            if (!mailId) {
+                throw new Error('Não foi possível extrair o mailId da resposta');
+            }
+
+            // **Verificar se o queueId já existe (antes de salvar no EmailLog):**
+            if (existingQueueIds.some(item => item.queueId === queueId)) {
+                logger.info(`O queueId ${queueId} já está presente, não será duplicado.`);
+                return {
+                    queueId,
+                    recipient: this.createRecipientStatus(recipient, false, "Duplicate queueId"),
+                };
+            }
+
+            logger.info(`Email enviado com sucesso! Detalhes:
+                - De: ${from}
+                - Para: ${recipient}
+                - QueueId: ${queueId}
+                - MailId: ${mailId}
+            `);
+
+            const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
+
+            this.pendingSends.set(queueId, recipientStatus);
+
+            // Salvar a associação no EmailLog, usando o mailId como UUID, e incluindo o queueId
+            await this.saveQueueIdAndMailIdToEmailLog(queueId, mailId, recipient);
+
+            logger.info(`Dados de envio associados com sucesso para queueId=${queueId} e mailId=${mailId}.`);
+
+            return {
+                queueId,
+                recipient: recipientStatus,
+            };
+        } catch (error: any) {
+            logger.error(`Erro ao enviar email: ${error.message}`, error);
+
+            const recipientStatus = this.createRecipientStatus(recipient, false, error.message);
+            return {
+                queueId: '',
+                recipient: recipientStatus,
+            };
         }
-        return queueIdMatch[1];
     }
 
     private async saveQueueIdAndMailIdToEmailLog(queueId: string, mailId: string, recipient: string): Promise<void> {
