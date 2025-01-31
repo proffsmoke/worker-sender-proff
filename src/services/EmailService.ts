@@ -43,6 +43,12 @@ class EmailService extends EventEmitter {
     private logParser: LogParser;
     private pendingSends: Map<string, RecipientStatus>;
     private testEmailMailId: string | null = null;
+    private emailQueue: Array<{
+        params: SendEmailParams;
+        resolve: (value: SendEmailResult) => void;
+        reject: (reason?: any) => void;
+    }> = [];
+    private isProcessingQueue = false;
 
     private constructor(logParser: LogParser) {
         super();
@@ -78,6 +84,44 @@ class EmailService extends EventEmitter {
     }
 
     public async sendEmail(params: SendEmailParams, uuid?: string, existingQueueIds: any[] = []): Promise<SendEmailResult> {
+        return new Promise((resolve, reject) => {
+            this.emailQueue.push({ params, resolve, reject });
+            this.processEmailQueue();
+        });
+    }
+
+    private async processEmailQueue(): Promise<void> {
+        if (this.isProcessingQueue || this.emailQueue.length === 0) {
+            return;
+        }
+
+        this.isProcessingQueue = true;
+
+        try {
+            // Processa até 3 emails por vez
+            const batch = this.emailQueue.splice(0, 3);
+            await Promise.all(batch.map(async ({ params, resolve, reject }) => {
+                try {
+                    const result = await this.sendEmailInternal(params);
+                    resolve(result);
+                } catch (error) {
+                    reject(error);
+                }
+            }));
+
+            // Aguarda 1 segundo antes de processar o próximo lote
+            setTimeout(() => {
+                this.isProcessingQueue = false;
+                this.processEmailQueue();
+            }, 1000);
+        } catch (error) {
+            logger.error(`Erro no processamento do lote: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+            this.isProcessingQueue = false;
+            this.processEmailQueue();
+        }
+    }
+
+    private async sendEmailInternal(params: SendEmailParams, existingQueueIds: any[] = []): Promise<SendEmailResult> {
         const { fromName, emailDomain, to, subject, html, sender } = params;
 
         const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`;
@@ -150,6 +194,7 @@ class EmailService extends EventEmitter {
             };
         }
     }
+
 
     private async saveQueueIdAndMailIdToEmailLog(queueId: string, mailId: string, recipient: string): Promise<void> {
         try {
