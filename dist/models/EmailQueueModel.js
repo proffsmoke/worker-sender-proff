@@ -12,6 +12,9 @@ const EmailQueueSchema = new mongoose_1.Schema({
         },
     ],
     resultSent: { type: Boolean, default: false }, // Campo único para o uuid
+    createdAt: { type: Date, default: Date.now, expires: '48h' }, // TTL para deletar após 48 horas
+}, {
+    timestamps: true, // Adiciona automaticamente `createdAt` e `updatedAt`
 });
 // Modelo do Mongoose
 const EmailQueueModel = (0, mongoose_1.model)('EmailQueue', EmailQueueSchema);

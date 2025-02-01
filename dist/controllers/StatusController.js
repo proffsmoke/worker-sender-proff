@@ -17,15 +17,17 @@ class StatusController {
      */
     async getStatus(req, res, next) {
         try {
+            // Obter a instância do MailerService
+            const mailerInstance = MailerService_1.default.getInstance();
             // Obter informações do sistema
-            const version = MailerService_1.default.getVersion();
-            const createdAt = MailerService_1.default.getCreatedAt().getTime();
+            const version = mailerInstance.getVersion();
+            const createdAt = mailerInstance.getCreatedAt().getTime();
             // Calcular o domínio do hostname do sistema
             const hostname = os_1.default.hostname();
             const domainParts = hostname.split('.').slice(1);
             const domain = domainParts.length > 0 ? domainParts.join('.') : 'unknown.com';
-            const status = MailerService_1.default.getStatus();
-            const blockReason = MailerService_1.default.getBlockReason();
+            const status = mailerInstance.getStatus();
+            const blockReason = mailerInstance.getBlockReason();
             // Obter métricas diretamente do modelo de estatísticas
             const stats = await EmailStats_1.default.findOne({});
             const sent = stats?.sent || 0;

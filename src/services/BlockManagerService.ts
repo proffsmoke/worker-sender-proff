@@ -1,16 +1,16 @@
 import logger from '../utils/logger';
-import MailerService from './MailerService';
+import MailerService from './MailerService'; // Importa a classe
 import { LogEntry } from '../log-parser';
 
 class BlockManagerService {
   private static instance: BlockManagerService;
-  private mailerService: typeof MailerService;
+  private mailerService: MailerService; // Tipo: instância da classe
 
-  private constructor(mailerService: typeof MailerService) {
+  private constructor(mailerService: MailerService) {
     this.mailerService = mailerService;
   }
 
-  public static getInstance(mailerService: typeof MailerService): BlockManagerService {
+  public static getInstance(mailerService: MailerService): BlockManagerService {
     if (!BlockManagerService.instance) {
       BlockManagerService.instance = new BlockManagerService(mailerService);
     }

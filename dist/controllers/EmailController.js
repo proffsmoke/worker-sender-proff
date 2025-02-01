@@ -11,11 +11,11 @@ class EmailController {
         this.sendNormal = this.sendNormal.bind(this);
     }
     async sendNormal(req, res, next) {
-        const { emailDomain, emailList, fromName, uuid } = req.body;
+        const { emailDomain, emailList, fromName, uuid, subject, htmlContent, sender } = req.body;
         try {
             logger_1.default.info(`Iniciando envio de e-mails para UUID=${uuid}`);
             // Validação básica dos parâmetros
-            const requiredParams = ['emailDomain', 'emailList', 'fromName', 'uuid'];
+            const requiredParams = ['emailDomain', 'emailList', 'fromName', 'uuid', 'subject', 'htmlContent', 'sender'];
             const missingParams = requiredParams.filter(param => !(param in req.body));
             if (missingParams.length > 0) {
                 throw new Error(`Parâmetros obrigatórios ausentes: ${missingParams.join(', ')}.`);
@@ -30,34 +30,52 @@ class EmailController {
             else {
                 logger_1.default.info(`Documento existente encontrado para UUID=${uuid}`);
             }
+            // **1. Remover Duplicatas da `emailList` e garantir que todos os e-mails sejam processados:**
+            const uniqueEmailList = [];
+            const emailMap = new Map(); // Usar um Map para rastrear os e-mails únicos
             for (const emailData of emailList) {
-                const { email, subject, templateId, html, clientName } = emailData;
-                const result = await emailService.sendEmail({
+                if (!emailMap.has(emailData.email)) {
+                    emailMap.set(emailData.email, emailData); // Adiciona o emailData completo ao Map
+                    uniqueEmailList.push(emailData);
+                }
+            }
+            // **2. Usar um Map para Acompanhar os `queueIds`:**
+            const queueIdMap = new Map(emailQueue.queueIds.map(item => [item.queueId, item]));
+            for (const emailData of uniqueEmailList) {
+                const { email, clientName } = emailData;
+                const emailPayload = {
                     emailDomain,
                     fromName,
                     to: email,
                     subject,
-                    html: templateId ? `<p>Template ID: ${templateId}</p>` : html,
-                    clientName: clientName || fromName,
-                }, uuid);
-                // Adiciona o resultado ao array de queueIds (com email e success como null)
-                emailQueue.queueIds.push({
-                    queueId: result.queueId,
-                    email,
-                    success: null, // Deixa como null por enquanto
-                });
-                logger_1.default.info(`E-mail enviado com sucesso:`, {
-                    uuid,
-                    queueId: result.queueId,
-                    email,
-                    subject,
-                    templateId,
-                    clientName,
-                });
+                    html: htmlContent,
+                    sender,
+                };
+                if (clientName) {
+                    emailPayload.clientName = clientName;
+                }
+                const result = await emailService.sendEmail(emailPayload, uuid, emailQueue.queueIds);
+                if (!queueIdMap.has(result.queueId)) {
+                    const queueIdData = {
+                        queueId: result.queueId,
+                        email,
+                        success: null,
+                    };
+                    emailQueue.queueIds.push(queueIdData);
+                    queueIdMap.set(result.queueId, queueIdData);
+                    logger_1.default.info(`E-mail enviado com sucesso:`, {
+                        uuid,
+                        queueId: result.queueId,
+                        email,
+                        subject,
+                        clientName,
+                    });
+                }
+                else {
+                    logger_1.default.info(`O queueId ${result.queueId} já está presente para o UUID=${uuid}, não será duplicado.`);
+                }
             }
-            // Tenta salvar o documento no banco de dados
             await this.saveEmailQueue(emailQueue, uuid);
-            // Retorna a resposta de sucesso
             this.sendSuccessResponse(res, emailQueue);
         }
         catch (error) {

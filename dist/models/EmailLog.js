@@ -40,9 +40,9 @@ const EmailLogSchema = new mongoose_1.Schema({
     email: { type: String, required: true, index: true },
     success: { type: Boolean, default: null }, // Inicialmente null
     updated: { type: Boolean, default: false }, // Inicialmente false
-    sentAt: { type: Date, default: Date.now, index: true },
+    sentAt: { type: Date, default: Date.now, expires: '48h', index: true }, // Expira após 48h
 }, {
-    timestamps: true,
-    collection: 'emailLogs',
+    timestamps: true, // Adiciona campos createdAt e updatedAt automaticamente
+    collection: 'emailLogs', // Nome da coleção no MongoDB
 });
 exports.default = mongoose_1.default.model('EmailLog', EmailLogSchema);

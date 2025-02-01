@@ -6,6 +6,7 @@ import BlockManagerService from './BlockManagerService';
 import EmailStats from '../models/EmailStats'; // Importado para atualizar estatísticas
 import { v4 as uuidv4 } from 'uuid';
 import EmailLog from '../models/EmailLog';
+import os from 'os'; // Adicionado para obter o hostname
 
 interface RecipientStatus {
   recipient: string;
@@ -149,73 +150,96 @@ class MailerService {
 
   public async sendInitialTestEmail(): Promise<TestEmailResult> {
     const testEmailParams = {
-        fromName: 'Mailer Test',
-        emailDomain: config.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
-        to: config.mailer.noreplyEmail,
-        bcc: [],
-        subject: 'Email de Teste Inicial',
-        html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
-        clientName: 'Prasminha camarada',
+      fromName: 'Mailer Test',
+      emailDomain: config.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
+      to: config.mailer.noreplyEmail,
+      bcc: [],
+      subject: 'Email de Teste Inicial',
+      html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
+      clientName: 'Prasminha camarada',
     };
     try {
-        const requestUuid = uuidv4();
-        logger.info(`UUID gerado para o teste: ${requestUuid}`);
-        const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
-        const queueId = result.queueId
-        logger.info(`Email de teste enviado com queueId=${queueId}`);
+      const requestUuid = uuidv4();
+      logger.info(`UUID gerado para o teste: ${requestUuid}`);
+      const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
+      const queueId = result.queueId;
+      logger.info(`Email de teste enviado com queueId=${queueId}`);
 
-        // Aguarda até 60 segundos pela entrada de log correspondente
-        const logEntry = await this.waitForLogEntry(queueId, 60000);
+      // Aguarda até 60 segundos pela entrada de log correspondente
+      const logEntry = await this.waitForLogEntry(queueId, 60000);
 
-        if (logEntry && logEntry.success) {
-            logger.info(`Email de teste enviado com sucesso. mailId: ${logEntry.mailId}`);
-            this.unblockMailer();
-            return { success: true, mailId: logEntry.mailId };
-        } else {
-            logger.warn(`Falha ao enviar email de teste. Detalhes: ${JSON.stringify(logEntry)}`);
-            this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
-            return { success: false, mailId: logEntry?.mailId };
-        }
+      if (logEntry && logEntry.success) {
+        logger.info(`Email de teste enviado com sucesso. mailId: ${logEntry.mailId}`);
+        this.unblockMailer();
+        return { success: true, mailId: logEntry.mailId };
+      } else {
+        logger.warn(`Falha ao enviar email de teste. Detalhes: ${JSON.stringify(logEntry)}`);
+        this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
+        return { success: false, mailId: logEntry?.mailId };
+      }
     } catch (error: any) {
-        logger.error(`Erro ao enviar email de teste: ${error.message}`, error);
-        // Incrementar falhas em caso de erro
-        await EmailStats.incrementFail();
-        this.blockMailer('blocked_temporary', `Erro ao enviar email de teste: ${error.message}`);
-        return { success: false };
+      logger.error(`Erro ao enviar email de teste: ${error.message}`, error);
+      // Incrementar falhas em caso de erro
+      await EmailStats.incrementFail();
+      this.blockMailer('blocked_temporary', `Erro ao enviar email de teste: ${error.message}`);
+      return { success: false };
     }
-}
+  }
 
-private async waitForLogEntry(queueId: string, timeout: number): Promise<LogEntry | null> {
-  return new Promise((resolve) => {
+  private async waitForLogEntry(queueId: string, timeout: number): Promise<LogEntry | null> {
+    return new Promise((resolve) => {
       const checkInterval = 500; // Intervalo de checagem em ms
       let elapsedTime = 0;
 
       const intervalId = setInterval(async () => {
-          const emailLog = await EmailLog.findOne({ queueId: queueId });
+        const emailLog = await EmailLog.findOne({ queueId: queueId });
 
-          if (emailLog && emailLog.success) {
-              clearInterval(intervalId);
-              // Converter o documento do Mongoose para LogEntry
-              const logEntry: LogEntry = {
-                  timestamp: emailLog.sentAt.toISOString(),
-                  queueId: emailLog.queueId,
-                  email: emailLog.email,
-                  result: emailLog.success ? 'sent' : 'failed', // Ou outra lógica baseada em suas necessidades
-                  success: emailLog.success,
-                  mailId: emailLog.mailId,
-              };
-              resolve(logEntry);
-          } else {
-              elapsedTime += checkInterval;
-              if (elapsedTime >= timeout) {
-                  clearInterval(intervalId);
-                  resolve(null); // Timeout
-              }
+        if (emailLog && emailLog.success) {
+          clearInterval(intervalId);
+          // Converter o documento do Mongoose para LogEntry
+          const logEntry: LogEntry = {
+            timestamp: emailLog.sentAt.toISOString(),
+            queueId: emailLog.queueId,
+            email: emailLog.email,
+            result: emailLog.success ? 'sent' : 'failed', // Ou outra lógica baseada em suas necessidades
+            success: emailLog.success,
+            mailId: emailLog.mailId,
+          };
+          resolve(logEntry);
+        } else {
+          elapsedTime += checkInterval;
+          if (elapsedTime >= timeout) {
+            clearInterval(intervalId);
+            resolve(null); // Timeout
           }
+        }
       }, checkInterval);
-  });
-}
-  
+    });
+  }
+
+  // Métodos adicionais para obter informações do sistema
+  public getSystemInfo() {
+    const version = this.getVersion();
+    const createdAt = this.getCreatedAt().getTime();
+
+    // Calcular o domínio do hostname do sistema
+    const hostname = os.hostname();
+    const domainParts = hostname.split('.').slice(1);
+    const domain = domainParts.length > 0 ? domainParts.join('.') : 'unknown.com';
+
+    const status = this.getStatus();
+    const blockReason = this.getBlockReason();
+
+    return {
+      version,
+      createdAt,
+      hostname,
+      domain,
+      status,
+      blockReason,
+    };
+  }
 }
 
-export default MailerService.getInstance();
+// Exporta a CLASSE para uso em tipagem
+export default MailerService;
