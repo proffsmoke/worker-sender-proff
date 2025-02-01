@@ -150,41 +150,55 @@ class MailerService {
 
   public async sendInitialTestEmail(): Promise<TestEmailResult> {
     const testEmailParams = {
-      fromName: 'Mailer Test',
-      emailDomain: config.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
-      to: config.mailer.noreplyEmail,
-      bcc: [],
-      subject: 'Email de Teste Inicial',
-      html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
-      clientName: 'Prasminha camarada',
+        fromName: 'Mailer Test',
+        emailDomain: config.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
+        to: config.mailer.noreplyEmail,
+        bcc: [],
+        subject: 'Email de Teste Inicial',
+        html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
+        clientName: 'Prasminha camarada',
     };
     try {
-      const requestUuid = uuidv4();
-      logger.info(`UUID gerado para o teste: ${requestUuid}`);
-      const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
-      const queueId = result.queueId;
-      logger.info(`Email de teste enviado com queueId=${queueId}`);
+        const requestUuid = uuidv4();
+        logger.info(`UUID gerado para o teste: ${requestUuid}`);
+        const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
+        const queueId = result.queueId;
+        logger.info(`Email de teste enviado com queueId=${queueId}`);
 
-      // Aguarda até 60 segundos pela entrada de log correspondente
-      const logEntry = await this.waitForLogEntry(queueId, 60000);
+        const logEntry = await this.waitForLogEntry(queueId, 60000);
 
-      if (logEntry && logEntry.success) {
-        logger.info(`Email de teste enviado com sucesso. mailId: ${logEntry.mailId}`);
-        this.unblockMailer();
-        return { success: true, mailId: logEntry.mailId };
-      } else {
-        logger.warn(`Falha ao enviar email de teste. Detalhes: ${JSON.stringify(logEntry)}`);
-        this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
-        return { success: false, mailId: logEntry?.mailId };
-      }
+        if (logEntry?.success) {
+            logger.info(`Email de teste enviado com sucesso. mailId: ${logEntry.mailId}`);
+            this.unblockMailer();
+            return { success: true, mailId: logEntry.mailId };
+        } else {
+            const errorMessage = logEntry 
+                ? `Falha: ${logEntry.result}` 
+                : 'Timeout sem confirmação';
+            
+            logger.warn(`Falha no teste: ${errorMessage}`);
+            this.blockMailer('blocked_temporary', errorMessage);
+            
+            return { 
+                success: false,
+                mailId: logEntry?.mailId || '' // Mantém compatibilidade com o tipo
+            };
+        }
     } catch (error: any) {
-      logger.error(`Erro ao enviar email de teste: ${error.message}`, error);
-      // Incrementar falhas em caso de erro
-      await EmailStats.incrementFail();
-      this.blockMailer('blocked_temporary', `Erro ao enviar email de teste: ${error.message}`);
-      return { success: false };
+        const errorMessage = error instanceof Error 
+            ? error.message 
+            : 'Erro desconhecido';
+        
+        logger.error(`Falha crítica: ${errorMessage}`);
+        await EmailStats.incrementFail();
+        this.blockMailer('blocked_temporary', errorMessage);
+        
+        return { 
+            success: false,
+            mailId: '' // Valor vazio para manter a estrutura
+        };
     }
-  }
+}
 
   private async waitForLogEntry(queueId: string, timeout: number): Promise<LogEntry | null> {
     return new Promise((resolve) => {
