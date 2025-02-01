@@ -51,17 +51,11 @@ class BlockManagerService {
   }
 
   private shouldProcessEntry(logEntry: LogEntry): boolean {
-    if (this.mailerService.getStatus() !== 'health') {
-      logger.info(`Ignorando logEntry - Status: ${this.mailerService.getStatus()}`);
-      return false;
-    }
-
     if (!logEntry?.result || !logEntry.queueId) {
       logger.warn('Log entry inválido:', JSON.stringify(logEntry));
       return false;
     }
-
-    return true;
+    return true; // Processa sempre, independente do status
   }
 
   private isPermanentError(message: string): boolean {
@@ -77,12 +71,20 @@ class BlockManagerService {
   }
 
   private applyBlock(type: 'permanent' | 'temporary', reason: string): void {
-    const status = type === 'permanent' 
+    const currentStatus = this.mailerService.getStatus();
+    
+    // Mantém bloqueio permanente se já existir
+    if (currentStatus === 'blocked_permanently') return;
+
+    const newStatus = type === 'permanent' 
       ? 'blocked_permanently' 
       : 'blocked_temporary';
-    
-    logger.warn(`Bloqueio ${type} aplicado: ${reason}`);
-    this.mailerService.blockMailer(status, reason);
+
+    // Atualiza apenas se for mais crítico ou status health
+    if (newStatus === 'blocked_permanently' || currentStatus === 'health') {
+      logger.warn(`Aplicando bloqueio ${newStatus}: ${reason}`);
+      this.mailerService.blockMailer(newStatus, reason);
+    }
   }
 
   private handleError(error: unknown): void {

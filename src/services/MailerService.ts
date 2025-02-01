@@ -3,7 +3,7 @@ import config from '../config';
 import EmailService, { TestEmailResult } from './EmailService';
 import LogParser, { LogEntry } from '../log-parser';
 import BlockManagerService from './BlockManagerService';
-import EmailStats from '../models/EmailStats'; // Importado para atualizar estatísticas
+import EmailStats from '../models/EmailStats';
 import { v4 as uuidv4 } from 'uuid';
 import EmailLog from '../models/EmailLog';
 
@@ -13,7 +13,7 @@ interface RecipientStatus {
   error?: string;
   name?: string;
   queueId?: string;
-  logEntry?: LogEntry; // Adicionado para incluir o log completo
+  logEntry?: LogEntry;
 }
 
 class MailerService {
@@ -51,7 +51,11 @@ class MailerService {
   }
 
   initialize(): void {
-    this.sendInitialTestEmail();
+    if (!this.isBlockedPermanently) {
+      this.sendInitialTestEmail();
+    } else {
+      logger.warn('Mailer está permanentemente bloqueado. Teste inicial omitido.');
+    }
   }
 
   getVersion(): string {
@@ -148,6 +152,11 @@ class MailerService {
   }
 
   public async sendInitialTestEmail(): Promise<TestEmailResult> {
+    if (this.isBlockedPermanently) {
+      logger.warn('Mailer está permanentemente bloqueado. Teste omitido.');
+      return { success: false };
+    }
+
     const testEmailParams = {
       fromName: 'Mailer Test',
       emailDomain: config.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
@@ -157,6 +166,7 @@ class MailerService {
       html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
       clientName: 'Prasminha camarada',
     };
+
     try {
       const requestUuid = uuidv4();
       logger.info(`UUID gerado para o teste: ${requestUuid}`);
@@ -164,7 +174,6 @@ class MailerService {
       const queueId = result.queueId;
       logger.info(`Email de teste enviado com queueId=${queueId}`);
 
-      // Aguarda até 60 segundos pela entrada de log correspondente
       const logEntry = await this.waitForLogEntry(queueId, 60000);
 
       if (logEntry && logEntry.success) {
@@ -173,14 +182,17 @@ class MailerService {
         return { success: true, mailId: logEntry.mailId };
       } else {
         logger.warn(`Falha ao enviar email de teste. Detalhes: ${JSON.stringify(logEntry)}`);
-        this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
+        if (!this.isBlockedPermanently) {
+          this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
+        }
         return { success: false, mailId: logEntry?.mailId };
       }
     } catch (error: any) {
       logger.error(`Erro ao enviar email de teste: ${error.message}`, error);
-      // Incrementar falhas em caso de erro
+      if (!this.isBlockedPermanently) {
+        this.blockMailer('blocked_temporary', `Erro ao enviar email de teste: ${error.message}`);
+      }
       await EmailStats.incrementFail();
-      this.blockMailer('blocked_temporary', `Erro ao enviar email de teste: ${error.message}`);
       return { success: false };
     }
   }
@@ -189,11 +201,10 @@ class MailerService {
     return new Promise((resolve) => {
       const checkInterval = 500;
       let elapsedTime = 0;
-  
+
       const intervalId = setInterval(async () => {
         const emailLog = await EmailLog.findOne({ queueId: queueId });
-  
-        // Verifica se o log existe e se foi processado (success não é null)
+
         if (emailLog && emailLog.success !== null) {
           clearInterval(intervalId);
           const logEntry: LogEntry = {
@@ -209,7 +220,7 @@ class MailerService {
           elapsedTime += checkInterval;
           if (elapsedTime >= timeout) {
             clearInterval(intervalId);
-            resolve(null); // Timeout após o tempo máximo
+            resolve(null);
           }
         }
       }, checkInterval);
@@ -217,5 +228,4 @@ class MailerService {
   }
 }
 
-// Exporta a CLASSE para uso em tipagem
 export default MailerService;
