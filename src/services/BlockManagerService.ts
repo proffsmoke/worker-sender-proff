@@ -5,7 +5,7 @@ import { LogEntry } from '../log-parser';
 class BlockManagerService {
   private static instance: BlockManagerService;
   private mailerService: MailerService;
-  
+
   private readonly blockedErrors = {
     permanent: [
       '(S3140)', 'blacklisted', 'blacklistado', 'Spamhaus', 'Barracuda',
@@ -37,9 +37,9 @@ class BlockManagerService {
   public handleLogEntry(logEntry: LogEntry): void {
     try {
       if (!this.shouldProcessEntry(logEntry)) return;
-      
+
       const errorMessage = logEntry.result.toLowerCase();
-      
+
       if (this.isPermanentError(errorMessage)) {
         this.applyBlock('permanent', logEntry.result);
       } else if (this.isTemporaryError(errorMessage)) {
@@ -52,51 +52,46 @@ class BlockManagerService {
 
   private shouldProcessEntry(logEntry: LogEntry): boolean {
     if (!logEntry?.result || !logEntry.queueId) {
-      logger.warn('Log entry inválido:', JSON.stringify(logEntry));
+      logger.warn('Invalid log entry:', JSON.stringify(logEntry));
       return false;
     }
-    return true; // Processa sempre, independente do status
+    return true;
   }
 
-
+  private isPermanentError(message: string): boolean {
+    return this.blockedErrors.permanent.some(err => {
+      const pattern = new RegExp(`\\b${err}\\b`, 'i');
+      return pattern.test(message);
+    });
+  }
 
   private isTemporaryError(message: string): boolean {
-    return this.blockedErrors.temporary.some(err => 
-      message.includes(err.toLowerCase())
-    );
+    return this.blockedErrors.temporary.some(err => {
+      const pattern = new RegExp(`\\b${err}\\b`, 'i');
+      return pattern.test(message);
+    });
   }
 
-  // BlockManagerService.ts
-private isPermanentError(message: string): boolean {
-  // Verificação mais abrangente
-  return this.blockedErrors.permanent.some(err => {
-      const pattern = new RegExp(err, 'i');
-      return pattern.test(message);
-  });
-}
+  private applyBlock(type: 'permanent' | 'temporary', reason: string): void {
+    const currentStatus = this.mailerService.getStatus();
 
-private applyBlock(type: 'permanent' | 'temporary', reason: string): void {
-  const currentStatus = this.mailerService.getStatus();
-  
-  // Forçar bloqueio permanente mesmo se já houver temporário
-  if (type === 'permanent') {
-      logger.warn(`Detectado bloqueio PERMANENTE: ${reason}`);
+    if (type === 'permanent') {
+      logger.warn(`🔥 PERMANENT BLOCK DETECTED: ${reason}`);
       this.mailerService.blockMailer('blocked_permanently', reason);
       return;
-  }
+    }
 
-  // Aplicar temporário apenas se não houver nenhum bloqueio
-  if (currentStatus === 'health') {
-      logger.warn(`Aplicando bloqueio temporário: ${reason}`);
+    if (currentStatus === 'health') {
+      logger.warn(`⏳ TEMPORARY BLOCK APPLIED: ${reason}`);
       this.mailerService.blockMailer('blocked_temporary', reason);
+    }
   }
-}
 
   private handleError(error: unknown): void {
-    const errorMessage = error instanceof Error 
-      ? error.message 
-      : 'Erro desconhecido ao processar log entry';
-      
+    const errorMessage = error instanceof Error
+      ? error.message
+      : 'Unknown error processing log entry';
+
     logger.error(`BlockManagerService error: ${errorMessage}`);
   }
 }

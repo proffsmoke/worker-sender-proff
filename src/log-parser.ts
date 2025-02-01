@@ -1,4 +1,3 @@
-// log-parser.ts
 import { Tail } from 'tail';
 import logger from './utils/logger';
 import fs from 'fs';
@@ -8,173 +7,164 @@ import EmailQueueModel from './models/EmailQueueModel';
 import EmailStats from './models/EmailStats';
 
 export interface LogEntry {
-    timestamp: string;
-    queueId: string;
-    email: string;
-    result: string;
-    success: boolean;
-    mailId?: string;
+  timestamp: string;
+  queueId: string;
+  email: string;
+  result: string;
+  success: boolean;
+  mailId?: string;
 }
 
 class LogParser extends EventEmitter {
-    private logFilePath: string;
-    private tail: Tail | null = null;
-    private recentLogs: LogEntry[] = [];
-    private logHashes: Set<string> = new Set(); // Usar Set para evitar duplicatas
-    private readonly MAX_CACHE_SIZE = 1000;
-    private isMonitoringStarted = false;
+  private logFilePath: string;
+  private tail: Tail | null = null;
+  private recentLogs: LogEntry[] = [];
+  private logHashes: Set<string> = new Set();
+  private readonly MAX_CACHE_SIZE = 1000;
+  private isMonitoringStarted = false;
 
-    constructor(logFilePath: string = '/var/log/mail.log') {
-        super();
-        this.logFilePath = logFilePath;
+  constructor(logFilePath: string = '/var/log/mail.log') {
+    super();
+    this.logFilePath = logFilePath;
 
-        if (!fs.existsSync(this.logFilePath)) {
-            logger.error(`Log file not found at path: ${this.logFilePath}`);
-            throw new Error(`Log file not found: ${this.logFilePath}`);
-        }
-
-        this.tail = new Tail(this.logFilePath, { useWatchFile: true });
+    if (!fs.existsSync(this.logFilePath)) {
+      logger.error(`Log file not found at path: ${this.logFilePath}`);
+      throw new Error(`Log file not found: ${this.logFilePath}`);
     }
 
-    public startMonitoring(): void {
-        if (this.isMonitoringStarted) {
-            logger.warn('Log monitoring already started.');
-            return;
-        }
+    this.tail = new Tail(this.logFilePath, { useWatchFile: true });
+  }
 
-        if (!this.tail) {
-            logger.error('Tail not initialized.');
-            return;
-        }
-
-        this.tail.on('line', this.handleLogLine.bind(this));
-        this.tail.on('error', (error) => {
-            logger.error('Error monitoring logs:', error);
-        });
-
-        this.isMonitoringStarted = true;
-        logger.info(`Monitoring started for log file: ${this.logFilePath}`);
-    }
-    private parseLogLine(line: string): LogEntry | null {
-            // Padrão melhorado para capturar mensagens completas
-            const queueMatch = line.match(/(postfix\/smtp\[\d+\]: (\w+): .* status=\w+ \((.*)\))/);
-            
-            if (!queueMatch) return null;
-
-            const [, fullMessage, queueId, errorDetails] = queueMatch;
-            const emailMatch = line.match(/to=<([^>]+)>/);
-            const email = emailMatch ? emailMatch[1] : 'unknown';
-
-            return {
-                timestamp: new Date().toISOString(),
-                queueId,
-                email,
-                result: fullMessage, // Captura toda a mensagem de erro
-                success: line.includes('status=sent'),
-            };
-        }
-
-    private async handleLogLine(line: string): Promise<void> {
-        try {
-            logger.info(`Processing log line: ${line}`);
-            const logEntry = this.parseLogLine(line);
-            if (!logEntry) return;
-
-            // Usar apenas queueId e result para verificar duplicidade
-            const logHash = `${logEntry.queueId}-${logEntry.result}`;
-            if (this.logHashes.has(logHash)) {
-                logger.info(`Duplicate log ignored: ${logHash}`);
-                return;
-            }
-
-            this.recentLogs.push(logEntry);
-            this.logHashes.add(logHash);
-
-            if (this.recentLogs.length > this.MAX_CACHE_SIZE) {
-                const oldestLog = this.recentLogs.shift();
-                if (oldestLog) {
-                    // Remover hash do log mais antigo
-                    this.logHashes.delete(`${oldestLog.queueId}-${oldestLog.result}`);
-                }
-            }
-
-            logger.info(`Parsed log entry: ${JSON.stringify(logEntry)}`);
-            await this.processLogEntry(logEntry);
-        } catch (error) {
-            logger.error(`Error processing log line: ${line}`, error);
-        }
+  public startMonitoring(): void {
+    if (this.isMonitoringStarted) {
+      logger.warn('Log monitoring already started.');
+      return;
     }
 
-    // log-parser.ts
-private async processLogEntry(logEntry: LogEntry): Promise<void> {
+    if (!this.tail) {
+      logger.error('Tail not initialized.');
+      return;
+    }
+
+    this.tail.on('line', this.handleLogLine.bind(this));
+    this.tail.on('error', (error) => {
+      logger.error('Error monitoring logs:', error);
+    });
+
+    this.isMonitoringStarted = true;
+    logger.info(`Monitoring started for log file: ${this.logFilePath}`);
+  }
+
+  private parseLogLine(line: string): LogEntry | null {
+    // Extrai informações completas do log
+    const queueMatch = line.match(/postfix\/smtp\[\d+\]: (\w+): .* status=\w+ \((.*)\)/);
+    const emailMatch = line.match(/to=<([^>]+)>/);
+    const messageIdMatch = line.match(/message-id=<([^>]+)>/);
+
+    if (!queueMatch) return null;
+
+    const [, queueId, errorDetails] = queueMatch;
+    const email = emailMatch ? emailMatch[1] : 'unknown';
+    const mailId = messageIdMatch ? messageIdMatch[1] : undefined;
+
+    return {
+      timestamp: new Date().toISOString(),
+      queueId,
+      email,
+      result: errorDetails, // Captura a mensagem completa do erro
+      success: line.includes('status=sent'),
+      mailId,
+    };
+  }
+
+  private async handleLogLine(line: string): Promise<void> {
     try {
-        const { queueId, success, mailId, email } = logEntry;
+      logger.info(`Processing log line: ${line}`);
+      const logEntry = this.parseLogLine(line);
+      if (!logEntry) return;
 
-        // Atualizar estatísticas no EmailStats
-        await EmailStats.incrementSent();
-        if (success) {
-            await EmailStats.incrementSuccess();
-        } else {
-            await EmailStats.incrementFail();
+      const logHash = `${logEntry.queueId}-${logEntry.result}`;
+      if (this.logHashes.has(logHash)) {
+        logger.info(`Duplicate log ignored: ${logHash}`);
+        return;
+      }
+
+      this.recentLogs.push(logEntry);
+      this.logHashes.add(logHash);
+
+      if (this.recentLogs.length > this.MAX_CACHE_SIZE) {
+        const oldestLog = this.recentLogs.shift();
+        if (oldestLog) {
+          this.logHashes.delete(`${oldestLog.queueId}-${oldestLog.result}`);
         }
+      }
 
-        // Buscar informações no EmailLog primeiro, depois no EmailQueueModel
-        let emailLog = await EmailLog.findOne({ queueId });
+      logger.info(`Parsed log entry: ${JSON.stringify(logEntry)}`);
+      await this.processLogEntry(logEntry);
+      this.emit('log', logEntry); // Emite o log para o BlockManagerService
+    } catch (error) {
+      logger.error(`Error processing log line: ${line}`, error);
+    }
+  }
 
-        if (!emailLog) {
-            // Buscar no EmailQueueModel se não encontrar no EmailLog
-            const emailQueue = await EmailQueueModel.findOne({ 'queueIds.queueId': queueId });
-            if (emailQueue) {
-                const associatedQueue = emailQueue.queueIds.find(q => q.queueId === queueId);
-                if (associatedQueue) {
-                    emailLog = new EmailLog({
-                        queueId: queueId,
-                        email: associatedQueue.email,
-                        mailId: emailQueue.uuid,
-                        success: success,
-                        sentAt: new Date()
-                    });
-                    await emailLog.save();
-                }
-            }
-        }
+  private async processLogEntry(logEntry: LogEntry): Promise<void> {
+    try {
+      const { queueId, success, mailId, email } = logEntry;
 
-        // Nova parte adicionada: Atualizar EmailQueueModel
-        if (emailLog) {
-            // Atualizar o registro na fila principal
-            await EmailQueueModel.updateOne(
-                { "queueIds.queueId": queueId },
-                { $set: { "queueIds.$.success": success } }
-            );
-            logger.info(`Queue atualizada: ${queueId} => ${success}`);
-        }
+      await EmailStats.incrementSent();
+      if (success) {
+        await EmailStats.incrementSuccess();
+      } else {
+        await EmailStats.incrementFail();
+      }
 
-        // Emitir 'testEmailLog' se mailId estiver presente
-        if (mailId) {
-            this.emit('testEmailLog', { mailId, success });
-        }
-
-        // Atualizar log no EmailLog
-        if (emailLog) {
-            emailLog.success = success;
-            if (mailId) emailLog.mailId = mailId;
+      let emailLog = await EmailLog.findOne({ queueId });
+      if (!emailLog) {
+        const emailQueue = await EmailQueueModel.findOne({ 'queueIds.queueId': queueId });
+        if (emailQueue) {
+          const associatedQueue = emailQueue.queueIds.find(q => q.queueId === queueId);
+          if (associatedQueue) {
+            emailLog = new EmailLog({
+              queueId,
+              email: associatedQueue.email,
+              mailId: emailQueue.uuid,
+              success,
+              sentAt: new Date(),
+            });
             await emailLog.save();
-            logger.info(`Log atualizado: ${queueId}, ${mailId}, ${success}`);
-        } else {
-            logger.warn(`Log não encontrado: ${queueId}`);
+          }
         }
+      }
 
-        this.emit('log', logEntry);
+      if (emailLog) {
+        await EmailQueueModel.updateOne(
+          { "queueIds.queueId": queueId },
+          { $set: { "queueIds.$.success": success } }
+        );
+        logger.info(`Queue updated: ${queueId} => ${success}`);
+      }
+
+      if (mailId) {
+        this.emit('testEmailLog', { mailId, success });
+      }
+
+      if (emailLog) {
+        emailLog.success = success;
+        if (mailId) emailLog.mailId = mailId;
+        await emailLog.save();
+        logger.info(`Log updated: ${queueId}, ${mailId}, ${success}`);
+      } else {
+        logger.warn(`Log not found: ${queueId}`);
+      }
 
     } catch (error) {
-        logger.error(`Erro no processamento: ${JSON.stringify(logEntry)}`, error);
+      logger.error(`Error processing log entry: ${JSON.stringify(logEntry)}`, error);
     }
-}
-  
+  }
 
-    public getRecentLogs(): LogEntry[] {
-        return this.recentLogs;
-    }
+  public getRecentLogs(): LogEntry[] {
+    return this.recentLogs;
+  }
 }
 
 export default LogParser;

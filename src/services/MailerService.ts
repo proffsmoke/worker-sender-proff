@@ -35,6 +35,11 @@ class MailerService {
     this.emailService = EmailService.getInstance(this.logParser);
     this.blockManagerService = BlockManagerService.getInstance(this);
 
+    // Conectar o LogParser ao BlockManagerService
+    this.logParser.on('log', (logEntry: LogEntry) => {
+      this.blockManagerService.handleLogEntry(logEntry);
+    });
+
     if (!this.isMonitoringStarted) {
       this.logParser.startMonitoring();
       this.isMonitoringStarted = true;
@@ -54,7 +59,7 @@ class MailerService {
     if (!this.isBlockedPermanently) {
       this.sendInitialTestEmail();
     } else {
-      logger.warn('Mailer está permanentemente bloqueado. Teste inicial omitido.');
+      logger.warn('Mailer is permanently blocked. Initial test omitted.');
     }
   }
 
@@ -91,22 +96,22 @@ class MailerService {
   blockMailer(status: 'blocked_permanently' | 'blocked_temporary', reason: string): void {
     // Se já está permanentemente bloqueado, mantém o estado
     if (this.isBlockedPermanently) return;
-  
+
     // Prioriza bloqueios permanentes
     if (status === 'blocked_permanently') {
       this.isBlocked = true;
       this.isBlockedPermanently = true;
       this.blockReason = reason;
-      logger.warn(`Mailer bloqueado permanentemente. Razão: ${reason}`);
+      logger.warn(`🚨 PERMANENT BLOCK APPLIED: ${reason}`);
       this.clearRetryInterval();
       return;
     }
-  
+
     // Aplica bloqueio temporário apenas se não estiver bloqueado
     if (!this.isBlocked) {
       this.isBlocked = true;
       this.blockReason = reason;
-      logger.warn(`Mailer bloqueado temporariamente. Razão: ${reason}`);
+      logger.warn(`⏳ TEMPORARY BLOCK APPLIED: ${reason}`);
       this.scheduleRetry();
     }
   }
@@ -115,14 +120,14 @@ class MailerService {
     if (this.isBlocked && !this.isBlockedPermanently) {
       this.isBlocked = false;
       this.blockReason = null;
-      logger.info('Mailer desbloqueado.');
+      logger.info('Mailer unblocked.');
       this.clearRetryInterval();
     }
   }
 
   private scheduleRetry(): void {
     if (this.isBlockedPermanently) {
-      logger.info('Mailer está permanentemente bloqueado. Não tentará reenviar emails.');
+      logger.info('Mailer is permanently blocked. No retries will be attempted.');
       return;
     }
 
@@ -130,7 +135,7 @@ class MailerService {
       return;
     }
 
-    logger.info('Agendando tentativa de reenviar email de teste a cada 4 minutos.');
+    logger.info('Scheduling test email retry every 4 minutes.');
     this.retryIntervalId = setInterval(() => this.retrySendEmail(), 4 * 60 * 1000);
   }
 
@@ -138,29 +143,29 @@ class MailerService {
     if (this.retryIntervalId) {
       clearInterval(this.retryIntervalId);
       this.retryIntervalId = null;
-      logger.info('Intervalo de tentativa de reenvio cancelado.');
+      logger.info('Retry interval cleared.');
     }
   }
 
   private async retrySendEmail(): Promise<void> {
     if (!this.isBlocked || this.isBlockedPermanently) {
       this.clearRetryInterval();
-      logger.info('Mailer não está bloqueado temporariamente. Cancelando tentativas de reenvio.');
+      logger.info('Mailer is not temporarily blocked. Canceling retries.');
       return;
     }
 
-    logger.info('Tentando reenviar email de teste...');
+    logger.info('Attempting to resend test email...');
     const result = await this.sendInitialTestEmail();
 
     if (result.success) {
-      logger.info('Reenvio de email de teste bem-sucedido. Cancelando futuras tentativas.');
+      logger.info('Test email resend successful. Canceling further retries.');
       this.clearRetryInterval();
     }
   }
 
   public async sendInitialTestEmail(): Promise<TestEmailResult> {
     if (this.isBlockedPermanently) {
-      logger.warn('Mailer está permanentemente bloqueado. Teste omitido.');
+      logger.warn('Mailer is permanently blocked. Test omitted.');
       return { success: false };
     }
 
@@ -169,35 +174,35 @@ class MailerService {
       emailDomain: config.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
       to: config.mailer.noreplyEmail,
       bcc: [],
-      subject: 'Email de Teste Inicial',
-      html: '<p>Este é um email de teste inicial para verificar o funcionamento do Mailer.</p>',
-      clientName: 'Prasminha camarada',
+      subject: 'Initial Test Email',
+      html: '<p>This is an initial test email to verify Mailer functionality.</p>',
+      clientName: 'Test Client',
     };
 
     try {
       const requestUuid = uuidv4();
-      logger.info(`UUID gerado para o teste: ${requestUuid}`);
+      logger.info(`UUID generated for test: ${requestUuid}`);
       const result = await this.emailService.sendEmail(testEmailParams, requestUuid);
       const queueId = result.queueId;
-      logger.info(`Email de teste enviado com queueId=${queueId}`);
+      logger.info(`Test email sent with queueId=${queueId}`);
 
       const logEntry = await this.waitForLogEntry(queueId, 60000);
 
       if (logEntry && logEntry.success) {
-        logger.info(`Email de teste enviado com sucesso. mailId: ${logEntry.mailId}`);
+        logger.info(`Test email sent successfully. mailId: ${logEntry.mailId}`);
         this.unblockMailer();
         return { success: true, mailId: logEntry.mailId };
       } else {
-        logger.warn(`Falha ao enviar email de teste. Detalhes: ${JSON.stringify(logEntry)}`);
+        logger.warn(`Failed to send test email. Details: ${JSON.stringify(logEntry)}`);
         if (!this.isBlockedPermanently) {
-          this.blockMailer('blocked_temporary', 'Falha no envio do email de teste.');
+          this.blockMailer('blocked_temporary', 'Failed to send test email.');
         }
         return { success: false, mailId: logEntry?.mailId };
       }
     } catch (error: any) {
-      logger.error(`Erro ao enviar email de teste: ${error.message}`, error);
+      logger.error(`Error sending test email: ${error.message}`, error);
       if (!this.isBlockedPermanently) {
-        this.blockMailer('blocked_temporary', `Erro ao enviar email de teste: ${error.message}`);
+        this.blockMailer('blocked_temporary', `Error sending test email: ${error.message}`);
       }
       await EmailStats.incrementFail();
       return { success: false };
