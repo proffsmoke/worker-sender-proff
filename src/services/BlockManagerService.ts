@@ -58,11 +58,7 @@ class BlockManagerService {
     return true; // Processa sempre, independente do status
   }
 
-  private isPermanentError(message: string): boolean {
-    return this.blockedErrors.permanent.some(err => 
-      message.includes(err.toLowerCase())
-    );
-  }
+
 
   private isTemporaryError(message: string): boolean {
     return this.blockedErrors.temporary.some(err => 
@@ -70,27 +66,31 @@ class BlockManagerService {
     );
   }
 
-  private applyBlock(type: 'permanent' | 'temporary', reason: string): void {
-    const currentStatus = this.mailerService.getStatus();
-    
-    // Ignora se já estiver permanentemente bloqueado
-    if (currentStatus === 'blocked_permanently') return;
+  // BlockManagerService.ts
+private isPermanentError(message: string): boolean {
+  // Verificação mais abrangente
+  return this.blockedErrors.permanent.some(err => {
+      const pattern = new RegExp(err, 'i');
+      return pattern.test(message);
+  });
+}
+
+private applyBlock(type: 'permanent' | 'temporary', reason: string): void {
+  const currentStatus = this.mailerService.getStatus();
   
-    const newStatus = type === 'permanent' 
-      ? 'blocked_permanently' 
-      : 'blocked_temporary';
-  
-    // Força atualização para bloqueio permanente independente do status atual
-    if (newStatus === 'blocked_permanently') {
-      logger.warn(`Detectado bloqueio permanente: ${reason}`);
-      this.mailerService.blockMailer(newStatus, reason);
-    }
-    // Aplica bloqueio temporário apenas se o status atual for health
-    else if (currentStatus === 'health') {
-      logger.warn(`Aplicando bloqueio temporário: ${reason}`);
-      this.mailerService.blockMailer(newStatus, reason);
-    }
+  // Forçar bloqueio permanente mesmo se já houver temporário
+  if (type === 'permanent') {
+      logger.warn(`Detectado bloqueio PERMANENTE: ${reason}`);
+      this.mailerService.blockMailer('blocked_permanently', reason);
+      return;
   }
+
+  // Aplicar temporário apenas se não houver nenhum bloqueio
+  if (currentStatus === 'health') {
+      logger.warn(`Aplicando bloqueio temporário: ${reason}`);
+      this.mailerService.blockMailer('blocked_temporary', reason);
+  }
+}
 
   private handleError(error: unknown): void {
     const errorMessage = error instanceof Error 

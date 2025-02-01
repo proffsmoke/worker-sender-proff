@@ -55,26 +55,24 @@ class LogParser extends EventEmitter {
         this.isMonitoringStarted = true;
         logger.info(`Monitoring started for log file: ${this.logFilePath}`);
     }
-
     private parseLogLine(line: string): LogEntry | null {
-        // Extrai informações básicas do log (queueId, email, result, message-id)
-        const queueMatch = line.match(/postfix\/smtp\[[0-9]+\]: ([A-Z0-9]+): to=<(.*)>, .*, status=(\w+)/);
-        const messageIdMatch = line.match(/postfix\/cleanup\[[0-9]+\]: [A-Z0-9]+: message-id=<(.*)>/);
+            // Padrão melhorado para capturar mensagens completas
+            const queueMatch = line.match(/(postfix\/smtp\[\d+\]: (\w+): .* status=\w+ \((.*)\))/);
+            
+            if (!queueMatch) return null;
 
-        if (!queueMatch) return null;
+            const [, fullMessage, queueId, errorDetails] = queueMatch;
+            const emailMatch = line.match(/to=<([^>]+)>/);
+            const email = emailMatch ? emailMatch[1] : 'unknown';
 
-        const [, queueId, email, result] = queueMatch;
-        const mailId = messageIdMatch ? messageIdMatch[1] : undefined;
-
-        return {
-            timestamp: new Date().toISOString(),
-            queueId,
-            email: email.trim(),
-            result,
-            success: result === 'sent',
-            mailId,
-        };
-    }
+            return {
+                timestamp: new Date().toISOString(),
+                queueId,
+                email,
+                result: fullMessage, // Captura toda a mensagem de erro
+                success: line.includes('status=sent'),
+            };
+        }
 
     private async handleLogLine(line: string): Promise<void> {
         try {
