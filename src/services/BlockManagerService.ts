@@ -73,16 +73,21 @@ class BlockManagerService {
   private applyBlock(type: 'permanent' | 'temporary', reason: string): void {
     const currentStatus = this.mailerService.getStatus();
     
-    // Mantém bloqueio permanente se já existir
+    // Ignora se já estiver permanentemente bloqueado
     if (currentStatus === 'blocked_permanently') return;
-
+  
     const newStatus = type === 'permanent' 
       ? 'blocked_permanently' 
       : 'blocked_temporary';
-
-    // Atualiza apenas se for mais crítico ou status health
-    if (newStatus === 'blocked_permanently' || currentStatus === 'health') {
-      logger.warn(`Aplicando bloqueio ${newStatus}: ${reason}`);
+  
+    // Força atualização para bloqueio permanente independente do status atual
+    if (newStatus === 'blocked_permanently') {
+      logger.warn(`Detectado bloqueio permanente: ${reason}`);
+      this.mailerService.blockMailer(newStatus, reason);
+    }
+    // Aplica bloqueio temporário apenas se o status atual for health
+    else if (currentStatus === 'health') {
+      logger.warn(`Aplicando bloqueio temporário: ${reason}`);
       this.mailerService.blockMailer(newStatus, reason);
     }
   }

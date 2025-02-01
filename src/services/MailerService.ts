@@ -89,18 +89,25 @@ class MailerService {
   }
 
   blockMailer(status: 'blocked_permanently' | 'blocked_temporary', reason: string): void {
+    // Se já está permanentemente bloqueado, mantém o estado
+    if (this.isBlockedPermanently) return;
+  
+    // Prioriza bloqueios permanentes
+    if (status === 'blocked_permanently') {
+      this.isBlocked = true;
+      this.isBlockedPermanently = true;
+      this.blockReason = reason;
+      logger.warn(`Mailer bloqueado permanentemente. Razão: ${reason}`);
+      this.clearRetryInterval();
+      return;
+    }
+  
+    // Aplica bloqueio temporário apenas se não estiver bloqueado
     if (!this.isBlocked) {
       this.isBlocked = true;
       this.blockReason = reason;
-      if (status === 'blocked_permanently') {
-        this.isBlockedPermanently = true;
-      }
-      logger.warn(`Mailer bloqueado com status: ${status}. Razão: ${reason}`);
-      if (status === 'blocked_temporary') {
-        this.scheduleRetry();
-      } else {
-        this.clearRetryInterval();
-      }
+      logger.warn(`Mailer bloqueado temporariamente. Razão: ${reason}`);
+      this.scheduleRetry();
     }
   }
 
