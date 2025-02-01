@@ -24,6 +24,7 @@ const blockedErrors = {
     'rejected due to policy'
   ],
   temporary: [
+    'temporary',
     '(S3114)',
     '(S844)',
     'temporarily rate limited',

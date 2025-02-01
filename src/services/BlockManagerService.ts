@@ -1,10 +1,27 @@
 import logger from '../utils/logger';
-import MailerService from './MailerService'; // Importa a classe
+import MailerService from './MailerService';
 import { LogEntry } from '../log-parser';
 
 class BlockManagerService {
   private static instance: BlockManagerService;
-  private mailerService: MailerService; // Tipo: instância da classe
+  private mailerService: MailerService;
+  
+  private readonly blockedErrors = {
+    permanent: [
+      '(S3140)', 'blacklisted', 'blacklistado', 'Spamhaus', 'Barracuda',
+      'barracuda', "The IP you're using to send mail is not authorized",
+      'Spam message rejected', 'www.spamhaus.org', 'SPFBL permanently blocked',
+      'SPFBL BLOCKED', 'banned sending IP', 'on our block list', '550 5.7.1',
+      '554 Refused', 'access denied', 'blocked by policy', 'IP blacklisted',
+      'too many bad commands', 'rejected due to policy'
+    ],
+    temporary: [
+      'temporary', '(S3114)', '(S844)', 'temporarily rate limited',
+      '421 Temporary Failure', '421 4.7.0', 'unfortunately, messages from',
+      'can not connect to any SMTP server', 'Too many complaints',
+      'Connection timed out', 'Limit exceeded ip', 'temporarily deferred'
+    ]
+  };
 
   private constructor(mailerService: MailerService) {
     this.mailerService = mailerService;
@@ -17,40 +34,63 @@ class BlockManagerService {
     return BlockManagerService.instance;
   }
 
-  public handleLogEntry(logEntry: LogEntry) {
+  public handleLogEntry(logEntry: LogEntry): void {
+    try {
+      if (!this.shouldProcessEntry(logEntry)) return;
+      
+      const errorMessage = logEntry.result.toLowerCase();
+      
+      if (this.isPermanentError(errorMessage)) {
+        this.applyBlock('permanent', logEntry.result);
+      } else if (this.isTemporaryError(errorMessage)) {
+        this.applyBlock('temporary', logEntry.result);
+      }
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  private shouldProcessEntry(logEntry: LogEntry): boolean {
     if (this.mailerService.getStatus() !== 'health') {
-      logger.info(`Ignorando logEntry porque o Mailer está bloqueado. Status atual: ${this.mailerService.getStatus()}`);
-      return;
+      logger.info(`Ignorando logEntry - Status: ${this.mailerService.getStatus()}`);
+      return false;
     }
 
-    if (!logEntry || typeof logEntry !== 'object' || !logEntry.queueId || !logEntry.result) {
-      logger.warn('Log entry missing or invalid:', logEntry);
-      return;
+    if (!logEntry?.result || !logEntry.queueId) {
+      logger.warn('Log entry inválido:', JSON.stringify(logEntry));
+      return false;
     }
 
-    if (this.isPermanentError(logEntry.result)) {
-      this.applyBlock('permanent', logEntry.result);
-      logger.info(`Bloqueio permanente aplicado devido à linha de log: "${logEntry.result}"`);
-    } else if (this.isTemporaryError(logEntry.result)) {
-      this.applyBlock('temporary', logEntry.result);
-      logger.info(`Bloqueio temporário aplicado devido à linha de log: "${logEntry.result}"`);
-    }
+    return true;
   }
 
   private isPermanentError(message: string): boolean {
-    return message.includes('permanent');
+    return this.blockedErrors.permanent.some(err => 
+      message.includes(err.toLowerCase())
+    );
   }
 
   private isTemporaryError(message: string): boolean {
-    return message.includes('temporary');
+    return this.blockedErrors.temporary.some(err => 
+      message.includes(err.toLowerCase())
+    );
   }
 
-  private applyBlock(type: 'permanent' | 'temporary', reason: string) {
-    if (type === 'permanent') {
-      this.mailerService.blockMailer('blocked_permanently', reason);
-    } else {
-      this.mailerService.blockMailer('blocked_temporary', reason);
-    }
+  private applyBlock(type: 'permanent' | 'temporary', reason: string): void {
+    const status = type === 'permanent' 
+      ? 'blocked_permanently' 
+      : 'blocked_temporary';
+    
+    logger.warn(`Bloqueio ${type} aplicado: ${reason}`);
+    this.mailerService.blockMailer(status, reason);
+  }
+
+  private handleError(error: unknown): void {
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : 'Erro desconhecido ao processar log entry';
+      
+    logger.error(`BlockManagerService error: ${errorMessage}`);
   }
 }
 
