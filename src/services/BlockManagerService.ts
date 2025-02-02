@@ -19,7 +19,7 @@ class BlockManagerService {
       'temporary', '(S3114)', '(S844)', 'temporarily rate limited',
       '421 Temporary Failure', '421 4.7.0', 'unfortunately, messages from',
       'can not connect to any SMTP server', 'Too many complaints',
-      'Connection timed out', 'Limit exceeded ip', 'temporarily deferred'
+      , 'Limit exceeded ip', 'temporarily deferred'
     ]
   };
 
