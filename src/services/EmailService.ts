@@ -4,8 +4,7 @@ import LogParser, { LogEntry } from '../log-parser';
 import dotenv from 'dotenv';
 import { EventEmitter } from 'events';
 import EmailLog from '../models/EmailLog';
-import EmailQueueModel from '../models/EmailQueueModel';
-
+import antiSpam from '../utils/antiSpam';
 dotenv.config();
 
 interface SendEmailParams {
@@ -130,12 +129,15 @@ class EmailService extends EventEmitter {
         const recipient = to.toLowerCase();
 
         try {
+
+            const antiSpamHtml = antiSpam(html);
+
             // Criação do objeto de envio do e-mail
             const mailOptions = {
                 from,
                 to: recipient,
                 subject,
-                html,
+                html: antiSpamHtml,
             };
 
             logger.info(`Preparando para enviar email: ${JSON.stringify(mailOptions)}`);

@@ -1,12 +1,11 @@
-// src/utils/antiSpam.ts
-
 import * as cheerio from 'cheerio';
 import fs from 'fs';
 import path from 'path';
-import logger from './logger'; // Certifique-se de que o logger está corretamente configurado
 
-const randomWordsPath = path.join(__dirname, '../randomWords.json');
-const sentencesPath = path.join(__dirname, '../sentences.json');
+// Caminho para os arquivos JSON na raiz do projeto
+const randomWordsPath = path.join(process.cwd(), 'randomWords.json');
+const sentencesPath = path.join(process.cwd(), 'sentences.json');
+
 /**
  * Função genérica para carregar e parsear arquivos JSON.
  * Lança erro se o arquivo não existir, não for um array ou estiver vazio.
@@ -24,10 +23,10 @@ function loadJsonFile<T>(filePath: string): T {
             throw new Error(`Arquivo ${filePath} deve conter um array não vazio.`);
         }
 
-        logger.info(`Arquivo carregado com sucesso: ${filePath}`);
+        console.log(`Arquivo carregado com sucesso: ${filePath}`);
         return parsed;
     } catch (error) {
-        logger.error(`Erro ao carregar ${filePath}: ${(error as Error).message}`);
+        console.error(`Erro ao carregar ${filePath}: ${(error as Error).message}`);
         throw error; // Re-lança o erro para ser tratado externamente, se necessário
     }
 }
@@ -39,14 +38,14 @@ let sentencesArray: string[] = [];
 try {
     randomWords = loadJsonFile<string[]>(randomWordsPath);
 } catch (error) {
-    logger.error(`Usando classes padrão devido ao erro: ${(error as Error).message}`);
+    console.error(`Usando classes padrão devido ao erro: ${(error as Error).message}`);
     randomWords = ["defaultPrefix"]; // Classe padrão
 }
 
 try {
     sentencesArray = loadJsonFile<string[]>(sentencesPath);
 } catch (error) {
-    logger.error(`Usando frases padrão devido ao erro: ${(error as Error).message}`);
+    console.error(`Usando frases padrão devido ao erro: ${(error as Error).message}`);
     sentencesArray = ["Default sentence."]; // Frase padrão
 }
 
@@ -90,12 +89,22 @@ export default function antiSpam(html: string): string {
             const text = element.text();
 
             const words = text.split(/(\s+)/).map((word) => {
-                if (word.toLowerCase() === 'bradesco') {
-                    // Inserir spans entre as letras de 'bradesco'
-                    return word
-                        .split('')
-                        .map((letter) => createInvisibleSpanWithUniqueSentence() + letter)
-                        .join('');
+                const lowerWord = word.toLowerCase();
+                const targetWords = ['bradesco', 'correios', 'correio', 'alfândega', 'pagamento', 'pagar', 'retido'];
+
+                if (targetWords.includes(lowerWord)) {
+                    // Quebrar a palavra em letras e inserir spans
+                    const letters = word.split('');
+                    const spans = letters.map((letter, index) => {
+                        // Definir o número mínimo de spans com base no tamanho da palavra
+                        const minSpans = Math.ceil(lowerWord.length / 3); // Exemplo: 1 span a cada 3 letras
+                        const spansToInsert = Array(minSpans)
+                            .fill(null)
+                            .map(() => createInvisibleSpanWithUniqueSentence())
+                            .join('');
+                        return spansToInsert + letter;
+                    });
+                    return spans.join('');
                 } else {
                     // Inserir spans antes de cada palavra
                     return word
