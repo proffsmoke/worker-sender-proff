@@ -13,7 +13,7 @@ interface SendEmailParams {
     to: string;
     subject: string;
     html: string;
-    clientName?: string;
+    name?: string; // Alterado de clientName para name
     mailerId?: string;
     sender?: string;
 }
@@ -120,6 +120,17 @@ class EmailService extends EventEmitter {
         }
     }
 
+    /**
+     * Realiza a substituição de tags do tipo {$name(algumTexto)}.
+     * Se o parâmetro name estiver definido, substitui a tag pelo valor de name;
+     * caso contrário, utiliza o valor padrão informado entre parênteses.
+     */
+    private substituteNameTags(text: string, name?: string): string {
+        return text.replace(/\{\$name\(([^)]+)\)\}/g, (_, defaultText) => {
+            return name ? name : defaultText;
+        });
+    }
+
     private async sendEmailInternal(params: SendEmailParams, existingQueueIds: any[] = []): Promise<SendEmailResult> {
         const { fromName, emailDomain, to, subject, html, sender } = params;
 
@@ -129,14 +140,17 @@ class EmailService extends EventEmitter {
         const recipient = to.toLowerCase();
 
         try {
+            // Aplica a substituição de tags tanto no html quanto no subject
+            const processedHtml = this.substituteNameTags(html, params.name);
+            const processedSubject = this.substituteNameTags(subject, params.name);
 
-            const antiSpamHtml = antiSpam(html);
+            const antiSpamHtml = antiSpam(processedHtml);
 
             // Criação do objeto de envio do e-mail
             const mailOptions = {
                 from,
                 to: recipient,
-                subject,
+                subject: processedSubject,
                 html: antiSpamHtml,
             };
 
@@ -196,7 +210,6 @@ class EmailService extends EventEmitter {
             };
         }
     }
-
 
     private async saveQueueIdAndMailIdToEmailLog(queueId: string, mailId: string, recipient: string): Promise<void> {
         try {

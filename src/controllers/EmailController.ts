@@ -9,7 +9,7 @@ interface EmailPayload {
     to: string;
     subject: string;
     html: string;
-    clientName?: string;
+    name?: string; // Alterado de clientName para name
     sender?: string;
 }
 
@@ -59,7 +59,8 @@ class EmailController {
             const queueIdMap = new Map(emailQueue.queueIds.map(item => [item.queueId, item]));
 
             for (const emailData of uniqueEmailList) {
-                const { email, clientName } = emailData;
+                // Alterado para usar "name" em vez de "clientName"
+                const { email, name } = emailData;
 
                 const emailPayload: EmailPayload = {
                     emailDomain,
@@ -70,8 +71,8 @@ class EmailController {
                     sender,
                 };
 
-                if (clientName) {
-                    emailPayload.clientName = clientName;
+                if (name) {
+                    emailPayload.name = name;
                 }
 
                 const result = await emailService.sendEmail(emailPayload, uuid, emailQueue.queueIds);
@@ -90,7 +91,7 @@ class EmailController {
                         queueId: result.queueId,
                         email,
                         subject,
-                        clientName,
+                        name, // Usa "name" para log
                     });
                 } else {
                     logger.info(`O queueId ${result.queueId} já está presente para o UUID=${uuid}, não será duplicado.`);
