@@ -21,6 +21,9 @@ class EmailController {
     async sendNormal(req: Request, res: Response, next: NextFunction): Promise<void> {
         const { emailDomain, emailList, fromName, uuid, subject, htmlContent, sender } = req.body;
 
+        // Log completo dos dados recebidos
+        logger.info(`Dados recebidos no EmailController.sendNormal: ${JSON.stringify(req.body)}`);
+
         try {
             logger.info(`Iniciando envio de e-mails para UUID=${uuid}`);
 
@@ -49,9 +52,13 @@ class EmailController {
             const emailMap = new Map(); // Usar um Map para rastrear os e-mails únicos
 
             for (const emailData of emailList) {
+                // Log dos dados de cada emailData para identificar se há "name" presente
+                logger.info(`Processando emailData: ${JSON.stringify(emailData)}`);
                 if (!emailMap.has(emailData.email)) {
                     emailMap.set(emailData.email, emailData); // Adiciona o emailData completo ao Map
                     uniqueEmailList.push(emailData);
+                } else {
+                    logger.info(`Email duplicado detectado e ignorado: ${emailData.email}`);
                 }
             }
 
@@ -75,6 +82,8 @@ class EmailController {
                     emailPayload.name = name;
                 }
 
+                logger.info(`Enviando e-mail para: ${email} com payload: ${JSON.stringify(emailPayload)}`);
+
                 const result = await emailService.sendEmail(emailPayload, uuid, emailQueue.queueIds);
 
                 if (!queueIdMap.has(result.queueId)) {
@@ -86,13 +95,7 @@ class EmailController {
                     emailQueue.queueIds.push(queueIdData);
                     queueIdMap.set(result.queueId, queueIdData);
 
-                    logger.info(`E-mail enviado com sucesso:`, {
-                        uuid,
-                        queueId: result.queueId,
-                        email,
-                        subject,
-                        name, // Usa "name" para log
-                    });
+                    logger.info(`E-mail enviado com sucesso: UUID=${uuid}, queueId=${result.queueId}, email=${email}, subject=${subject}, name=${name || 'N/A'}`);
                 } else {
                     logger.info(`O queueId ${result.queueId} já está presente para o UUID=${uuid}, não será duplicado.`);
                 }

@@ -83,6 +83,7 @@ class EmailService extends EventEmitter {
     }
 
     public async sendEmail(params: SendEmailParams, uuid?: string, existingQueueIds: any[] = []): Promise<SendEmailResult> {
+        logger.info(`EmailService.sendEmail chamado com params: ${JSON.stringify(params)} e uuid: ${uuid}`);
         return new Promise((resolve, reject) => {
             this.emailQueue.push({ params, resolve, reject });
             this.processEmailQueue();
@@ -132,6 +133,8 @@ class EmailService extends EventEmitter {
     }
 
     private async sendEmailInternal(params: SendEmailParams, existingQueueIds: any[] = []): Promise<SendEmailResult> {
+        // Log dos parâmetros recebidos, incluindo se existe o campo "name"
+        logger.info(`EmailService.sendEmailInternal - Params recebidos: ${JSON.stringify(params)}`);
         const { fromName, emailDomain, to, subject, html, sender } = params;
 
         const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`;
@@ -154,7 +157,7 @@ class EmailService extends EventEmitter {
                 html: antiSpamHtml,
             };
 
-            logger.info(`Preparando para enviar email: ${JSON.stringify(mailOptions)}`);
+            logger.info(`Preparando para enviar email com mailOptions: ${JSON.stringify(mailOptions)}`);
 
             const info = await this.transporter.sendMail(mailOptions);
 
@@ -240,6 +243,7 @@ class EmailService extends EventEmitter {
     }
 
     private async handleLogEntry(logEntry: LogEntry): Promise<void> {
+        logger.info(`handleLogEntry - Log recebido: ${JSON.stringify(logEntry)}`);
         const recipientStatus = this.pendingSends.get(logEntry.queueId);
         if (!recipientStatus) {
             logger.warn(`Nenhum dado pendente encontrado para queueId=${logEntry.queueId}`);
