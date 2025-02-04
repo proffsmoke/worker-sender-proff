@@ -85,7 +85,7 @@ class EmailService extends EventEmitter {
   }
 
   public async sendEmail(params: SendEmailParams, uuid?: string, existingQueueIds: any[] = []): Promise<SendEmailResult> {
-    logger.info(`EmailService.sendEmail chamado com params: ${JSON.stringify(params)} e uuid: ${uuid}`);
+    // logger.info(`EmailService.sendEmail chamado com params: ${JSON.stringify(params)} e uuid: ${uuid}`);
     return new Promise((resolve, reject) => {
       this.emailQueue.push({ params, resolve, reject });
       this.processEmailQueue();
