@@ -136,8 +136,8 @@ class LogParser extends EventEmitter {
   
       // Atualiza o status na fila. Se seus documentos forem planos, use a query abaixo:
       await EmailQueueModel.updateOne(
-        { queueId },
-        { $set: { success } }
+        { 'queueIds.queueId': queueId },
+        { $set: { 'queueIds.$.success': success } }
       );
       logger.info(`Queue atualizada: ${queueId} => ${success}`);
   
