@@ -57,12 +57,14 @@ class EmailController {
     const emailService = EmailService.getInstance();
   
     // Cria ou atualiza o documento no banco de dados
+    let isNew = false;
     let emailQueue = await EmailQueueModel.findOne({ uuid });
     if (!emailQueue) {
       emailQueue = new EmailQueueModel({ uuid, queueIds: [] });
+      isNew = true;
       logger.info(`Novo documento criado para UUID=${uuid}`);
     } else {
-      logger.info(`Documento existente encontrado para UUID=${uuid}`);
+      logger.info(`Documento existente encontrado para UUID=${uuid}, atualizando...`);
     }
   
     // Remover duplicatas da emailList
@@ -99,8 +101,6 @@ class EmailController {
         emailPayload.name = name;
       }
   
-    //   logger.info(`Enfileirando envio de e-mail para: ${email} com payload: ${JSON.stringify(emailPayload)}`);
-  
       try {
         const result = await emailService.sendEmail(emailPayload, uuid, emailQueue.queueIds);
   
@@ -121,15 +121,20 @@ class EmailController {
       }
     }
   
-    await this.saveEmailQueue(emailQueue, uuid);
+    // Salva o documento (criado ou atualizado) e mostra log de sucesso ou erro
+    await this.saveEmailQueue(emailQueue, uuid, isNew);
     logger.info(`Processamento concluído para UUID=${uuid}`);
   }
   
-  // Método para salvar o EmailQueue no banco de dados
-  private async saveEmailQueue(emailQueue: any, uuid: string): Promise<void> {
+  // Método para salvar o EmailQueue no banco de dados com log apropriado
+  private async saveEmailQueue(emailQueue: any, uuid: string, isNew: boolean): Promise<void> {
     try {
       await emailQueue.save();
-      logger.info(`Dados salvos com sucesso para UUID=${uuid}`);
+      if (isNew) {
+        logger.info(`Documento criado e salvo com sucesso para UUID=${uuid}`);
+      } else {
+        logger.info(`Documento atualizado e salvo com sucesso para UUID=${uuid}`);
+      }
     } catch (saveError) {
       logger.error(`Erro ao salvar os dados para UUID=${uuid}:`, saveError);
       throw new Error('Erro ao salvar os dados no banco de dados.');
