@@ -111,6 +111,7 @@ class LogParser extends EventEmitter {
     try {
       const { queueId, success, mailId, email } = logEntry;
   
+      // Incrementa as estatísticas de envio
       await EmailStats.incrementSent();
       if (success) {
         await EmailStats.incrementSuccess();
@@ -118,14 +119,14 @@ class LogParser extends EventEmitter {
         await EmailStats.incrementFail();
       }
   
-      // Atualiza ou cria o registro de log com base no queueId
+      // Atualiza ou cria o registro de log no EmailLog com base no queueId
       await EmailLog.findOneAndUpdate(
         { queueId },
         {
           $set: {
             success,
             email,
-            mailId,  // Se houver necessidade de atualizar o mailId posteriormente
+            mailId, // Atualiza o mailId se houver
             sentAt: new Date()
           }
         },
@@ -133,13 +134,14 @@ class LogParser extends EventEmitter {
       );
       logger.info(`Log atualizado/upserted para queueId=${queueId} com success=${success}`);
   
-      // Atualiza o status na fila (EmailQueueModel)
+      // Atualiza o status na fila. Se seus documentos forem planos, use a query abaixo:
       await EmailQueueModel.updateOne(
-        { "queueIds.queueId": queueId },
-        { $set: { "queueIds.$.success": success } }
+        { queueId },
+        { $set: { success } }
       );
       logger.info(`Queue atualizada: ${queueId} => ${success}`);
   
+      // Se existir um mailId, emite o evento de teste (útil para emails de teste)
       if (mailId) {
         this.emit('testEmailLog', { mailId, success });
       }
