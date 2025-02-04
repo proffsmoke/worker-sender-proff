@@ -214,30 +214,27 @@ class EmailService extends EventEmitter {
   private async saveQueueIdAndMailIdToEmailLog(queueId: string, mailId: string, recipient: string): Promise<void> {
     try {
       logger.info(`Tentando salvar queueId=${queueId}, mailId=${mailId} e recipient=${recipient} no EmailLog.`);
-
-      let emailLog = await EmailLog.findOne({ mailId });
-
-      if (!emailLog) {
-        emailLog = new EmailLog({
-          mailId,
-          queueId,
-          email: recipient,
-          success: null,
-          updated: false,
-          sentAt: new Date(),
-          expireAt: new Date(Date.now() + 30 * 60 * 1000),
-        });
-      }
-
-      emailLog.queueId = queueId;
-      emailLog.email = recipient;
-      await emailLog.save();
+      await EmailLog.findOneAndUpdate(
+        { queueId }, // Busca utilizando queueId de forma consistente
+        {
+          $set: {
+            mailId,
+            email: recipient,
+            updated: true,
+            sentAt: new Date()
+          },
+          $setOnInsert: {
+            expireAt: new Date(Date.now() + 30 * 60 * 1000) // Define o tempo de expiração conforme sua lógica
+          }
+        },
+        { upsert: true, new: true } // Se não existir, cria o registro; caso exista, atualiza
+      );
       logger.info(`Log salvo/atualizado no EmailLog: queueId=${queueId}, mailId=${mailId}, recipient=${recipient}`);
-
     } catch (error) {
       logger.error(`Erro ao salvar log no EmailLog:`, error);
     }
   }
+  
 
   private async handleLogEntry(logEntry: LogEntry): Promise<void> {
     logger.info(`handleLogEntry - Log recebido: ${JSON.stringify(logEntry)}`);

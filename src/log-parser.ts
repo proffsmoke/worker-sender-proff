@@ -110,57 +110,44 @@ class LogParser extends EventEmitter {
   private async processLogEntry(logEntry: LogEntry): Promise<void> {
     try {
       const { queueId, success, mailId, email } = logEntry;
-
+  
       await EmailStats.incrementSent();
       if (success) {
         await EmailStats.incrementSuccess();
       } else {
         await EmailStats.incrementFail();
       }
-
-      let emailLog = await EmailLog.findOne({ queueId });
-      if (!emailLog) {
-        const emailQueue = await EmailQueueModel.findOne({ 'queueIds.queueId': queueId });
-        if (emailQueue) {
-          const associatedQueue = emailQueue.queueIds.find(q => q.queueId === queueId);
-          if (associatedQueue) {
-            emailLog = new EmailLog({
-              queueId,
-              email: associatedQueue.email,
-              mailId: emailQueue.uuid,
-              success,
-              sentAt: new Date(),
-            });
-            await emailLog.save();
+  
+      // Atualiza ou cria o registro de log com base no queueId
+      await EmailLog.findOneAndUpdate(
+        { queueId },
+        {
+          $set: {
+            success,
+            email,
+            mailId,  // Se houver necessidade de atualizar o mailId posteriormente
+            sentAt: new Date()
           }
-        }
-      }
-
-      if (emailLog) {
-        await EmailQueueModel.updateOne(
-          { "queueIds.queueId": queueId },
-          { $set: { "queueIds.$.success": success } }
-        );
-        logger.info(`Queue updated: ${queueId} => ${success}`);
-      }
-
+        },
+        { upsert: true, new: true }
+      );
+      logger.info(`Log atualizado/upserted para queueId=${queueId} com success=${success}`);
+  
+      // Atualiza o status na fila (EmailQueueModel)
+      await EmailQueueModel.updateOne(
+        { "queueIds.queueId": queueId },
+        { $set: { "queueIds.$.success": success } }
+      );
+      logger.info(`Queue atualizada: ${queueId} => ${success}`);
+  
       if (mailId) {
         this.emit('testEmailLog', { mailId, success });
       }
-
-      if (emailLog) {
-        emailLog.success = success;
-        if (mailId) emailLog.mailId = mailId;
-        await emailLog.save();
-        logger.info(`Log updated: ${queueId}, ${mailId}, ${success}`);
-      } else {
-        logger.warn(`Log not found: ${queueId}`);
-      }
-
     } catch (error) {
       logger.error(`Error processing log entry: ${JSON.stringify(logEntry)}`, error);
     }
   }
+  
 
   public getRecentLogs(): LogEntry[] {
     return this.recentLogs;
