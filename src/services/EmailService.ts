@@ -1,4 +1,3 @@
-// src/services/EmailService.ts
 import nodemailer from 'nodemailer';
 import logger from '../utils/logger';
 import LogParser, { LogEntry } from '../log-parser';
@@ -6,7 +5,8 @@ import dotenv from 'dotenv';
 import { EventEmitter } from 'events';
 import EmailLog from '../models/EmailLog';
 import antiSpam from '../utils/antiSpam';
-import EmailQueueModel from '../models/EmailQueueModel'; // Import necessário
+import EmailQueueModel from '../models/EmailQueueModel';
+
 dotenv.config();
 
 interface SendEmailParams {
@@ -15,7 +15,7 @@ interface SendEmailParams {
   to: string;
   subject: string;
   html: string;
-  name?: string; // Usa "name" em vez de "clientName"
+  name?: string;
   mailerId?: string;
   sender?: string;
 }
@@ -81,12 +81,7 @@ class EmailService extends EventEmitter {
     error?: string,
     queueId?: string
   ): RecipientStatus {
-    return {
-      recipient,
-      success,
-      error,
-      queueId,
-    };
+    return { recipient, success, error, queueId };
   }
 
   public async sendEmail(
@@ -137,9 +132,6 @@ class EmailService extends EventEmitter {
     }
   }
 
-  /**
-   * Realiza a substituição de tags do tipo {$name(algumTexto)}.
-   */
   private substituteNameTags(text: string, name?: string): string {
     return text.replace(/\{\$name\(([^)]+)\)\}/g, (_, defaultText) => {
       return name ? name : defaultText;
@@ -150,24 +142,19 @@ class EmailService extends EventEmitter {
     params: SendEmailParams,
     existingQueueIds: any[] = []
   ): Promise<SendEmailResult> {
-    logger.info(
-      `EmailService.sendEmailInternal - Params recebidos: ${JSON.stringify(params)}`
-    );
+    logger.info(`EmailService.sendEmailInternal - Params: ${JSON.stringify(params)}`);
     const { fromName, emailDomain, to, subject, html, sender } = params;
 
     const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`;
     const from = sender ? `"${fromName}" <${sender}>` : `"${fromName}" <${fromEmail}>`;
-
     const recipient = to.toLowerCase();
 
     try {
-      // Aplica a substituição de tags
+      // Substituição das tags
       const processedHtml = this.substituteNameTags(html, params.name);
       const processedSubject = this.substituteNameTags(subject, params.name);
-
       const antiSpamHtml = antiSpam(processedHtml);
 
-      // Criação do objeto de envio do e-mail
       const mailOptions = {
         from,
         to: recipient,
@@ -175,8 +162,7 @@ class EmailService extends EventEmitter {
         html: antiSpamHtml,
       };
 
-      logger.info(`Preparando para enviar email com mailOptions: ${JSON.stringify(mailOptions)}`);
-
+      logger.info(`Enviando email: ${JSON.stringify(mailOptions)}`);
       const info = await this.transporter.sendMail(mailOptions);
 
       // Extrair queueId
@@ -192,6 +178,7 @@ class EmailService extends EventEmitter {
         throw new Error('Não foi possível extrair o mailId da resposta');
       }
 
+      // Evita duplicar queueId
       if (existingQueueIds.some(item => item.queueId === queueId)) {
         logger.info(`O queueId ${queueId} já está presente, não será duplicado.`);
         return {
@@ -200,35 +187,21 @@ class EmailService extends EventEmitter {
         };
       }
 
-      logger.info(`Email enviado com sucesso! Detalhes:
-                - De: ${from}
-                - Para: ${recipient}
-                - QueueId: ${queueId}
-                - MailId: ${mailId}
-            `);
+      logger.info(
+        `Email enviado com sucesso: De=${from}, Para=${recipient}, QueueId=${queueId}, MailId=${mailId}`
+      );
 
       const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
       this.pendingSends.set(queueId, recipientStatus);
 
-      // Salvar a associação no EmailLog
+      // Salva EmailLog
       await this.saveQueueIdAndMailIdToEmailLog(queueId, mailId, recipient);
 
-      logger.info(
-        `Dados de envio associados com sucesso para queueId=${queueId} e mailId=${mailId}.`
-      );
-
-      return {
-        queueId,
-        recipient: recipientStatus,
-      };
+      return { queueId, recipient: recipientStatus };
     } catch (error: any) {
       logger.error(`Erro ao enviar email: ${error.message}`, error);
-
       const recipientStatus = this.createRecipientStatus(recipient, false, error.message);
-      return {
-        queueId: '',
-        recipient: recipientStatus,
-      };
+      return { queueId: '', recipient: recipientStatus };
     }
   }
 
@@ -238,11 +211,8 @@ class EmailService extends EventEmitter {
     recipient: string
   ): Promise<void> {
     try {
-      logger.info(
-        `Tentando salvar queueId=${queueId}, mailId=${mailId} e recipient=${recipient} no EmailLog.`
-      );
       await EmailLog.findOneAndUpdate(
-        { queueId }, // Busca utilizando queueId de forma consistente
+        { queueId },
         {
           $set: {
             mailId,
@@ -251,60 +221,19 @@ class EmailService extends EventEmitter {
             sentAt: new Date(),
           },
           $setOnInsert: {
-            expireAt: new Date(Date.now() + 30 * 60 * 1000), // Ajuste conforme sua lógica
+            expireAt: new Date(Date.now() + 30 * 60 * 1000), // Exemplo: 30 minutos
           },
         },
-        { upsert: true, new: true } // Se não existir, cria o registro; caso exista, atualiza
+        { upsert: true, new: true }
       );
-      logger.info(
-        `Log salvo/atualizado no EmailLog: queueId=${queueId}, mailId=${mailId}, recipient=${recipient}`
-      );
+      logger.info(`Log salvo/atualizado: queueId=${queueId}, mailId=${mailId}, recipient=${recipient}`);
     } catch (error) {
       logger.error(`Erro ao salvar log no EmailLog:`, error);
     }
   }
 
   /**
-   * Agora o `handleLogEntry` também atualiza o `EmailQueueModel` em vez do LogParser.
-   */
-  private async handleLogEntry(logEntry: LogEntry): Promise<void> {
-    logger.info(`handleLogEntry - Log recebido: ${JSON.stringify(logEntry)}`);
-    const recipientStatus = this.pendingSends.get(logEntry.queueId);
-
-    // Se não houver item pendente em `this.pendingSends`, ainda podemos tentar salvar no EmailQueueModel.
-    // Mas isso depende da sua lógica de negócio: se você sempre conta com `pendingSends`,
-    // então podemos só fazer um log de aviso.
-    if (!recipientStatus) {
-      logger.warn(`Nenhum dado pendente encontrado para queueId=${logEntry.queueId}`);
-      // Opcionalmente, atualizar mesmo assim no EmailQueueModel:
-      // await this.updateEmailQueueModel(logEntry.queueId, logEntry.success);
-      return;
-    }
-
-    // Atualiza status local
-    recipientStatus.success = logEntry.success;
-    recipientStatus.logEntry = logEntry;
-
-    if (!logEntry.success) {
-      recipientStatus.error = `Status: ${logEntry.result}`;
-      logger.error(
-        `Falha ao enviar para recipient=${recipientStatus.recipient}. Erro: ${logEntry.result}. Log completo: ${JSON.stringify(logEntry)}`
-      );
-    } else {
-      logger.info(
-        `Resultado atualizado com sucesso para recipient=${recipientStatus.recipient}. Status: ${logEntry.success}. Log completo: ${JSON.stringify(logEntry)}`
-      );
-    }
-
-    // Aqui fazemos o UPDATE no EmailQueueModel
-    await this.updateEmailQueueModel(logEntry.queueId, logEntry.success);
-
-    // Emite evento caso precise tratar em outro lugar
-    this.emit('queueProcessed', logEntry.queueId, recipientStatus);
-  }
-
-  /**
-   * Faz o update no EmailQueueModel para a entrada de queueId correspondente.
+   * Atualiza o campo "success" em EmailQueueModel.
    */
   private async updateEmailQueueModel(queueId: string, success: boolean): Promise<void> {
     try {
@@ -312,15 +241,39 @@ class EmailService extends EventEmitter {
         { 'queueIds.queueId': queueId },
         { $set: { 'queueIds.$.success': success } }
       );
-      logger.info(`Queue atualizada via EmailService: queueId=${queueId} => success=${success}`);
+      logger.info(`Queue atualizada: queueId=${queueId} => success=${success}`);
     } catch (error) {
-      logger.error(`Erro ao atualizar EmailQueueModel para queueId=${queueId}:`, error);
+      logger.error(`Erro ao atualizar EmailQueueModel: queueId=${queueId}`, error);
     }
+  }
+
+  private async handleLogEntry(logEntry: LogEntry): Promise<void> {
+    logger.info(`handleLogEntry - Log: ${JSON.stringify(logEntry)}`);
+    const recipientStatus = this.pendingSends.get(logEntry.queueId);
+
+    if (!recipientStatus) {
+      logger.warn(`Nenhum status pendente para queueId=${logEntry.queueId}`);
+      return;
+    }
+
+    recipientStatus.success = logEntry.success;
+    recipientStatus.logEntry = logEntry;
+
+    if (!logEntry.success) {
+      recipientStatus.error = `Status: ${logEntry.result}`;
+      logger.error(`Falha para ${recipientStatus.recipient}: ${logEntry.result}`);
+    } else {
+      logger.info(`Sucesso para ${recipientStatus.recipient}: ${logEntry.result}`);
+    }
+
+    // Atualiza no modelo
+    await this.updateEmailQueueModel(logEntry.queueId, logEntry.success);
+    this.emit('queueProcessed', logEntry.queueId, recipientStatus);
   }
 
   private async handleTestEmailLog(logEntry: { mailId: string; success: boolean }): Promise<void> {
     if (logEntry.mailId === this.testEmailMailId) {
-      logger.info(`Log de teste recebido para mailId=${logEntry.mailId}. Resultado: ${logEntry.success}`);
+      logger.info(`Log de teste para mailId=${logEntry.mailId}, success=${logEntry.success}`);
       this.emit('testEmailProcessed', logEntry);
     }
   }
