@@ -1,9 +1,9 @@
+// log-parser.ts
 import { Tail } from 'tail';
 import logger from './utils/logger';
 import fs from 'fs';
 import EventEmitter from 'events';
 import EmailLog from './models/EmailLog';
-import EmailQueueModel from './models/EmailQueueModel';
 import EmailStats from './models/EmailStats';
 
 export interface LogEntry {
@@ -101,7 +101,9 @@ class LogParser extends EventEmitter {
 
       logger.info(`Parsed log entry: ${JSON.stringify(logEntry)}`);
       await this.processLogEntry(logEntry);
-      this.emit('log', logEntry); // Emite o log para o BlockManagerService
+
+      // Emite o log para o EmailService (via evento 'log')
+      this.emit('log', logEntry); 
     } catch (error) {
       logger.error(`Error processing log line: ${line}`, error);
     }
@@ -110,7 +112,7 @@ class LogParser extends EventEmitter {
   private async processLogEntry(logEntry: LogEntry): Promise<void> {
     try {
       const { queueId, success, mailId, email } = logEntry;
-  
+
       // Incrementa as estatísticas de envio
       await EmailStats.incrementSent();
       if (success) {
@@ -118,7 +120,7 @@ class LogParser extends EventEmitter {
       } else {
         await EmailStats.incrementFail();
       }
-  
+
       // Atualiza ou cria o registro de log no EmailLog com base no queueId
       await EmailLog.findOneAndUpdate(
         { queueId },
@@ -127,21 +129,13 @@ class LogParser extends EventEmitter {
             success,
             email,
             mailId, // Atualiza o mailId se houver
-            sentAt: new Date()
-          }
+            sentAt: new Date(),
+          },
         },
         { upsert: true, new: true }
       );
       logger.info(`Log atualizado/upserted para queueId=${queueId} com success=${success}`);
-  
-      // Atualiza o status na fila. Se seus documentos forem planos, use a query abaixo:
-      await EmailQueueModel.updateOne(
-        { 'queueIds.queueId': queueId },
-        { $set: { 'queueIds.$.success': success } }
-      );
-      logger.info(`Queue atualizada: ${queueId} => ${success}`);
-  
-      // Se existir um mailId, emite o evento de teste (útil para emails de teste)
+
       if (mailId) {
         this.emit('testEmailLog', { mailId, success });
       }
@@ -149,7 +143,6 @@ class LogParser extends EventEmitter {
       logger.error(`Error processing log entry: ${JSON.stringify(logEntry)}`, error);
     }
   }
-  
 
   public getRecentLogs(): LogEntry[] {
     return this.recentLogs;
