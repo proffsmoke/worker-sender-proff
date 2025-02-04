@@ -6,7 +6,7 @@ interface IQueueId {
   success: boolean | null;
 }
 
-interface IEmailQueue extends Document {
+export interface IEmailQueue extends Document {
   uuid: string;
   queueIds: IQueueId[];
   resultSent: boolean;
@@ -26,7 +26,9 @@ const EmailQueueSchema = new Schema<IEmailQueue>(
     resultSent: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now, expires: '48h' },
   },
-  { timestamps: true }
+  {
+    timestamps: true, // createdAt e updatedAt automáticos
+  }
 );
 
 export default model<IEmailQueue>('EmailQueue', EmailQueueSchema);
