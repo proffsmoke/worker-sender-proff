@@ -99,7 +99,7 @@ class EmailController {
         emailPayload.name = name;
       }
   
-      logger.info(`Enfileirando envio de e-mail para: ${email} com payload: ${JSON.stringify(emailPayload)}`);
+    //   logger.info(`Enfileirando envio de e-mail para: ${email} com payload: ${JSON.stringify(emailPayload)}`);
   
       try {
         const result = await emailService.sendEmail(emailPayload, uuid, emailQueue.queueIds);
