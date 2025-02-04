@@ -96,7 +96,7 @@ class EmailService extends EventEmitter {
    */
   public async sendEmail(
     params: SendEmailParams,
-    uuid?: string,
+    uuid?: string
   ): Promise<SendEmailResult> {
     return new Promise((resolve, reject) => {
       this.emailQueue.push({ params, resolve, reject });
@@ -254,11 +254,16 @@ class EmailService extends EventEmitter {
    */
   private async updateEmailQueueModel(queueId: string, success: boolean): Promise<void> {
     try {
-      await EmailQueueModel.updateOne(
+      // Faz o update e loga o resultado do Mongo
+      const result = await EmailQueueModel.updateOne(
         { 'queueIds.queueId': queueId },
         { $set: { 'queueIds.$.success': success } }
       );
-      logger.info(`Queue atualizada no EmailQueueModel: queueId=${queueId} => success=${success}`);
+
+      logger.info(
+        `Queue atualizada no EmailQueueModel: queueId=${queueId} => success=${success}`
+      );
+      logger.info(`Queue update result for queueId=${queueId}: ${JSON.stringify(result)}`);
     } catch (error) {
       logger.error(`Erro ao atualizar EmailQueueModel: queueId=${queueId}`, error);
     }

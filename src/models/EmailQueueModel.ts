@@ -27,8 +27,13 @@ const EmailQueueSchema = new Schema<IEmailQueue>(
     createdAt: { type: Date, default: Date.now, expires: '48h' },
   },
   {
-    timestamps: true, // createdAt e updatedAt automáticos
+    timestamps: true, // `createdAt` e `updatedAt` automáticos
   }
 );
+
+/**
+ * Índice no campo aninhado queueIds.queueId, para acelerar o update:
+ */
+EmailQueueSchema.index({ 'queueIds.queueId': 1 });
 
 export default model<IEmailQueue>('EmailQueue', EmailQueueSchema);
