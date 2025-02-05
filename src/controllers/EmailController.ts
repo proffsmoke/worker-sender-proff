@@ -63,7 +63,6 @@ class EmailController {
 
     // Envia cada e-mail e obtém o queueId retornado
     const emailService = EmailService.getInstance();
-    // Array temporário para os itens a serem adicionados
     const queueIdsTemp: Array<{ queueId: string; email: string; success: boolean | null }> = [];
 
     for (const emailData of uniqueEmailList) {
@@ -91,34 +90,53 @@ class EmailController {
       }
     }
 
-    // --- Atualização do documento EmailQueue ---
-    // Se o documento já existir, não sobrescrevemos todo o array,
-    // mas adicionamos novos itens usando $push (evitando sobrescrever o status já atualizado).
+    // Agora, criamos ou atualizamos (fazendo merge) o documento na coleção EmailQueueModel
     try {
       const existingQueue = await EmailQueueModel.findOne({ uuid });
-      if (existingQueue) {
-        // Para cada novo item, se já existir um entry para o e-mail, atualiza somente o queueId,
-        // caso contrário, adiciona o item ao array.
-        for (const item of queueIdsTemp) {
-          const updateResult = await EmailQueueModel.updateOne(
-            { uuid, 'queueIds.email': item.email },
-            { $set: { 'queueIds.$.queueId': item.queueId } }
-          );
-          if (updateResult.matchedCount === 0) {
-            await EmailQueueModel.updateOne(
-              { uuid },
-              { $push: { queueIds: item } }
-            );
-          }
-        }
-        // Garante que resultSent seja false
-        await EmailQueueModel.updateOne({ uuid }, { $set: { resultSent: false } });
-      } else {
-        // Se não existir, cria o documento com os itens
-        await EmailQueueModel.create({ uuid, queueIds: queueIdsTemp, resultSent: false });
-      }
 
-      logger.info(`Documento EmailQueue salvo/atualizado para UUID=${uuid}`);
+      if (!existingQueue) {
+        // Se não existir, criamos o documento normalmente
+        const newQueue = await EmailQueueModel.create({
+          uuid,
+          queueIds: queueIdsTemp,
+          resultSent: false,
+        });
+        logger.info(
+          `Documento EmailQueue criado para UUID=${uuid} com ${newQueue.queueIds.length} queueIds.`
+        );
+      } else {
+        // Se o documento já existe, fazemos merge entre queueIds existentes e os novos
+        const mergedQueueIds = existingQueue.queueIds.map((item) => {
+          // Procura no novo array (queueIdsTemp) se há atualização para este e-mail
+          const updated = queueIdsTemp.find((q) => q.email === item.email);
+          if (updated) {
+            // Preserva o 'success' já existente, caso não seja nulo
+            return {
+              ...item,
+              // Substitui o queueId (caso venha um novo) ou mantém o antigo
+              queueId: updated.queueId,
+              // Se success já estiver definido, mantém. Senão, fica null
+              success: item.success != null ? item.success : updated.success,
+            };
+          }
+          return item;
+        });
+
+        // Adiciona qualquer e-mail que não estava no existingQueue
+        queueIdsTemp.forEach((tempItem) => {
+          if (!mergedQueueIds.some((m) => m.email === tempItem.email)) {
+            mergedQueueIds.push(tempItem);
+          }
+        });
+
+        existingQueue.queueIds = mergedQueueIds;
+        existingQueue.resultSent = false;
+        await existingQueue.save();
+
+        logger.info(
+          `Documento EmailQueue atualizado para UUID=${uuid} com ${existingQueue.queueIds.length} queueIds.`
+        );
+      }
     } catch (err) {
       logger.error(`Erro ao salvar EmailQueue para UUID=${uuid}:`, err);
       throw new Error('Erro ao salvar os dados no banco de dados.');

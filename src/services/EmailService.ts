@@ -79,9 +79,6 @@ class EmailService extends EventEmitter {
     return EmailService.instance;
   }
 
-  /**
-   * Cria um objeto de status para cada destinatário.
-   */
   private createRecipientStatus(
     recipient: string,
     success: boolean,
@@ -91,9 +88,6 @@ class EmailService extends EventEmitter {
     return { recipient, success, error, queueId };
   }
 
-  /**
-   * Enfileira o envio de e-mail e retorna uma Promise com o resultado (queueId, success, etc.).
-   */
   public async sendEmail(
     params: SendEmailParams,
     uuid?: string
@@ -104,9 +98,6 @@ class EmailService extends EventEmitter {
     });
   }
 
-  /**
-   * Processa a fila interna em lotes (até 3 por vez).
-   */
   private async processEmailQueue(): Promise<void> {
     if (this.isProcessingQueue || this.emailQueue.length === 0) {
       return;
@@ -142,18 +133,12 @@ class EmailService extends EventEmitter {
     }
   }
 
-  /**
-   * Substitui tags {$name(algumTexto)} no conteúdo do e-mail.
-   */
   private substituteNameTags(text: string, name?: string): string {
     return text.replace(/\{\$name\(([^)]+)\)\}/g, (_, defaultText) => {
       return name ? name : defaultText;
     });
   }
 
-  /**
-   * Método interno que efetivamente envia o e-mail via nodemailer.
-   */
   private async sendEmailInternal(params: SendEmailParams): Promise<SendEmailResult> {
     const { fromName, emailDomain, to, subject, html, sender, name } = params;
 
@@ -179,7 +164,7 @@ class EmailService extends EventEmitter {
 
       const info = await this.transporter.sendMail(mailOptions);
 
-      // Extrair queueId da resposta e normalizá-lo para uppercase
+      // Extrair queueId e mailId
       const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
       if (!queueIdMatch || !queueIdMatch[1]) {
         throw new Error('Não foi possível extrair o queueId da resposta do servidor');
@@ -188,7 +173,6 @@ class EmailService extends EventEmitter {
       const queueId = rawQueueId.toUpperCase();
       logger.info(`EmailService.sendEmailInternal - Extraído queueId=${queueId}`);
 
-      // Extrair mailId
       const mailId = info.messageId;
       if (!mailId) {
         throw new Error('Não foi possível extrair o mailId da resposta');
@@ -202,13 +186,10 @@ class EmailService extends EventEmitter {
       const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
       this.pendingSends.set(queueId, recipientStatus);
 
-      // Salva também no EmailLog (onde o registro de envio é guardado)
+      // Salva também no EmailLog
       await this.saveQueueIdAndMailIdToEmailLog(queueId, mailId, recipient);
 
-      return {
-        queueId,
-        recipient: recipientStatus,
-      };
+      return { queueId, recipient: recipientStatus };
     } catch (error: any) {
       logger.error(`Erro ao enviar e-mail para ${recipient}: ${error.message}`, error);
       const recipientStatus = this.createRecipientStatus(recipient, false, error.message);
@@ -216,9 +197,6 @@ class EmailService extends EventEmitter {
     }
   }
 
-  /**
-   * Salva (ou atualiza) as informações no EmailLog, relacionando queueId e mailId.
-   */
   private async saveQueueIdAndMailIdToEmailLog(
     queueId: string,
     mailId: string,
@@ -235,7 +213,7 @@ class EmailService extends EventEmitter {
             sentAt: new Date(),
           },
           $setOnInsert: {
-            expireAt: new Date(Date.now() + 30 * 60 * 1000), // expira em 30 min (exemplo)
+            expireAt: new Date(Date.now() + 30 * 60 * 1000),
           },
         },
         { upsert: true, new: true }
@@ -250,14 +228,13 @@ class EmailService extends EventEmitter {
   }
 
   /**
-   * Atualiza o status (e opcionalmente o mailId) correspondente no EmailQueueModel.
-   * Aqui usamos o queueId já normalizado (uppercase).
+   * Atualiza o status (success) no EmailQueueModel usando queueId em uppercase.
    */
   private async updateEmailQueueModel(queueId: string, success: boolean): Promise<void> {
     try {
       const filter = { 'queueIds.queueId': queueId };
       logger.info(`updateEmailQueueModel - Buscando documento com filtro: ${JSON.stringify(filter)}`);
-      
+
       // Tenta encontrar o documento para debugar
       const existingDoc = await EmailQueueModel.findOne(filter, { queueIds: 1, uuid: 1 });
       if (!existingDoc) {
@@ -266,7 +243,7 @@ class EmailService extends EventEmitter {
         logger.info(`Documento encontrado: uuid=${existingDoc.uuid}, queueIds=${JSON.stringify(existingDoc.queueIds)}`);
       }
 
-      // Atualiza o campo success no array de queueIds (poderia ser estendido para atualizar mailId se necessário)
+      // Atualiza o campo success no array de queueIds
       const result = await EmailQueueModel.updateOne(
         { 'queueIds.queueId': queueId },
         { $set: { 'queueIds.$.success': success } }
@@ -283,14 +260,14 @@ class EmailService extends EventEmitter {
   }
 
   /**
-   * Intercepta os logs do Postfix (ou outro MTA) e atualiza o EmailQueueModel.
+   * Intercepta logs do Postfix (ou outro MTA) e atualiza o EmailQueueModel.
    */
   private async handleLogEntry(logEntry: LogEntry): Promise<void> {
     logger.info(`handleLogEntry - Log recebido: ${JSON.stringify(logEntry)}`);
 
-    // Garantimos que o queueId do log esteja em uppercase para comparar com o que foi salvo
     const normalizedQueueId = logEntry.queueId.toUpperCase();
     const recipientStatus = this.pendingSends.get(normalizedQueueId);
+
     if (!recipientStatus) {
       logger.warn(`Nenhum status pendente para queueId=${normalizedQueueId}`);
       // Mesmo assim, tenta atualizar o EmailQueueModel
@@ -316,9 +293,6 @@ class EmailService extends EventEmitter {
     this.emit('queueProcessed', normalizedQueueId, recipientStatus);
   }
 
-  /**
-   * Trata logs de teste (se você usa um teste específico).
-   */
   private async handleTestEmailLog(logEntry: { mailId: string; success: boolean }): Promise<void> {
     if (logEntry.mailId === this.testEmailMailId) {
       logger.info(`Log de teste para mailId=${logEntry.mailId}, success=${logEntry.success}`);
@@ -326,9 +300,6 @@ class EmailService extends EventEmitter {
     }
   }
 
-  /**
-   * Aguarda resultado de um e-mail de teste por até 60s.
-   */
   public async waitForTestEmailResult(uuid: string): Promise<TestEmailResult> {
     return new Promise((resolve) => {
       const onTestEmailProcessed = (result: { mailId: string; success: boolean }) => {
