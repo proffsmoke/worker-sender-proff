@@ -155,7 +155,7 @@ class EmailService extends EventEmitter {
    * Método interno que efetivamente envia o e-mail via nodemailer.
    */
   private async sendEmailInternal(params: SendEmailParams): Promise<SendEmailResult> {
-    logger.info(`EmailService.sendEmailInternal - Params recebidos: ${JSON.stringify(params)}`);
+    // logger.info(`EmailService.sendEmailInternal - Params recebidos: ${JSON.stringify(params)}`);
 
     const { fromName, emailDomain, to, subject, html, sender, name } = params;
 
