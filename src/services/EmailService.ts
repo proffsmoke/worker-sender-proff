@@ -51,6 +51,7 @@ class EmailService extends EventEmitter {
     resolve: (value: SendEmailResult) => void;
     reject: (reason?: any) => void;
   }> = [];
+
   private isProcessingQueue = false;
 
   private constructor(logParser: LogParser) {
@@ -103,6 +104,7 @@ class EmailService extends EventEmitter {
 
   /**
    * Processa a fila interna em lotes (até 3 por vez).
+   * Para ficar mais rápido/fluido, reduzimos o delay entre lotes para 200ms.
    */
   private async processEmailQueue(): Promise<void> {
     if (this.isProcessingQueue || this.emailQueue.length === 0) {
@@ -123,11 +125,13 @@ class EmailService extends EventEmitter {
           }
         })
       );
-      // Pausa de 1s antes do próximo lote
+
+      // Pausa de 200ms antes do próximo lote, para não bloquear muito.
       setTimeout(() => {
         this.isProcessingQueue = false;
         this.processEmailQueue();
-      }, 1000);
+      }, 200);
+
     } catch (error) {
       logger.error(
         `Erro no processamento do lote: ${
@@ -139,6 +143,9 @@ class EmailService extends EventEmitter {
     }
   }
 
+  /**
+   * Substitui tags {$name(algumTexto)} no conteúdo do e-mail.
+   */
   private substituteNameTags(text: string, name?: string): string {
     return text.replace(/\{\$name\(([^)]+)\)\}/g, (_, defaultText) => {
       return name ? name : defaultText;
@@ -251,12 +258,20 @@ class EmailService extends EventEmitter {
       const filter = { 'queueIds.queueId': queueId };
       logger.info(`updateEmailQueueModel - Buscando documento com filtro: ${JSON.stringify(filter)}`);
 
-      // Só pra debug: ver se encontra algo
+      // Tenta encontrar o documento para debug e contar quantos success=null etc.
       const existingDoc = await EmailQueueModel.findOne(filter, { queueIds: 1, uuid: 1 });
       if (!existingDoc) {
         logger.warn(`findOne não encontrou nenhum documento para queueIds.queueId=${queueId}`);
       } else {
-        logger.info(`Documento encontrado: uuid=${existingDoc.uuid}, queueIds=${JSON.stringify(existingDoc.queueIds)}`);
+        // Aqui exibimos quantos têm success=null e quantos total
+        const total = existingDoc.queueIds.length;
+        const nullCount = existingDoc.queueIds.filter(q => q.success === null).length;
+        const nonNullCount = total - nullCount;
+
+        logger.info(
+          `Documento encontrado: uuid=${existingDoc.uuid}, totalQueueIds=${total}, ` +
+          `successNull=${nullCount}, successNotNull=${nonNullCount}`
+        );
       }
 
       // Atualiza success
@@ -280,35 +295,38 @@ class EmailService extends EventEmitter {
    */
   private async handleLogEntry(logEntry: LogEntry): Promise<void> {
     logger.info(`handleLogEntry - Log recebido: ${JSON.stringify(logEntry)}`);
-  
+
     const normalizedQueueId = logEntry.queueId.toUpperCase();
     const recipientStatus = this.pendingSends.get(normalizedQueueId);
-  
+
     if (!recipientStatus) {
       logger.warn(`Nenhum status pendente para queueId=${normalizedQueueId}`);
       // Mesmo assim, tenta atualizar o EmailQueueModel
       await this.updateEmailQueueModel(normalizedQueueId, logEntry.success);
       return;
     }
-  
+
     // Atualiza o status local
     recipientStatus.success = logEntry.success;
     recipientStatus.logEntry = logEntry;
-  
+
     if (!logEntry.success) {
       recipientStatus.error = `Falha ao enviar: ${logEntry.result}`;
       logger.error(`Falha para ${recipientStatus.recipient}: ${logEntry.result}`);
     } else {
       logger.info(`Sucesso para ${recipientStatus.recipient}: ${logEntry.result}`);
     }
-  
+
     // Atualiza no MongoDB
     await this.updateEmailQueueModel(normalizedQueueId, logEntry.success);
-  
+
     // Emite evento se necessário
     this.emit('queueProcessed', normalizedQueueId, recipientStatus);
   }
 
+  /**
+   * Trata logs de teste, se existir essa funcionalidade específica.
+   */
   private async handleTestEmailLog(logEntry: { mailId: string; success: boolean }): Promise<void> {
     if (logEntry.mailId === this.testEmailMailId) {
       logger.info(`Log de teste para mailId=${logEntry.mailId}, success=${logEntry.success}`);
@@ -316,6 +334,9 @@ class EmailService extends EventEmitter {
     }
   }
 
+  /**
+   * Aguarda resultado de um e-mail de teste por até 60s (opcional).
+   */
   public async waitForTestEmailResult(uuid: string): Promise<TestEmailResult> {
     return new Promise((resolve) => {
       const onTestEmailProcessed = (result: { mailId: string; success: boolean }) => {

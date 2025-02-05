@@ -29,18 +29,17 @@ class EmailController {
     // Resposta imediata
     res.status(200).json({ message: 'Emails enfileirados para envio.', uuid });
 
-    // Processa em background (sem travar a requisição)
+    // Processa em background (sem travar a requisição principal)
     this.processEmails(req.body).catch(error => {
       logger.error(`Erro no processamento dos emails para UUID=${uuid}:`, error);
     });
   }
 
   /**
-   * Processa as listas de e-mails (remoção de duplicatas, envio, etc.).
-   * Agora criamos ou garantimos o documento, depois enviamos cada e-mail
-   * e fazemos um push incremental do queueId logo em seguida. 
-   * Ao final de cada push, também logamos quantos success=null e 
-   * quantos total há nesse documento.
+   * Processa as listas de e-mails:
+   * - Garante que o documento EmailQueue existe (senão cria).
+   * - Remove duplicadas.
+   * - Para cada e-mail, envia e faz $push incremental no array queueIds.
    */
   private async processEmails(body: any): Promise<void> {
     const { emailDomain, emailList, fromName, uuid, subject, htmlContent, sender } = body;
@@ -53,7 +52,7 @@ class EmailController {
       throw new Error(`Parâmetros obrigatórios ausentes: ${missingParams.join(', ')}.`);
     }
 
-    // (1) Garante que o documento no Mongo existe (se não existir, cria).
+    // 1) Garante que o documento no Mongo exista
     let emailQueue = await EmailQueueModel.findOne({ uuid });
     if (!emailQueue) {
       emailQueue = await EmailQueueModel.create({
@@ -64,7 +63,7 @@ class EmailController {
       logger.info(`Criado novo documento EmailQueue para UUID=${uuid}`);
     }
 
-    // (2) Remove duplicados da lista de e-mails
+    // 2) Remove duplicados
     const uniqueEmailList = [];
     const emailMap = new Map();
     for (const emailData of emailList) {
@@ -76,7 +75,7 @@ class EmailController {
       }
     }
 
-    // (3) Envia cada e-mail, obtém o queueId e faz push incremental no Mongo.
+    // 3) Envia cada e-mail e faz push incremental
     const emailService = EmailService.getInstance();
 
     for (const emailData of uniqueEmailList) {
@@ -92,16 +91,17 @@ class EmailController {
       };
 
       try {
-        // Envio síncrono (com await)
+        // Envio (await) - não bloqueia completamente pois o service já lida em lotes
         const result = await emailService.sendEmail(emailPayload, uuid);
+
         if (result.queueId) {
-          // Salva incrementalmente o queueId (em uppercase) no array
+          // Incrementa no Mongo o array com este queueId
           await EmailQueueModel.updateOne(
             { uuid },
             {
               $push: {
                 queueIds: {
-                  queueId: result.queueId.toUpperCase(), // assegura uppercase
+                  queueId: result.queueId.toUpperCase(),
                   email: email.toLowerCase(),
                   success: null,
                 },
@@ -112,20 +112,21 @@ class EmailController {
             }
           );
 
-          // Pega o documento de volta para logar quantos ainda estão null e o total.
+          // (Opcional) Loga quantos ainda estão null e quantos total
           const updatedQueue = await EmailQueueModel.findOne({ uuid }, { queueIds: 1 });
           if (updatedQueue) {
             const total = updatedQueue.queueIds.length;
             const nullCount = updatedQueue.queueIds.filter(q => q.success === null).length;
             logger.info(
-              `QueueId inserido (uuid=${uuid}): queueId=${result.queueId}, email=${email}. ` +
-              `Status: ${nullCount} pendentes (success=null), total=${total}.`
+              `QueueId inserido p/ UUID=${uuid}: queueId=${result.queueId}, email=${email}. ` +
+              `Pendentes=${nullCount}, total=${total}.`
             );
           }
 
         } else {
           logger.warn(`Nenhum queueId retornado para o e-mail ${email}`);
         }
+
       } catch (err) {
         logger.error(`Erro ao enfileirar e-mail para ${email}:`, err);
       }
