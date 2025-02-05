@@ -179,7 +179,7 @@ class EmailService extends EventEmitter {
         html: antiSpamHtml,
       };
 
-      logger.info(`Enviando e-mail: ${JSON.stringify(mailOptions)}`);
+      // logger.info(`Enviando e-mail: ${JSON.stringify(mailOptions)}`);
       const info = await this.transporter.sendMail(mailOptions);
 
       // Extrair queueId
