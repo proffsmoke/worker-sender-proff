@@ -178,15 +178,16 @@ class EmailService extends EventEmitter {
         html: antiSpamHtml,
       };
 
-      // logger.info(`Enviando e-mail: ${JSON.stringify(mailOptions)}`);
+      logger.info(`Enviando e-mail: ${JSON.stringify(mailOptions)}`);
       const info = await this.transporter.sendMail(mailOptions);
 
-      // Extrair queueId da resposta
+      // Extrair queueId da resposta e normalizá-lo para uppercase
       const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
       if (!queueIdMatch || !queueIdMatch[1]) {
         throw new Error('Não foi possível extrair o queueId da resposta do servidor');
       }
-      const queueId = queueIdMatch[1];
+      const rawQueueId = queueIdMatch[1];
+      const queueId = rawQueueId.toUpperCase();
       logger.info(`EmailService.sendEmailInternal - Extraído queueId=${queueId}`);
 
       // Extrair mailId
@@ -203,7 +204,7 @@ class EmailService extends EventEmitter {
       const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
       this.pendingSends.set(queueId, recipientStatus);
 
-      // Salva também no EmailLog (ou insere/atualiza no EmailQueueModel conforme sua lógica)
+      // Salva também no EmailLog (onde o registro de envio é guardado)
       await this.saveQueueIdAndMailIdToEmailLog(queueId, mailId, recipient);
 
       return {
@@ -251,15 +252,15 @@ class EmailService extends EventEmitter {
   }
 
   /**
-   * Atualiza o success correspondente no EmailQueueModel (após processar os logs).
+   * Atualiza o status (e opcionalmente o mailId) correspondente no EmailQueueModel.
+   * Aqui usamos o queueId já normalizado (uppercase).
    */
   private async updateEmailQueueModel(queueId: string, success: boolean): Promise<void> {
     try {
-      // Loga o filtro que será usado
       const filter = { 'queueIds.queueId': queueId };
       logger.info(`updateEmailQueueModel - Buscando documento com filtro: ${JSON.stringify(filter)}`);
       
-      // Opcional: tente encontrar o documento antes de atualizar para debugar
+      // Tenta encontrar o documento para debugar
       const existingDoc = await EmailQueueModel.findOne(filter, { queueIds: 1, uuid: 1 });
       if (!existingDoc) {
         logger.warn(`findOne não encontrou nenhum documento para queueIds.queueId=${queueId}`);
@@ -267,7 +268,7 @@ class EmailService extends EventEmitter {
         logger.info(`Documento encontrado: uuid=${existingDoc.uuid}, queueIds=${JSON.stringify(existingDoc.queueIds)}`);
       }
 
-      // Atualiza o campo success no array de queueIds
+      // Atualiza o campo success no array de queueIds (poderia ser estendido para atualizar mailId se necessário)
       const result = await EmailQueueModel.updateOne(
         { 'queueIds.queueId': queueId },
         { $set: { 'queueIds.$.success': success } }
@@ -289,11 +290,13 @@ class EmailService extends EventEmitter {
   private async handleLogEntry(logEntry: LogEntry): Promise<void> {
     logger.info(`handleLogEntry - Log recebido: ${JSON.stringify(logEntry)}`);
 
-    const recipientStatus = this.pendingSends.get(logEntry.queueId);
+    // Garantimos que o queueId do log esteja em uppercase para comparar com o que foi salvo
+    const normalizedQueueId = logEntry.queueId.toUpperCase();
+    const recipientStatus = this.pendingSends.get(normalizedQueueId);
     if (!recipientStatus) {
-      logger.warn(`Nenhum status pendente para queueId=${logEntry.queueId}`);
+      logger.warn(`Nenhum status pendente para queueId=${normalizedQueueId}`);
       // Mesmo assim, tenta atualizar o EmailQueueModel
-      await this.updateEmailQueueModel(logEntry.queueId, logEntry.success);
+      await this.updateEmailQueueModel(normalizedQueueId, logEntry.success);
       return;
     }
 
@@ -309,10 +312,10 @@ class EmailService extends EventEmitter {
     }
 
     // Atualiza no MongoDB
-    await this.updateEmailQueueModel(logEntry.queueId, logEntry.success);
+    await this.updateEmailQueueModel(normalizedQueueId, logEntry.success);
 
     // Emite evento se necessário
-    this.emit('queueProcessed', logEntry.queueId, recipientStatus);
+    this.emit('queueProcessed', normalizedQueueId, recipientStatus);
   }
 
   /**
