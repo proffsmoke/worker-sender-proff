@@ -37,9 +37,10 @@ class EmailController {
 
   /**
    * Processa as listas de e-mails (remoção de duplicatas, envio, etc.).
-   * Agora, em vez de armazenar tudo em queueIdsTemp e sobrescrever, 
-   * vamos criar (ou garantir que exista) o documento no início
-   * e fazer push incremental de cada queueId assim que for retornado.
+   * Agora criamos ou garantimos o documento, depois enviamos cada e-mail
+   * e fazemos um push incremental do queueId logo em seguida. 
+   * Ao final de cada push, também logamos quantos success=null e 
+   * quantos total há nesse documento.
    */
   private async processEmails(body: any): Promise<void> {
     const { emailDomain, emailList, fromName, uuid, subject, htmlContent, sender } = body;
@@ -110,9 +111,18 @@ class EmailController {
               },
             }
           );
-          logger.info(
-            `QueueId inserido no documento UUID=${uuid}: queueId=${result.queueId}, email=${email}`
-          );
+
+          // Pega o documento de volta para logar quantos ainda estão null e o total.
+          const updatedQueue = await EmailQueueModel.findOne({ uuid }, { queueIds: 1 });
+          if (updatedQueue) {
+            const total = updatedQueue.queueIds.length;
+            const nullCount = updatedQueue.queueIds.filter(q => q.success === null).length;
+            logger.info(
+              `QueueId inserido (uuid=${uuid}): queueId=${result.queueId}, email=${email}. ` +
+              `Status: ${nullCount} pendentes (success=null), total=${total}.`
+            );
+          }
+
         } else {
           logger.warn(`Nenhum queueId retornado para o e-mail ${email}`);
         }

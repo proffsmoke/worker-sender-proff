@@ -280,31 +280,31 @@ class EmailService extends EventEmitter {
    */
   private async handleLogEntry(logEntry: LogEntry): Promise<void> {
     logger.info(`handleLogEntry - Log recebido: ${JSON.stringify(logEntry)}`);
-
+  
     const normalizedQueueId = logEntry.queueId.toUpperCase();
     const recipientStatus = this.pendingSends.get(normalizedQueueId);
-
+  
     if (!recipientStatus) {
       logger.warn(`Nenhum status pendente para queueId=${normalizedQueueId}`);
       // Mesmo assim, tenta atualizar o EmailQueueModel
       await this.updateEmailQueueModel(normalizedQueueId, logEntry.success);
       return;
     }
-
+  
     // Atualiza o status local
     recipientStatus.success = logEntry.success;
     recipientStatus.logEntry = logEntry;
-
+  
     if (!logEntry.success) {
       recipientStatus.error = `Falha ao enviar: ${logEntry.result}`;
       logger.error(`Falha para ${recipientStatus.recipient}: ${logEntry.result}`);
     } else {
       logger.info(`Sucesso para ${recipientStatus.recipient}: ${logEntry.result}`);
     }
-
+  
     // Atualiza no MongoDB
     await this.updateEmailQueueModel(normalizedQueueId, logEntry.success);
-
+  
     // Emite evento se necessário
     this.emit('queueProcessed', normalizedQueueId, recipientStatus);
   }
