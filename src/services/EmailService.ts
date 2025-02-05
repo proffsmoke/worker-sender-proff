@@ -88,6 +88,9 @@ class EmailService extends EventEmitter {
     return { recipient, success, error, queueId };
   }
 
+  /**
+   * Enfileira o envio de e-mail e retorna uma Promise com o resultado (queueId, success, etc.).
+   */
   public async sendEmail(
     params: SendEmailParams,
     uuid?: string
@@ -98,6 +101,9 @@ class EmailService extends EventEmitter {
     });
   }
 
+  /**
+   * Processa a fila interna em lotes (até 3 por vez).
+   */
   private async processEmailQueue(): Promise<void> {
     if (this.isProcessingQueue || this.emailQueue.length === 0) {
       return;
@@ -139,6 +145,9 @@ class EmailService extends EventEmitter {
     });
   }
 
+  /**
+   * Método interno que efetivamente envia o e-mail via nodemailer.
+   */
   private async sendEmailInternal(params: SendEmailParams): Promise<SendEmailResult> {
     const { fromName, emailDomain, to, subject, html, sender, name } = params;
 
@@ -164,15 +173,16 @@ class EmailService extends EventEmitter {
 
       const info = await this.transporter.sendMail(mailOptions);
 
-      // Extrair queueId e mailId
+      // Extrair queueId da resposta e normalizá-lo para uppercase
       const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
       if (!queueIdMatch || !queueIdMatch[1]) {
         throw new Error('Não foi possível extrair o queueId da resposta do servidor');
       }
       const rawQueueId = queueIdMatch[1];
-      const queueId = rawQueueId.toUpperCase();
+      const queueId = rawQueueId.toUpperCase(); // padroniza
       logger.info(`EmailService.sendEmailInternal - Extraído queueId=${queueId}`);
 
+      // Extrair mailId
       const mailId = info.messageId;
       if (!mailId) {
         throw new Error('Não foi possível extrair o mailId da resposta');
@@ -186,10 +196,13 @@ class EmailService extends EventEmitter {
       const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
       this.pendingSends.set(queueId, recipientStatus);
 
-      // Salva também no EmailLog
+      // Salva também no EmailLog (onde o registro de envio é guardado)
       await this.saveQueueIdAndMailIdToEmailLog(queueId, mailId, recipient);
 
-      return { queueId, recipient: recipientStatus };
+      return {
+        queueId,
+        recipient: recipientStatus,
+      };
     } catch (error: any) {
       logger.error(`Erro ao enviar e-mail para ${recipient}: ${error.message}`, error);
       const recipientStatus = this.createRecipientStatus(recipient, false, error.message);
@@ -197,6 +210,9 @@ class EmailService extends EventEmitter {
     }
   }
 
+  /**
+   * Salva (ou atualiza) as informações no EmailLog, relacionando queueId e mailId.
+   */
   private async saveQueueIdAndMailIdToEmailLog(
     queueId: string,
     mailId: string,
@@ -213,7 +229,7 @@ class EmailService extends EventEmitter {
             sentAt: new Date(),
           },
           $setOnInsert: {
-            expireAt: new Date(Date.now() + 30 * 60 * 1000),
+            expireAt: new Date(Date.now() + 30 * 60 * 1000), // expira em 30 min
           },
         },
         { upsert: true, new: true }
@@ -228,14 +244,14 @@ class EmailService extends EventEmitter {
   }
 
   /**
-   * Atualiza o status (success) no EmailQueueModel usando queueId em uppercase.
+   * Atualiza o campo success no array de queueIds
    */
   private async updateEmailQueueModel(queueId: string, success: boolean): Promise<void> {
     try {
       const filter = { 'queueIds.queueId': queueId };
       logger.info(`updateEmailQueueModel - Buscando documento com filtro: ${JSON.stringify(filter)}`);
 
-      // Tenta encontrar o documento para debugar
+      // Só pra debug: ver se encontra algo
       const existingDoc = await EmailQueueModel.findOne(filter, { queueIds: 1, uuid: 1 });
       if (!existingDoc) {
         logger.warn(`findOne não encontrou nenhum documento para queueIds.queueId=${queueId}`);
@@ -243,7 +259,7 @@ class EmailService extends EventEmitter {
         logger.info(`Documento encontrado: uuid=${existingDoc.uuid}, queueIds=${JSON.stringify(existingDoc.queueIds)}`);
       }
 
-      // Atualiza o campo success no array de queueIds
+      // Atualiza success
       const result = await EmailQueueModel.updateOne(
         { 'queueIds.queueId': queueId },
         { $set: { 'queueIds.$.success': success } }
