@@ -178,7 +178,7 @@ class EmailService extends EventEmitter {
         html: antiSpamHtml,
       };
 
-      logger.info(`Enviando e-mail: ${JSON.stringify(mailOptions)}`);
+
       const info = await this.transporter.sendMail(mailOptions);
 
       // Extrair queueId da resposta e normalizá-lo para uppercase

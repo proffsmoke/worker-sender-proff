@@ -82,7 +82,7 @@ class EmailController {
         // Se houver queueId retornado, armazenamos em memória
         if (result.queueId) {
           queueIdsTemp.push({ queueId: result.queueId, email, success: null });
-          logger.info(`E-mail enfileirado: UUID=${uuid}, queueId=${result.queueId}, email=${email}`);
+         
         } else {
           logger.warn(`Nenhum queueId retornado para o e-mail ${email}`);
         }
