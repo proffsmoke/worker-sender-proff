@@ -63,6 +63,7 @@ class EmailController {
 
     // Envia cada e-mail e obtém o queueId retornado
     const emailService = EmailService.getInstance();
+    // Array temporário para os itens a serem adicionados
     const queueIdsTemp: Array<{ queueId: string; email: string; success: boolean | null }> = [];
 
     for (const emailData of uniqueEmailList) {
@@ -82,7 +83,6 @@ class EmailController {
         // Se houver queueId retornado, armazenamos em memória
         if (result.queueId) {
           queueIdsTemp.push({ queueId: result.queueId, email, success: null });
-         
         } else {
           logger.warn(`Nenhum queueId retornado para o e-mail ${email}`);
         }
@@ -91,23 +91,34 @@ class EmailController {
       }
     }
 
-    // Salva/atualiza o documento EmailQueue (com todos os queueIds e success: null)
-    // IMPORTANTE: se o documento já existir, substituímos queueIds.
+    // --- Atualização do documento EmailQueue ---
+    // Se o documento já existir, não sobrescrevemos todo o array,
+    // mas adicionamos novos itens usando $push (evitando sobrescrever o status já atualizado).
     try {
-      const updatedQueue = await EmailQueueModel.findOneAndUpdate(
-        { uuid },
-        {
-          $set: {
-            queueIds: queueIdsTemp,  // todos os emails enviados agora
-            resultSent: false,
-          },
-        },
-        { upsert: true, new: true } // cria se não existir
-      ) as IEmailQueue;
+      const existingQueue = await EmailQueueModel.findOne({ uuid });
+      if (existingQueue) {
+        // Para cada novo item, se já existir um entry para o e-mail, atualiza somente o queueId,
+        // caso contrário, adiciona o item ao array.
+        for (const item of queueIdsTemp) {
+          const updateResult = await EmailQueueModel.updateOne(
+            { uuid, 'queueIds.email': item.email },
+            { $set: { 'queueIds.$.queueId': item.queueId } }
+          );
+          if (updateResult.matchedCount === 0) {
+            await EmailQueueModel.updateOne(
+              { uuid },
+              { $push: { queueIds: item } }
+            );
+          }
+        }
+        // Garante que resultSent seja false
+        await EmailQueueModel.updateOne({ uuid }, { $set: { resultSent: false } });
+      } else {
+        // Se não existir, cria o documento com os itens
+        await EmailQueueModel.create({ uuid, queueIds: queueIdsTemp, resultSent: false });
+      }
 
-      logger.info(
-        `Documento EmailQueue salvo/atualizado para UUID=${uuid} com ${updatedQueue.queueIds.length} queueIds.`
-      );
+      logger.info(`Documento EmailQueue salvo/atualizado para UUID=${uuid}`);
     } catch (err) {
       logger.error(`Erro ao salvar EmailQueue para UUID=${uuid}:`, err);
       throw new Error('Erro ao salvar os dados no banco de dados.');

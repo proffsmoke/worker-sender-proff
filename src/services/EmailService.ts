@@ -1,4 +1,3 @@
-// EmailService.ts
 import nodemailer from 'nodemailer';
 import logger from '../utils/logger';
 import LogParser, { LogEntry } from '../log-parser';
@@ -177,7 +176,6 @@ class EmailService extends EventEmitter {
         subject: processedSubject,
         html: antiSpamHtml,
       };
-
 
       const info = await this.transporter.sendMail(mailOptions);
 
