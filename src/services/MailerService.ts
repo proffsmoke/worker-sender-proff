@@ -28,6 +28,8 @@ class MailerService {
   private emailService: EmailService;
   private blockManagerService: BlockManagerService;
   private isMonitoringStarted: boolean = false;
+  // Nova propriedade para indicar se o teste inicial foi concluído com sucesso.
+  private initialTestCompleted: boolean = false;
 
   private constructor() {
     this.createdAt = new Date();
@@ -71,12 +73,19 @@ class MailerService {
     return this.createdAt;
   }
 
+  /**
+   * Modificado para retornar "disabled" enquanto o teste inicial não for concluído.
+   */
   getStatus(): string {
     if (this.isBlockedPermanently) {
       return 'blocked_permanently';
     }
     if (this.isBlocked) {
       return 'blocked_temporary';
+    }
+    // Enquanto o teste inicial não for concluído, retorna "disabled".
+    if (!this.initialTestCompleted) {
+      return 'disabled';
     }
     return 'health';
   }
@@ -163,6 +172,9 @@ class MailerService {
     }
   }
 
+  /**
+   * Envia o teste inicial e, em caso de sucesso, define o teste como concluído.
+   */
   public async sendInitialTestEmail(): Promise<TestEmailResult> {
     if (this.isBlockedPermanently) {
       logger.warn('Mailer is permanently blocked. Test omitted.');
@@ -191,6 +203,8 @@ class MailerService {
       if (logEntry && logEntry.success) {
         logger.info(`Test email sent successfully. mailId: ${logEntry.mailId}`);
         this.unblockMailer();
+        // Marca que o teste inicial foi concluído com sucesso.
+        this.initialTestCompleted = true;
         return { success: true, mailId: logEntry.mailId };
       } else {
         logger.warn(`Failed to send test email. Details: ${JSON.stringify(logEntry)}`);
