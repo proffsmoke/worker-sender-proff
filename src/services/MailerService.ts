@@ -39,12 +39,7 @@ class MailerService {
       this.blockManagerService.handleLogEntry(logEntry);
     });
 
-    // Inicia leitura do /var/log/mail.log (caso ainda não tenha iniciado).
-    if (!this.isMonitoringStarted) {
-      this.logParser.startMonitoring();
-      this.isMonitoringStarted = true;
-    }
-
+    // Inicia a lógica (mas não necessariamente começa log se ele não existir)
     this.initialize();
   }
 
@@ -55,7 +50,18 @@ class MailerService {
     return MailerService.instance;
   }
 
-  initialize(): void {
+  /**
+   * Força o início do monitoramento de logs (caso ainda não tenha iniciado).
+   */
+  public forceLogInitialization(): void {
+    if (!this.isMonitoringStarted) {
+      this.logParser.startMonitoring();
+      this.isMonitoringStarted = true;
+      logger.info('Logs foram forçados a iniciar a leitura.');
+    }
+  }
+
+  private initialize(): void {
     if (!this.isBlockedPermanently) {
       this.sendInitialTestEmail();
     } else {
@@ -131,7 +137,6 @@ class MailerService {
       logger.info('Mailer is permanently blocked. No retries will be attempted.');
       return;
     }
-    // Se já tiver um interval ativo, não agenda outro
     if (this.retryIntervalId) {
       return;
     }
@@ -148,7 +153,6 @@ class MailerService {
   }
 
   private async retrySendEmail(): Promise<void> {
-    // Se não está mais bloqueado (ou virou bloqueio permanente), encerra
     if (!this.isBlocked || this.isBlockedPermanently) {
       this.clearRetryInterval();
       logger.info('Mailer is not temporarily blocked. Canceling retries.');
@@ -164,30 +168,22 @@ class MailerService {
     }
   }
 
-  /**
-   * Envia o teste inicial e, em caso de sucesso, define o teste como concluído.
-   * Agora com bloqueio para evitar múltiplas tentativas em curto prazo.
-   */
   public async sendInitialTestEmail(): Promise<TestEmailResult> {
-    // Se já bloqueado permanentemente, sai
     if (this.isBlockedPermanently) {
       logger.warn('Mailer is permanently blocked. Test omitted.');
       return { success: false };
     }
 
-    // Se já concluímos o teste, não precisa reenviar
     if (this.initialTestCompleted) {
       logger.info('Initial test already completed successfully. Skipping test email.');
       return { success: true };
     }
 
-    // Se já estamos tentando enviar teste (aguardando retorno), não dispara outro
     if (this.isTestEmailSending) {
       logger.warn('A test email send is already in progress. Skipping...');
       return { success: false };
     }
 
-    // Se ainda não se passaram 4 min desde a última tentativa, não enviar de novo
     const now = Date.now();
     if (now - this.lastTestEmailAttempt < this.testEmailInterval) {
       logger.warn(
@@ -198,7 +194,6 @@ class MailerService {
       return { success: false };
     }
 
-    // Marca que estamos enviando e atualiza o timestamp
     this.isTestEmailSending = true;
     this.lastTestEmailAttempt = now;
 
@@ -225,7 +220,7 @@ class MailerService {
       if (logEntry && logEntry.success) {
         logger.info(`Test email sent successfully. mailId: ${logEntry.mailId}`);
         this.unblockMailer();
-        this.initialTestCompleted = true; // <- teste inicial concluído
+        this.initialTestCompleted = true;
         return { success: true, mailId: logEntry.mailId };
       } else {
         logger.warn(`Failed to send test email. Details: ${JSON.stringify(logEntry)}`);
@@ -242,7 +237,6 @@ class MailerService {
       await EmailStats.incrementFail();
       return { success: false };
     } finally {
-      // Ao final (com sucesso ou erro), desbloqueia o "envio em progresso"
       this.isTestEmailSending = false;
     }
   }

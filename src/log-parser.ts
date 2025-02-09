@@ -1,4 +1,3 @@
-// log-parser.ts
 import { Tail } from 'tail';
 import logger from './utils/logger';
 import fs from 'fs';
@@ -27,11 +26,28 @@ class LogParser extends EventEmitter {
     super();
     this.logFilePath = logFilePath;
 
+    // Tenta inicializar o tail com até 50 tentativas
+    this.initTail();
+  }
+
+  /**
+   * Tenta criar o Tail no arquivo de log, repetindo até 50x se o arquivo não existir ainda.
+   * Cada falha aguarda 2s antes de nova tentativa.
+   */
+  private initTail(retryCount = 0): void {
     if (!fs.existsSync(this.logFilePath)) {
-      logger.error(`Log file not found at path: ${this.logFilePath}`);
-      throw new Error(`Log file not found: ${this.logFilePath}`);
+      logger.error(
+        `Log file not found at path: ${this.logFilePath}. Tentativa ${retryCount + 1}/50`
+      );
+      if (retryCount < 50) {
+        setTimeout(() => this.initTail(retryCount + 1), 2000);
+      } else {
+        throw new Error(`Log file not found após 50 tentativas: ${this.logFilePath}`);
+      }
+      return;
     }
 
+    // Se achou o arquivo, inicializa o tail normalmente
     this.tail = new Tail(this.logFilePath, { useWatchFile: true });
   }
 
@@ -42,7 +58,7 @@ class LogParser extends EventEmitter {
     }
 
     if (!this.tail) {
-      logger.error('Tail not initialized.');
+      logger.error('Tail not initialized (log file ainda não encontrado).');
       return;
     }
 
@@ -71,7 +87,7 @@ class LogParser extends EventEmitter {
       timestamp: new Date().toISOString(),
       queueId,
       email,
-      result: errorDetails, // Captura a mensagem completa do erro
+      result: errorDetails,
       success: line.includes('status=sent'),
       mailId,
     };
