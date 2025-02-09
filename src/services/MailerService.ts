@@ -21,12 +21,14 @@ class MailerService {
   private isMonitoringStarted: boolean = false;
   private initialTestCompleted: boolean = false;
 
-  /**
-   * Flags para evitar reenvio imediato:
-   */
+  // Flags para evitar reenvio imediato:
   private isTestEmailSending: boolean = false;   // se já estamos enviando/testando
   private lastTestEmailAttempt: number = 0;      // timestamp da última tentativa de envio
   private readonly testEmailInterval: number = 4 * 60 * 1000; // intervalo de 4 min
+
+  // Contador simples para transformar o block temporary em permanent caso falhe novamente:
+  // (opcional, se quiser bloquear permanentemente no segundo teste falho)
+  private blockTemporaryRetries: number = 0;
 
   private constructor() {
     this.createdAt = new Date();
@@ -39,7 +41,7 @@ class MailerService {
       this.blockManagerService.handleLogEntry(logEntry);
     });
 
-    // Inicia a lógica (mas não necessariamente começa log se ele não existir)
+    // Inicia a lógica (apenas um teste inicial)
     this.initialize();
   }
 
@@ -62,6 +64,7 @@ class MailerService {
   }
 
   private initialize(): void {
+    // Somente faz o teste inicial se não estiver permanentemente bloqueado
     if (!this.isBlockedPermanently) {
       this.sendInitialTestEmail();
     } else {
@@ -104,6 +107,7 @@ class MailerService {
   }
 
   blockMailer(status: 'blocked_permanently' | 'blocked_temporary', reason: string): void {
+    // Se já bloqueamos permanentemente, não faz nada
     if (this.isBlockedPermanently) return;
 
     if (status === 'blocked_permanently') {
@@ -127,6 +131,7 @@ class MailerService {
     if (this.isBlocked && !this.isBlockedPermanently) {
       this.isBlocked = false;
       this.blockReason = null;
+      this.blockTemporaryRetries = 0; // reseta tentativas
       logger.info('Mailer unblocked.');
       this.clearRetryInterval();
     }
@@ -152,8 +157,14 @@ class MailerService {
     }
   }
 
+  /**
+   * Tenta reenviar o e-mail de teste caso estejamos em block temporário.
+   * Se falhar novamente, bloqueia permanentemente (caso deseje essa lógica).
+   */
   private async retrySendEmail(): Promise<void> {
     if (!this.isBlocked || this.isBlockedPermanently) {
+      // Se não está mais bloqueado temporariamente, ou já está perm,
+      // não precisamos continuar tentando.
       this.clearRetryInterval();
       logger.info('Mailer is not temporarily blocked. Canceling retries.');
       return;
@@ -165,16 +176,34 @@ class MailerService {
     if (result.success) {
       logger.info('Test email resend successful. Canceling further retries.');
       this.clearRetryInterval();
+      return;
     }
+
+    // Se este ponto é alcançado, significa que o teste falhou de novo.
+    // Caso queira bloquear permanentemente já na segunda falha:
+    this.blockTemporaryRetries += 1;
+    if (this.blockTemporaryRetries >= 1) {
+      logger.warn('Retried test email failed again. Applying permanent block.');
+      this.blockMailer('blocked_permanently', 'Retried test email failed again.');
+      this.clearRetryInterval();
+    }
+    // Caso prefira mais tentativas antes do permanent block,
+    // ajuste o if acima para `>= 2`, por exemplo.
   }
 
+  /**
+   * Primeiro teste (inicial). Se falhar ou der timeout, marcamos temporário.
+   * Se tiver sucesso, viramos "health".
+   */
   public async sendInitialTestEmail(): Promise<TestEmailResult> {
     if (this.isBlockedPermanently) {
       logger.warn('Mailer is permanently blocked. Test omitted.');
       return { success: false };
     }
 
-    if (this.initialTestCompleted) {
+    // Se já concluímos o teste inicial com sucesso, não refazemos
+    // (exceto se estivermos explicitamente em block temporário)
+    if (this.initialTestCompleted && !this.isBlocked) {
       logger.info('Initial test already completed successfully. Skipping test email.');
       return { success: true };
     }
@@ -201,7 +230,6 @@ class MailerService {
       fromName: 'Mailer Test',
       emailDomain: config.mailer.noreplyEmail.split('@')[1] || 'unknown.com',
       to: config.mailer.noreplyEmail,
-      bcc: [],
       subject: 'Initial Test Email',
       html: '<p>This is an initial test email to verify Mailer functionality.</p>',
       clientName: 'Test Client',
@@ -214,15 +242,17 @@ class MailerService {
       const queueId = result.queueId;
       logger.info(`Test email sent with queueId=${queueId}`);
 
-      // Aguarda log do MTA (até 1 min) pra ver se deu sucesso
+      // Aguarda log do MTA (até 1 min) para ver se deu sucesso
       const logEntry = await this.waitForLogEntry(queueId, 60000);
 
+      // Se veio log e success=true, consideramos sucesso.
       if (logEntry && logEntry.success) {
         logger.info(`Test email sent successfully. mailId: ${logEntry.mailId}`);
         this.unblockMailer();
-        this.initialTestCompleted = true;
+        this.initialTestCompleted = true; // teste inicial concluído
         return { success: true, mailId: logEntry.mailId };
       } else {
+        // Falha ou timeout => block temporary (se ainda não for permanent)
         logger.warn(`Failed to send test email. Details: ${JSON.stringify(logEntry)}`);
         if (!this.isBlockedPermanently) {
           this.blockMailer('blocked_temporary', 'Failed to send test email.');
@@ -241,6 +271,9 @@ class MailerService {
     }
   }
 
+  /**
+   * Espera pelo registro do log referente ao envio, por até X ms (timeout).
+   */
   private async waitForLogEntry(queueId: string, timeout: number): Promise<LogEntry | null> {
     return new Promise((resolve) => {
       const checkInterval = 500;
@@ -264,7 +297,7 @@ class MailerService {
           elapsedTime += checkInterval;
           if (elapsedTime >= timeout) {
             clearInterval(intervalId);
-            resolve(null);
+            resolve(null); // timeout => sem resposta
           }
         }
       }, checkInterval);
