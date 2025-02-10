@@ -179,14 +179,16 @@ class MailerService {
       return;
     }
 
+
+    //bloco inutil comentado
     // Se este ponto é alcançado, significa que o teste falhou de novo.
     // Caso queira bloquear permanentemente já na segunda falha:
-    this.blockTemporaryRetries += 1;
-    if (this.blockTemporaryRetries >= 1) {
-      logger.warn('Retried test email failed again. Applying permanent block.');
-      this.blockMailer('blocked_permanently', 'Retried test email failed again.');
-      this.clearRetryInterval();
-    }
+    // this.blockTemporaryRetries += 1;
+    // if (this.blockTemporaryRetries >= 1) {
+    //   logger.warn('Retried test email failed again. Applying permanent block.');
+    //   this.blockMailer('blocked_permanently', 'Retried test email failed again.');
+    //   this.clearRetryInterval();
+    // }
     // Caso prefira mais tentativas antes do permanent block,
     // ajuste o if acima para `>= 2`, por exemplo.
   }
