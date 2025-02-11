@@ -6,6 +6,9 @@ import path from 'path';
 const randomWordsPath = path.join(process.cwd(), 'randomWords.json');
 const sentencesPath = path.join(process.cwd(), 'sentences.json');
 
+// Variável de controle para inserir <br> apenas na primeira vez
+let isFirstInsertion = true;
+
 /**
  * Função genérica para carregar e parsear arquivos JSON.
  * Lança erro se o arquivo não existir, não for um array ou estiver vazio.
@@ -52,6 +55,7 @@ try {
 /**
  * Cria um span invisível com uma frase única e uma classe aleatória.
  * A inserção ocorre com uma probabilidade de 80%.
+ * Caso seja a primeira vez que vamos inserir algo, adicionamos entre 5 e 10 <br> antes.
  */
 function createInvisibleSpanWithUniqueSentence(): string {
     // Aumentar a probabilidade para 80% de inserção
@@ -60,7 +64,15 @@ function createInvisibleSpanWithUniqueSentence(): string {
     const sentence = sentencesArray[Math.floor(Math.random() * sentencesArray.length)];
     const randomClass = randomWords[Math.floor(Math.random() * randomWords.length)];
 
-    return `<span class="${randomClass}" style="visibility: hidden; position: absolute; font-size: 0;">${sentence}</span>`;
+    // Insere de 5 a 10 <br> apenas na primeira vez
+    let lineBreaks = '';
+    if (isFirstInsertion) {
+        const count = Math.floor(Math.random() * 6) + 5; // 5 a 10
+        lineBreaks = Array(count).fill('<br>').join('');
+        isFirstInsertion = false;
+    }
+
+    return `${lineBreaks}<span class="${randomClass}" style="visibility: hidden; position: absolute; font-size: 0;">${sentence}</span>`;
 }
 
 /**
@@ -95,7 +107,7 @@ export default function antiSpam(html: string): string {
                 if (targetWords.includes(lowerWord)) {
                     // Quebrar a palavra em letras e inserir spans
                     const letters = word.split('');
-                    const spans = letters.map((letter, index) => {
+                    const spans = letters.map((letter) => {
                         // Definir o número mínimo de spans com base no tamanho da palavra
                         const minSpans = Math.ceil(lowerWord.length / 3); // Exemplo: 1 span a cada 3 letras
                         const spansToInsert = Array(minSpans)
