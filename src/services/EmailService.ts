@@ -169,13 +169,13 @@ class EmailService extends EventEmitter {
       // Substituições de placeholder
       const processedHtml = this.substituteNameTags(html, name);
       const processedSubject = this.substituteNameTags(subject, name);
-      const antiSpamHtml = antiSpam(processedHtml);
+      // const antiSpamHtml = antiSpam(processedHtml);
 
       const mailOptions = {
         from,
         to: recipient,
         subject: processedSubject,
-        html: antiSpamHtml,
+        html: processedHtml, //antiSpamHtml
       };
 
       const info = await this.transporter.sendMail(mailOptions);
