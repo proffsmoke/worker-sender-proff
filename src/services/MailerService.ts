@@ -255,6 +255,7 @@ class MailerService {
         return { success: true, mailId: logEntry.mailId };
       } else {
         // Falha ou timeout => block temporary (se ainda não for permanent)
+        this.initialTestCompleted = true
         logger.warn(`Failed to send test email. Details: ${JSON.stringify(logEntry)}`);
         if (!this.isBlockedPermanently) {
           this.blockMailer('blocked_temporary', 'Failed to send test email.');
