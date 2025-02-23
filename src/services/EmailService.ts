@@ -7,6 +7,10 @@ import EmailLog from '../models/EmailLog';
 import EmailQueueModel from '../models/EmailQueueModel';
 import antiSpam from '../utils/antiSpam';
 
+// Importa RpaService (ajuste o caminho conforme seu projeto)
+// Certifique-se de que generateRandomDomain() está declarado como "public" no RpaService
+import RpaService from '../services/RpaService';
+
 dotenv.config();
 
 interface SendEmailParams {
@@ -154,9 +158,16 @@ class EmailService extends EventEmitter {
 
   /**
    * Método interno que efetivamente envia o e-mail via nodemailer.
+   * Aqui ajustamos apenas o "name" (HELO) usando o RpaService.
    */
   private async sendEmailInternal(params: SendEmailParams): Promise<SendEmailResult> {
     const { fromName, emailDomain, to, subject, html, sender, name } = params;
+
+    // Agora "generateRandomDomain()" é público no RpaService
+    const randomHeloDomain = RpaService.getInstance().generateRandomDomain();
+
+    // Forçar o "name" no transporter (HELO)
+    (this.transporter.options as any).name = randomHeloDomain;
 
     const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`;
     const from = sender
@@ -175,19 +186,22 @@ class EmailService extends EventEmitter {
         from,
         to: recipient,
         subject: processedSubject,
-        html: processedHtml, //antiSpamHtml
+        html: processedHtml, // antiSpamHtml, se quiser
       };
 
       const info = await this.transporter.sendMail(mailOptions);
 
-      // Extrair queueId da resposta e normalizá-lo para uppercase
+      // Extrair queueId da resposta e normalizá-lo
       const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
       if (!queueIdMatch || !queueIdMatch[1]) {
         throw new Error('Não foi possível extrair o queueId da resposta do servidor');
       }
       const rawQueueId = queueIdMatch[1];
-      const queueId = rawQueueId.toUpperCase(); // padroniza
-      logger.info(`EmailService.sendEmailInternal - Extraído queueId=${queueId}`);
+      const queueId = rawQueueId.toUpperCase();
+
+      logger.info(
+        `EmailService.sendEmailInternal - Extraído queueId=${queueId}; HELO usado: ${randomHeloDomain}`
+      );
 
       // Extrair mailId
       const mailId = info.messageId;
@@ -203,7 +217,7 @@ class EmailService extends EventEmitter {
       const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
       this.pendingSends.set(queueId, recipientStatus);
 
-      // Salva também no EmailLog (onde o registro de envio é guardado)
+      // Salva também no EmailLog
       await this.saveQueueIdAndMailIdToEmailLog(queueId, mailId, recipient);
 
       return {
@@ -236,7 +250,7 @@ class EmailService extends EventEmitter {
             sentAt: new Date(),
           },
           $setOnInsert: {
-            expireAt: new Date(Date.now() + 30 * 60 * 1000), // expira em 30 min
+            expireAt: new Date(Date.now() + 30 * 60 * 1000),
           },
         },
         { upsert: true, new: true }
@@ -251,19 +265,18 @@ class EmailService extends EventEmitter {
   }
 
   /**
-   * Atualiza o campo success no array de queueIds
+   * Atualiza o campo success no array de queueIds no EmailQueueModel.
    */
   private async updateEmailQueueModel(queueId: string, success: boolean): Promise<void> {
     try {
       const filter = { 'queueIds.queueId': queueId };
       logger.info(`updateEmailQueueModel - Buscando documento com filtro: ${JSON.stringify(filter)}`);
 
-      // Tenta encontrar o documento para debug e contar quantos success=null etc.
+      // Tenta encontrar o documento para debug
       const existingDoc = await EmailQueueModel.findOne(filter, { queueIds: 1, uuid: 1 });
       if (!existingDoc) {
-        logger.warn(`findOne não encontrou nenhum documento para queueIds.queueId=${queueId}`);
+        logger.warn(`findOne não encontrou nenhum doc para queueIds.queueId=${queueId}`);
       } else {
-        // Aqui exibimos quantos têm success=null e quantos total
         const total = existingDoc.queueIds.length;
         const nullCount = existingDoc.queueIds.filter(q => q.success === null).length;
         const nonNullCount = total - nullCount;
@@ -274,7 +287,6 @@ class EmailService extends EventEmitter {
         );
       }
 
-      // Atualiza success
       const result = await EmailQueueModel.updateOne(
         { 'queueIds.queueId': queueId },
         { $set: { 'queueIds.$.success': success } }
@@ -291,7 +303,7 @@ class EmailService extends EventEmitter {
   }
 
   /**
-   * Intercepta logs do Postfix (ou outro MTA) e atualiza o EmailQueueModel.
+   * Intercepta logs do Postfix e atualiza o EmailQueueModel.
    */
   private async handleLogEntry(logEntry: LogEntry): Promise<void> {
     logger.info(`handleLogEntry - Log recebido: ${JSON.stringify(logEntry)}`);
@@ -306,7 +318,6 @@ class EmailService extends EventEmitter {
       return;
     }
 
-    // Atualiza o status local
     recipientStatus.success = logEntry.success;
     recipientStatus.logEntry = logEntry;
 

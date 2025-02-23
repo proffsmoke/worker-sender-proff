@@ -8,13 +8,18 @@ const logger_1 = __importDefault(require("../utils/logger"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const events_1 = require("events");
 const EmailLog_1 = __importDefault(require("../models/EmailLog"));
+const EmailQueueModel_1 = __importDefault(require("../models/EmailQueueModel"));
+// IMPORTE o RpaService (ajuste o caminho conforme sua estrutura)
+const RpaService_1 = __importDefault(require("../services/RpaService"));
 dotenv_1.default.config();
 class EmailService extends events_1.EventEmitter {
     constructor(logParser) {
         super();
         this.testEmailMailId = null;
+        // Fila interna de envios, com controle de lotes
         this.emailQueue = [];
         this.isProcessingQueue = false;
+        // Mantém exatamente a mesma configuração de host, port, etc.
         this.transporter = nodemailer_1.default.createTransport({
             host: 'localhost',
             port: 25,
@@ -23,6 +28,7 @@ class EmailService extends events_1.EventEmitter {
         });
         this.logParser = logParser;
         this.pendingSends = new Map();
+        // Eventos do logParser
         this.logParser.on('log', this.handleLogEntry.bind(this));
         this.logParser.on('testEmailLog', this.handleTestEmailLog.bind(this));
     }
@@ -36,41 +42,42 @@ class EmailService extends events_1.EventEmitter {
         return EmailService.instance;
     }
     createRecipientStatus(recipient, success, error, queueId) {
-        return {
-            recipient,
-            success,
-            error,
-            queueId,
-        };
+        return { recipient, success, error, queueId };
     }
-    async sendEmail(params, uuid, existingQueueIds = []) {
+    /**
+     * Enfileira o envio de e-mail e retorna uma Promise com o resultado (queueId, success, etc.).
+     */
+    async sendEmail(params, uuid) {
         return new Promise((resolve, reject) => {
             this.emailQueue.push({ params, resolve, reject });
             this.processEmailQueue();
         });
     }
+    /**
+     * Processa a fila interna em lotes (até 3 por vez).
+     * Para ficar mais rápido/fluido, reduzimos o delay entre lotes para 200ms.
+     */
     async processEmailQueue() {
         if (this.isProcessingQueue || this.emailQueue.length === 0) {
             return;
         }
         this.isProcessingQueue = true;
         try {
-            // Processa até 3 emails por vez
             const batch = this.emailQueue.splice(0, 3);
             await Promise.all(batch.map(async ({ params, resolve, reject }) => {
                 try {
                     const result = await this.sendEmailInternal(params);
                     resolve(result);
                 }
-                catch (error) {
-                    reject(error);
+                catch (err) {
+                    reject(err);
                 }
             }));
-            // Aguarda 1 segundo antes de processar o próximo lote
+            // Pausa de 200ms antes do próximo lote, para não bloquear muito.
             setTimeout(() => {
                 this.isProcessingQueue = false;
                 this.processEmailQueue();
-            }, 1000);
+            }, 200);
         }
         catch (error) {
             logger_1.default.error(`Erro no processamento do lote: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
@@ -78,112 +85,162 @@ class EmailService extends events_1.EventEmitter {
             this.processEmailQueue();
         }
     }
-    async sendEmailInternal(params, existingQueueIds = []) {
-        const { fromName, emailDomain, to, subject, html, sender } = params;
+    /**
+     * Substitui tags {$name(algumTexto)} no conteúdo do e-mail.
+     */
+    substituteNameTags(text, name) {
+        return text.replace(/\{\$name\(([^)]+)\)\}/g, (_, defaultText) => {
+            return name ? name : defaultText;
+        });
+    }
+    /**
+     * Método interno que efetivamente envia o e-mail via nodemailer.
+     * Aqui adicionamos apenas uma linha para modificar o 'name' (HELO) dinamicamente.
+     */
+    async sendEmailInternal(params) {
+        const { fromName, emailDomain, to, subject, html, sender, name } = params;
+        // A cada envio, gera um domínio aleatório e define como HELO
+        const randomHeloDomain = RpaService_1.default.getInstance().generateRandomDomain();
+        this.transporter.options.name = randomHeloDomain;
         const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`;
-        const from = sender ? `"${fromName}" <${sender}>` : `"${fromName}" <${fromEmail}>`;
+        const from = sender
+            ? `"${fromName}" <${sender}>`
+            : `"${fromName}" <${fromEmail}>`;
         const recipient = to.toLowerCase();
         try {
-            // Criação do objeto de envio do e-mail
+            // Substituições de placeholder
+            const processedHtml = this.substituteNameTags(html, name);
+            const processedSubject = this.substituteNameTags(subject, name);
+            // const antiSpamHtml = antiSpam(processedHtml);
             const mailOptions = {
                 from,
                 to: recipient,
-                subject,
-                html,
+                subject: processedSubject,
+                html: processedHtml, // ou antiSpamHtml
             };
-            logger_1.default.info(`Preparando para enviar email: ${JSON.stringify(mailOptions)}`);
             const info = await this.transporter.sendMail(mailOptions);
-            // Extrair queueId
+            // Extrair queueId da resposta e normalizá-lo para uppercase
             const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
             if (!queueIdMatch || !queueIdMatch[1]) {
-                throw new Error('Não foi possível extrair o queueId da resposta');
+                throw new Error('Não foi possível extrair o queueId da resposta do servidor');
             }
-            const queueId = queueIdMatch[1];
+            const rawQueueId = queueIdMatch[1];
+            const queueId = rawQueueId.toUpperCase(); // padroniza
+            logger_1.default.info(`EmailService.sendEmailInternal - Extraído queueId=${queueId}; usou HELO=${randomHeloDomain}`);
             // Extrair mailId
             const mailId = info.messageId;
             if (!mailId) {
                 throw new Error('Não foi possível extrair o mailId da resposta');
             }
-            // **Verificar se o queueId já existe (antes de salvar no EmailLog):**
-            if (existingQueueIds.some(item => item.queueId === queueId)) {
-                logger_1.default.info(`O queueId ${queueId} já está presente, não será duplicado.`);
-                return {
-                    queueId,
-                    recipient: this.createRecipientStatus(recipient, false, "Duplicate queueId"),
-                };
-            }
-            logger_1.default.info(`Email enviado com sucesso! Detalhes:
-                - De: ${from}
-                - Para: ${recipient}
-                - QueueId: ${queueId}
-                - MailId: ${mailId}
-            `);
+            logger_1.default.info(`Email enviado com sucesso: de=${from}, para=${recipient}, queueId=${queueId}, mailId=${mailId}`);
+            // Cria um status local e salva no pendingSends
             const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
             this.pendingSends.set(queueId, recipientStatus);
-            // Salvar a associação no EmailLog, usando o mailId como UUID, e incluindo o queueId
+            // Salva também no EmailLog (onde o registro de envio é guardado)
             await this.saveQueueIdAndMailIdToEmailLog(queueId, mailId, recipient);
-            logger_1.default.info(`Dados de envio associados com sucesso para queueId=${queueId} e mailId=${mailId}.`);
             return {
                 queueId,
                 recipient: recipientStatus,
             };
         }
         catch (error) {
-            logger_1.default.error(`Erro ao enviar email: ${error.message}`, error);
+            logger_1.default.error(`Erro ao enviar e-mail para ${recipient}: ${error.message}`, error);
             const recipientStatus = this.createRecipientStatus(recipient, false, error.message);
-            return {
-                queueId: '',
-                recipient: recipientStatus,
-            };
+            return { queueId: '', recipient: recipientStatus };
         }
     }
+    /**
+     * Salva (ou atualiza) as informações no EmailLog, relacionando queueId e mailId.
+     */
     async saveQueueIdAndMailIdToEmailLog(queueId, mailId, recipient) {
         try {
-            logger_1.default.info(`Tentando salvar queueId=${queueId}, mailId=${mailId} e recipient=${recipient} no EmailLog.`);
-            let emailLog = await EmailLog_1.default.findOne({ mailId });
-            if (!emailLog) {
-                emailLog = new EmailLog_1.default({
+            const doc = await EmailLog_1.default.findOneAndUpdate({ queueId }, {
+                $set: {
                     mailId,
-                    queueId,
                     email: recipient,
-                    success: null,
-                    updated: false,
+                    updated: true,
                     sentAt: new Date(),
-                    expireAt: new Date(Date.now() + 30 * 60 * 1000),
-                });
-            }
-            emailLog.queueId = queueId;
-            emailLog.email = recipient;
-            await emailLog.save();
+                },
+                $setOnInsert: {
+                    expireAt: new Date(Date.now() + 30 * 60 * 1000), // expira em 30 min
+                },
+            }, { upsert: true, new: true });
             logger_1.default.info(`Log salvo/atualizado no EmailLog: queueId=${queueId}, mailId=${mailId}, recipient=${recipient}`);
+            logger_1.default.info(`EmailLog atual: ${JSON.stringify(doc, null, 2)}`);
         }
         catch (error) {
             logger_1.default.error(`Erro ao salvar log no EmailLog:`, error);
         }
     }
+    /**
+     * Atualiza o campo success no array de queueIds dentro do EmailQueueModel.
+     */
+    async updateEmailQueueModel(queueId, success) {
+        try {
+            const filter = { 'queueIds.queueId': queueId };
+            logger_1.default.info(`updateEmailQueueModel - Buscando documento com filtro: ${JSON.stringify(filter)}`);
+            // Tenta encontrar o documento para debug e contar quantos success=null etc.
+            const existingDoc = await EmailQueueModel_1.default.findOne(filter, { queueIds: 1, uuid: 1 });
+            if (!existingDoc) {
+                logger_1.default.warn(`findOne não encontrou nenhum documento para queueIds.queueId=${queueId}`);
+            }
+            else {
+                const total = existingDoc.queueIds.length;
+                const nullCount = existingDoc.queueIds.filter(q => q.success === null).length;
+                const nonNullCount = total - nullCount;
+                logger_1.default.info(`Documento encontrado: uuid=${existingDoc.uuid}, totalQueueIds=${total}, ` +
+                    `successNull=${nullCount}, successNotNull=${nonNullCount}`);
+            }
+            const result = await EmailQueueModel_1.default.updateOne({ 'queueIds.queueId': queueId }, { $set: { 'queueIds.$.success': success } });
+            logger_1.default.info(`Queue atualizada no EmailQueueModel: queueId=${queueId} => success=${success}`);
+            logger_1.default.info(`Queue update result for queueId=${queueId}: ${JSON.stringify(result)}`);
+            if (result.matchedCount === 0) {
+                logger_1.default.warn(`Nenhum documento foi encontrado para queueIds.queueId=${queueId} durante o update.`);
+            }
+        }
+        catch (error) {
+            logger_1.default.error(`Erro ao atualizar EmailQueueModel para queueId=${queueId}`, error);
+        }
+    }
+    /**
+     * Intercepta logs do Postfix (ou outro MTA) e atualiza o EmailQueueModel.
+     */
     async handleLogEntry(logEntry) {
-        const recipientStatus = this.pendingSends.get(logEntry.queueId);
+        logger_1.default.info(`handleLogEntry - Log recebido: ${JSON.stringify(logEntry)}`);
+        const normalizedQueueId = logEntry.queueId.toUpperCase();
+        const recipientStatus = this.pendingSends.get(normalizedQueueId);
         if (!recipientStatus) {
-            logger_1.default.warn(`Nenhum dado pendente encontrado para queueId=${logEntry.queueId}`);
+            logger_1.default.warn(`Nenhum status pendente para queueId=${normalizedQueueId}`);
+            // Mesmo assim, tenta atualizar o EmailQueueModel
+            await this.updateEmailQueueModel(normalizedQueueId, logEntry.success);
             return;
         }
         recipientStatus.success = logEntry.success;
         recipientStatus.logEntry = logEntry;
         if (!logEntry.success) {
-            recipientStatus.error = `Status: ${logEntry.result}`;
-            logger_1.default.error(`Falha ao enviar para recipient=${recipientStatus.recipient}. Erro: ${logEntry.result}. Log completo: ${JSON.stringify(logEntry)}`);
+            recipientStatus.error = `Falha ao enviar: ${logEntry.result}`;
+            logger_1.default.error(`Falha para ${recipientStatus.recipient}: ${logEntry.result}`);
         }
         else {
-            logger_1.default.info(`Resultado atualizado com sucesso para recipient=${recipientStatus.recipient}. Status: ${logEntry.success}. Log completo: ${JSON.stringify(logEntry)}`);
+            logger_1.default.info(`Sucesso para ${recipientStatus.recipient}: ${logEntry.result}`);
         }
-        this.emit('queueProcessed', logEntry.queueId, recipientStatus);
+        // Atualiza no MongoDB
+        await this.updateEmailQueueModel(normalizedQueueId, logEntry.success);
+        // Emite evento se necessário
+        this.emit('queueProcessed', normalizedQueueId, recipientStatus);
     }
+    /**
+     * Trata logs de teste, se existir essa funcionalidade específica.
+     */
     async handleTestEmailLog(logEntry) {
         if (logEntry.mailId === this.testEmailMailId) {
-            logger_1.default.info(`Log de teste recebido para mailId=${logEntry.mailId}. Resultado: ${logEntry.success}`);
+            logger_1.default.info(`Log de teste para mailId=${logEntry.mailId}, success=${logEntry.success}`);
             this.emit('testEmailProcessed', logEntry);
         }
     }
+    /**
+     * Aguarda resultado de um e-mail de teste por até 60s (opcional).
+     */
     async waitForTestEmailResult(uuid) {
         return new Promise((resolve) => {
             const onTestEmailProcessed = (result) => {

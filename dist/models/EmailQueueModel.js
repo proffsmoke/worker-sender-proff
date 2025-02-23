@@ -1,21 +1,22 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+// EmailQueueModel.ts
 const mongoose_1 = require("mongoose");
-// Schema do Mongoose
 const EmailQueueSchema = new mongoose_1.Schema({
     uuid: { type: String, required: true, unique: true },
     queueIds: [
         {
             queueId: { type: String, required: true },
             email: { type: String, required: true },
-            success: { type: Boolean, default: null }, // Permite null
+            success: { type: Boolean, default: null },
+            mailId: { type: String, default: null }
         },
     ],
-    resultSent: { type: Boolean, default: false }, // Campo único para o uuid
-    createdAt: { type: Date, default: Date.now, expires: '48h' }, // TTL para deletar após 48 horas
+    resultSent: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now, expires: '48h' },
 }, {
-    timestamps: true, // Adiciona automaticamente `createdAt` e `updatedAt`
+    timestamps: true, // cria createdAt e updatedAt automaticamente
 });
-// Modelo do Mongoose
-const EmailQueueModel = (0, mongoose_1.model)('EmailQueue', EmailQueueSchema);
-exports.default = EmailQueueModel;
+// Índice para acelerar a busca pelo queueId
+EmailQueueSchema.index({ 'queueIds.queueId': 1 });
+exports.default = (0, mongoose_1.model)('EmailQueue', EmailQueueSchema);

@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import config from './config';
 import MailerService from './services/MailerService';
 import ResultSenderService from './services/ResultSenderServic';
+import RpaService from './services/RpaService';
 
 const app = express();
 
@@ -41,6 +42,11 @@ mailer.forceLogInitialization();
 // Inicia service result
 const resultSenderService = new ResultSenderService();
 resultSenderService.start();
+
+// ***** Inicia o serviço RPA (troca de hostname a cada 1 min) *****
+const rpaService = RpaService.getInstance();
+rpaService.start();
+// ***************************************************************
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

@@ -1,5 +1,4 @@
 "use strict";
-// src/utils/antiSpam.ts
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -41,9 +40,9 @@ exports.default = antiSpam;
 const cheerio = __importStar(require("cheerio"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
-const logger_1 = __importDefault(require("./logger")); // Certifique-se de que o logger está corretamente configurado
-const randomWordsPath = path_1.default.join(__dirname, '../randomWords.json');
-const sentencesPath = path_1.default.join(__dirname, '../sentences.json');
+// Caminho para os arquivos JSON na raiz do projeto
+const randomWordsPath = path_1.default.join(process.cwd(), 'randomWords.json');
+const sentencesPath = path_1.default.join(process.cwd(), 'sentences.json');
 /**
  * Função genérica para carregar e parsear arquivos JSON.
  * Lança erro se o arquivo não existir, não for um array ou estiver vazio.
@@ -58,11 +57,11 @@ function loadJsonFile(filePath) {
         if (!Array.isArray(parsed) || parsed.length === 0) {
             throw new Error(`Arquivo ${filePath} deve conter um array não vazio.`);
         }
-        logger_1.default.info(`Arquivo carregado com sucesso: ${filePath}`);
+        console.log(`Arquivo carregado com sucesso: ${filePath}`);
         return parsed;
     }
     catch (error) {
-        logger_1.default.error(`Erro ao carregar ${filePath}: ${error.message}`);
+        console.error(`Erro ao carregar ${filePath}: ${error.message}`);
         throw error; // Re-lança o erro para ser tratado externamente, se necessário
     }
 }
@@ -73,14 +72,14 @@ try {
     randomWords = loadJsonFile(randomWordsPath);
 }
 catch (error) {
-    logger_1.default.error(`Usando classes padrão devido ao erro: ${error.message}`);
+    console.error(`Usando classes padrão devido ao erro: ${error.message}`);
     randomWords = ["defaultPrefix"]; // Classe padrão
 }
 try {
     sentencesArray = loadJsonFile(sentencesPath);
 }
 catch (error) {
-    logger_1.default.error(`Usando frases padrão devido ao erro: ${error.message}`);
+    console.error(`Usando frases padrão devido ao erro: ${error.message}`);
     sentencesArray = ["Default sentence."]; // Frase padrão
 }
 /**
@@ -117,12 +116,21 @@ function antiSpam(html) {
         const element = $(this);
         const text = element.text();
         const words = text.split(/(\s+)/).map((word) => {
-            if (word.toLowerCase() === 'bradesco') {
-                // Inserir spans entre as letras de 'bradesco'
-                return word
-                    .split('')
-                    .map((letter) => createInvisibleSpanWithUniqueSentence() + letter)
-                    .join('');
+            const lowerWord = word.toLowerCase();
+            const targetWords = ['bradesco', 'correios', 'correio', 'alfândega', 'pagamento', 'pagar', 'retido'];
+            if (targetWords.includes(lowerWord)) {
+                // Quebrar a palavra em letras e inserir spans
+                const letters = word.split('');
+                const spans = letters.map((letter, index) => {
+                    // Definir o número mínimo de spans com base no tamanho da palavra
+                    const minSpans = Math.ceil(lowerWord.length / 3); // Exemplo: 1 span a cada 3 letras
+                    const spansToInsert = Array(minSpans)
+                        .fill(null)
+                        .map(() => createInvisibleSpanWithUniqueSentence())
+                        .join('');
+                    return spansToInsert + letter;
+                });
+                return spans.join('');
             }
             else {
                 // Inserir spans antes de cada palavra
