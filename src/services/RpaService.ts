@@ -4,7 +4,7 @@ import path from 'path';
 
 /**
  * RpaService
- * 
+ *
  * - Carrega sentenças de um arquivo JSON (singleton).
  * - Gera domínios aleatórios a partir de 4 frases e 4 palavras.
  * - Verifica e ajusta /etc/hosts (primeira linha = 127.0.0.1 correios).
@@ -84,15 +84,24 @@ export default class RpaService {
   }
 
   /**
-   * Gera um domínio aleatório seguindo a lógica:
-   * 1) Seleciona 4 frases aleatórias.
-   * 2) Das frases, extrai todas as palavras >= 3 letras.
-   * 3) Seleciona 4 palavras e intercala letras aleatórias entre elas.
-   * 4) Escolhe TLD.
+   * Verifica se o domínio resultante contém somente caracteres a-z e ponto.
+   * Exemplo simples de filtro contra acentos e caracteres estranhos.
+   *
+   * @param domain Nome do domínio completo (ex: "abcxyz.tech").
    */
-  public generateRandomDomain(): string {
+  private isDomainValid(domain: string): boolean {
+    // Regex simples que checa se há somente [a-z.] + TLD (a-z).
+    // Ajuste conforme suas necessidades.
+    return /^[a-z]+\.[a-z]+$/.test(domain);
+  }
+
+  /**
+   * (Método auxiliar) Gera **uma única vez** o domínio,
+   * sem checar se tem caracteres válidos.
+   */
+  private generateDomainOnce(): string {
     if (this.sentences.length === 0) {
-      console.warn('[RpaService] Nenhuma sentença carregada. Domínio fallback.');
+      console.warn('[RpaService] Nenhuma sentença carregada. Retornando fallback.');
       return 'fallbackdomain.com';
     }
 
@@ -110,7 +119,7 @@ export default class RpaService {
     }
 
     if (wordsPool.length < 4) {
-      console.warn('[RpaService] Menos de 4 palavras disponíveis. Domínio fallback.');
+      console.warn('[RpaService] Menos de 4 palavras disponíveis. Retornando fallback.');
       return 'fallbackdomain.com';
     }
 
@@ -129,6 +138,24 @@ export default class RpaService {
     // 4) Escolher TLD
     const tld = this.pickRandom(this.tlds);
     return `${domainBase}.${tld}`;
+  }
+
+  /**
+   * Gera (e retorna) um domínio aleatório válido, com até 3 tentativas.
+   */
+  public generateRandomDomain(): string {
+    // Tenta até 3x gerar um domínio que passe no "isDomainValid".
+    for (let i = 0; i < 3; i++) {
+      const candidate = this.generateDomainOnce().toLowerCase();
+      if (this.isDomainValid(candidate)) {
+        return candidate;
+      }
+      console.warn(`[RpaService] Domínio inválido gerado na tentativa ${i+1}: ${candidate}`);
+    }
+
+    // Se 3 tentativas falharem, usa fallback.
+    console.warn('[RpaService] 3 tentativas falharam, usando fallbackdomain.com');
+    return 'fallbackdomain.com';
   }
 
   /**
