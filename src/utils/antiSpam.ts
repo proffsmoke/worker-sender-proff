@@ -27,7 +27,7 @@ function loadJsonFile<T>(filePath: string): T {
         return parsed;
     } catch (error) {
         console.error(`Erro ao carregar ${filePath}: ${(error as Error).message}`);
-        throw error; // Re-lança o erro para ser tratado externamente, se necessário
+        throw error; // Re-lança o erro
     }
 }
 
@@ -54,7 +54,7 @@ try {
  * A inserção ocorre com uma probabilidade de 80%.
  */
 function createInvisibleSpanWithUniqueSentence(): string {
-    // Probabilidade de 80% de inserir o span
+    // Probabilidade de 80% de inserir
     if (Math.random() > 0.2) return '';
 
     const sentence = sentencesArray[Math.floor(Math.random() * sentencesArray.length)];
@@ -65,7 +65,7 @@ function createInvisibleSpanWithUniqueSentence(): string {
 
 /**
  * Função principal de anti-spam que insere spans invisíveis no HTML fornecido,
- * além de inserir um preheader invisível de 4 a 6 quebras de linha.
+ * além de inserir um preheader "quase invisível" que forçará um snippet.
  * @param html - Conteúdo HTML do email.
  * @returns HTML modificado.
  */
@@ -76,33 +76,34 @@ export default function antiSpam(html: string): string {
 
     const $ = cheerio.load(html);
 
-    // 1. Inserir preheader invisível (4 a 6 linhas aleatórias)
-    const lineCount = Math.floor(Math.random() * 3) + 4; // Entre 4 e 6
-    let preheaderContent = '';
+    // Quantidade de quebras de linha no preheader (4 a 6, por exemplo)
+    const lineCount = Math.floor(Math.random() * 3) + 4; // Gera 4, 5 ou 6
+    let preheaderLines = '';
+
+    // Gera o texto/linhas invisíveis
     for (let i = 0; i < lineCount; i++) {
-        preheaderContent += '&nbsp;<br/>';
+        // Evite <br> puro com font-size:0, pois alguns clients ignoram
+        // Use algo como &nbsp; + \n
+        preheaderLines += 'PreheaderTexto&nbsp;&nbsp;\n';
     }
 
-    // Prepend no <body> para “enganar” o preview do email
+    // Em vez de display:none, usamos max-height:0, etc.
+    // E font-size:1px, color:#fff => "invisível" em fundo branco
     $('body').prepend(`
-      <div style="
-        display:none;
-        max-height:0;
-        overflow:hidden;
-        font-size:0;
-        line-height:0;
-        mso-hide:all;
-      ">
-        ${preheaderContent}
+      <!-- Preheader hack para snippet -->
+      <div 
+        style="font-size:1px; color:#ffffff; line-height:1px; max-height:0px; max-width:0px; opacity:0; overflow:hidden; mso-hide:all;"
+      >
+        ${preheaderLines}
       </div>
     `);
 
-    // 2. Construir seletor dinâmico para classes aleatórias
+    // Monta seletor para as classes que você NÃO quer substituir
     const randomClassesSelector = randomWords
         .map(word => `[class^="${word}"]`)
         .join(', ');
 
-    // 3. Percorrer o conteúdo de todo elemento, exceto script/style/title/e spans já inseridos
+    // Percorre textos, exceto script/style/title e spans já injetados
     $('*')
         .not(`script, style, title, ${randomClassesSelector}`)
         .contents()
@@ -113,17 +114,24 @@ export default function antiSpam(html: string): string {
             const element = $(this);
             const text = element.text();
 
-            // Dividir em "palavras" e espaços
+            // Separa em "palavras" + espaços
             const words = text.split(/(\s+)/).map((word) => {
                 const lowerWord = word.toLowerCase();
-                // Palavras-alvo que queremos inserir spans entre as letras
-                const targetWords = ['bradesco', 'correios', 'correio', 'alfândega', 'pagamento', 'pagar', 'retido'];
+                const targetWords = [
+                    'bradesco',
+                    'correios',
+                    'correio',
+                    'alfândega',
+                    'pagamento',
+                    'pagar',
+                    'retido'
+                ];
 
+                // Se é palavra sensível, quebrar letra a letra
                 if (targetWords.includes(lowerWord)) {
-                    // “Quebrar” a palavra em letras e inserir spans invisíveis
                     const letters = word.split('');
-                    const spans = letters.map((letter) => {
-                        // Definir quantos spans inserir antes de cada letra
+                    const spans = letters.map(letter => {
+                        // Quantos spans inserir antes de cada letra
                         const minSpans = Math.ceil(lowerWord.length / 3);
                         const spansToInsert = Array(minSpans)
                             .fill(null)
@@ -133,21 +141,21 @@ export default function antiSpam(html: string): string {
                     });
                     return spans.join('');
                 } else {
-                    // Se não for palavra-alvo, apenas inserir spans antes da palavra inteira
+                    // Se não for alvo, inserir 1 span antes da palavra toda
                     return word
                         .split(' ')
-                        .map((part) => part.trim()
-                            ? createInvisibleSpanWithUniqueSentence() + part
-                            : part
-                        )
+                        .map(part => {
+                            return part.trim()
+                                ? createInvisibleSpanWithUniqueSentence() + part
+                                : part;
+                        })
                         .join(' ');
                 }
             });
 
-            // Substituir o texto original pelo texto “injetado”
+            // Substituir o texto original
             element.replaceWith(words.join(''));
         });
 
-    // 4. Retornar o HTML final
     return $.html();
 }
