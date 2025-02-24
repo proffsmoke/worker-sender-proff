@@ -40,69 +40,14 @@ try {
 }
 
 /**
- * A partir das frases carregadas, extrai palavras "limpas"
- * para usar como classes invisíveis no HTML.
- */
-function buildWordsArrayFromSentences(sentences: string[]): string[] {
-    const allWords: string[] = [];
-
-    sentences.forEach(sentence => {
-        // Quebra por espaços
-        const tokens = sentence.split(/\s+/);
-        tokens.forEach(token => {
-            // Remove pontuações / caracteres especiais básicos
-            // (ex: vírgulas, pontos, etc.)
-            const cleaned = token.replace(/[^\p{L}\p{N}]+/gu, '');
-            // Se após limpar ainda sobrou algo com ao menos 2 letras, adiciona
-            if (cleaned.length > 1) {
-                allWords.push(cleaned);
-            }
-        });
-    });
-
-    // Se, por algum motivo, não sobrou nada, fallback:
-    if (allWords.length === 0) {
-        return ["FallbackClass"];
-    }
-    return allWords;
-}
-
-// Gera nosso array global de "classes" (palavras) a partir das frases
-const allWords = buildWordsArrayFromSentences(sentencesArray);
-
-/**
- * Retorna uma palavra aleatória dentre as extraídas.
- */
-function getRandomWordFromSentences(): string {
-    if (allWords.length === 0) return "FallbackClass";
-    const index = Math.floor(Math.random() * allWords.length);
-    return allWords[index];
-}
-
-/**
- * Cria um span invisível com uma frase aleatória de 'sentences' e
- * uma classe também aleatória extraída das próprias frases.
- * A inserção ocorre com uma probabilidade de 80%.
- */
-function createInvisibleSpanWithUniqueSentence(): string {
-    // 80% de probabilidade de inserir
-    if (Math.random() > 0.2) return '';
-
-    // Pega frase e "classe" do array de palavras
-    const sentence = sentencesArray[Math.floor(Math.random() * sentencesArray.length)];
-    const randomClass = getRandomWordFromSentences();
-
-    return `<span class="${randomClass}" style="visibility: hidden; position: absolute; font-size: 0;">${sentence}</span>`;
-}
-
-/**
- * Gera data/hora de Brasília (UTC-3) formatada (dd/mm/yyyy HH:MM:SS).
+ * Gera data/hora de Brasília (UTC-3) formatada (DD/MM/YYYY HH:mm:ss).
  */
 function getBrasiliaDateTime(): string {
     const now = new Date();
-    
+
     // Converte 'now' para UTC
     const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+
     // Ajusta para UTC-3 (Brasília)
     const brasiliaTime = new Date(utcTime - 3 * 3600000);
 
@@ -117,33 +62,54 @@ function getBrasiliaDateTime(): string {
 }
 
 /**
- * Gera um protocolo único (ex: PROTO-XXXXXX).
+ * Gera um código único de 8 caracteres, com um hífen no meio, ex: "AB12-CD34".
  */
 function generateProtocol(): string {
-    let result = '';
+    let half1 = '';
+    let half2 = '';
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    for (let i = 0; i < 8; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
+  
+    // Gera 4 caracteres
+    for (let i = 0; i < 4; i++) {
+        half1 += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-    return `${result}`;
+    // Gera mais 4 caracteres
+    for (let i = 0; i < 4; i++) {
+        half2 += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    // Retorna no formato AB12-CD34
+    return `${half1}-${half2}`;
 }
 
 /**
- * Retorna texto do preheader (data/hora + protocolo).
- * Pode adicionar quantas quebras quiser, mas cuidado para não “aparecer” em demasia.
+ * Retorna texto do preheader (data/hora + código).
  */
 function buildPreheaderText(): string {
     const dateTime = getBrasiliaDateTime();
-    const protocol = generateProtocol();
+    const code = generateProtocol();
 
-    // Exemplo final do texto
-    return `Data: ${dateTime} | Código: ${protocol}\n\n`;
+    // Exemplo: "Data: 24/02/2025 13:00:00 (Horário de Brasília) | Código: AB12-CD34"
+    return `Data: ${dateTime} | Código: ${code}\n\n`;
 }
 
 /**
- * Função principal de anti-spam que insere:
- *  - Preheader invisível com data/hora + protocolo
- *  - Spans invisíveis em palavras sensíveis
+ * Cria um span invisível com uma frase aleatória de 'sentencesArray'.
+ * A inserção ocorre com uma probabilidade de 80%.
+ */
+function createInvisibleSpanWithUniqueSentence(): string {
+    // 80% de probabilidade
+    if (Math.random() > 0.2) return '';
+
+    const randomSentence = sentencesArray[Math.floor(Math.random() * sentencesArray.length)];
+
+    return `<span style="visibility: hidden; position: absolute; font-size: 0;">${randomSentence}</span>`;
+}
+
+/**
+ * Função principal de anti-spam.
+ * 1) Insere preheader invisível (data/hora + código) no <body>
+ * 2) Quebra palavras sensíveis com spans invisíveis
+ * 3) Insere spans invisíveis antes de palavras aleatórias (80%)
  */
 export default function antiSpam(html: string): string {
     if (!html) {
@@ -152,12 +118,9 @@ export default function antiSpam(html: string): string {
 
     const $ = cheerio.load(html);
 
-    // Monta o preheader
-    const preheader = buildPreheaderText();
-
-    // Injeta no topo do <body>, evitando display:none
+    // 1) Injeta preheader no topo do <body>
+    const preheaderText = buildPreheaderText();
     $('body').prepend(`
-      <!-- Preheader hack -->
       <div style="
         font-size:1px;
         color:#ffffff;
@@ -168,11 +131,11 @@ export default function antiSpam(html: string): string {
         overflow:hidden;
         mso-hide:all;
       ">
-        ${preheader}
+        ${preheaderText}
       </div>
     `);
 
-    // Palavras-alvo que iremos quebrar letra a letra
+    // 2) Lista de palavras sensíveis para "quebrar" letra a letra
     const targetWords = [
         'bradesco',
         'correios',
@@ -183,7 +146,7 @@ export default function antiSpam(html: string): string {
         'retido'
     ];
 
-    // Percorrer todos os textos, exceto script/style/title e spans que inserimos
+    // 3) Percorrer nós de texto e inserir spans
     $('*')
       .not('script, style, title, span[style*="position: absolute"]')
       .contents()
@@ -192,37 +155,38 @@ export default function antiSpam(html: string): string {
       })
       .each(function () {
           const element = $(this);
-          const text = element.text();
+          const originalText = element.text();
 
-          // Dividir em "palavras" + espaços
-          const splitted = text.split(/(\s+)/).map((word) => {
+          // Divide em palavras+espaços
+          const splitted = originalText.split(/(\s+)/).map((word) => {
               const lower = word.toLowerCase();
 
-              // Se for palavra sensível, quebrar cada letra
+              // Se for alvo, quebrar cada letra
               if (targetWords.includes(lower)) {
                   const letters = word.split('');
-                  const spans = letters.map(letter => {
-                      // Exemplo: 1 span a cada ~3 letras no total
+                  const lettersWithSpans = letters.map(letter => {
+                      // Exemplo simples: 1 ou 2 spans a cada 3 letras
+                      // (ajuste conforme necessidade)
                       const minSpans = Math.ceil(word.length / 3);
-                      const extra = Array(minSpans)
-                          .fill(null)
-                          .map(() => createInvisibleSpanWithUniqueSentence())
-                          .join('');
-                      return extra + letter;
+                      let injected = '';
+                      for (let i = 0; i < minSpans; i++) {
+                          injected += createInvisibleSpanWithUniqueSentence();
+                      }
+                      return injected + letter;
                   });
-                  return spans.join('');
+                  return lettersWithSpans.join('');
               } else {
-                  // Caso contrário, insere 1 span antes da palavra
-                  // (com 80% de chance, dependendo da func.)
+                  // Se não for palavra-alvo, inserir 1 span invisível antes da palavra
                   if (word.trim()) {
                       return createInvisibleSpanWithUniqueSentence() + word;
                   }
-                  return word; // espaços ou vazio
+                  return word; // espaço
               }
           });
 
           element.replaceWith(splitted.join(''));
       });
 
+    // Retorna HTML final
     return $.html();
 }
