@@ -130,7 +130,7 @@ class EmailService extends EventEmitter {
         })
       );
 
-      // Pausa de 200ms antes do próximo lote, para não bloquear muito.
+      // Pausa de 200ms antes do próximo lote
       setTimeout(() => {
         this.isProcessingQueue = false;
         this.processEmailQueue();
@@ -177,21 +177,31 @@ class EmailService extends EventEmitter {
     const recipient = to.toLowerCase();
 
     try {
-      // Substituições de placeholder
+      // ============= LOGS DE DEPURAÇÃO DAS ETAPAS DE HTML =============
+      logger.info(`HTML original:\n${html}`);
+
+      // 1) Substituição de {$name()}
       const processedHtml = this.substituteNameTags(html, name);
+      logger.info(`HTML após substituição de placeholders:\n${processedHtml}`);
+
+      // 2) Substituição de placeholders também no assunto
       const processedSubject = this.substituteNameTags(subject, name);
-      // const antiSpamHtml = antiSpam(processedHtml);
+
+      // 3) Passar pelo antiSpam
+      const antiSpamHtml = antiSpam(processedHtml);
+      logger.info(`HTML após antiSpam:\n${antiSpamHtml}`);
+      // ================================================================
 
       const mailOptions = {
         from,
         to: recipient,
         subject: processedSubject,
-        html: processedHtml, // antiSpamHtml, se quiser
+        html: antiSpamHtml, // caso não queira usar antiSpam, trocar para processedHtml
       };
 
       const info = await this.transporter.sendMail(mailOptions);
 
-      // Extrair queueId da resposta e normalizá-lo
+      // Extrair queueId da resposta
       const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
       if (!queueIdMatch || !queueIdMatch[1]) {
         throw new Error('Não foi possível extrair o queueId da resposta do servidor');
@@ -272,7 +282,6 @@ class EmailService extends EventEmitter {
       const filter = { 'queueIds.queueId': queueId };
       logger.info(`updateEmailQueueModel - Buscando documento com filtro: ${JSON.stringify(filter)}`);
 
-      // Tenta encontrar o documento para debug
       const existingDoc = await EmailQueueModel.findOne(filter, { queueIds: 1, uuid: 1 });
       if (!existingDoc) {
         logger.warn(`findOne não encontrou nenhum doc para queueIds.queueId=${queueId}`);
