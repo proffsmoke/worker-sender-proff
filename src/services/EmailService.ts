@@ -152,7 +152,9 @@ class EmailService extends EventEmitter {
    */
   private substituteNameTags(text: string, name?: string): string {
     return text.replace(/\{\$name\(([^)]+)\)\}/g, (_, defaultText) => {
-      return name ? name : defaultText;
+      // Trata explicitamente null, "null" e string vazia
+      const isValidName = name && name !== "null" && name.trim() !== "";
+      return isValidName ? name : defaultText;
     });
   }
 

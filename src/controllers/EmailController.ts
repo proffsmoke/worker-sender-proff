@@ -87,7 +87,7 @@ class EmailController {
         subject,
         html: htmlContent,
         sender,
-        ...(name && { name }), // adiciona `name` somente se existir
+        ...(name && name !== "null" && { name }), // só adiciona name se não for null nem "null"
       };
 
       try {
