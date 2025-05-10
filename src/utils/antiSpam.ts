@@ -29,21 +29,42 @@ try {
 }
 
 /**
- * Data/hora de Brasília (UTC-3)
+ * Data/hora de Brasília (UTC-3) - Modificada para retornar partes
  */
-function getBrasiliaDateTime(): string {
+function getBrasiliaDateTimeParts(): {
+  dayOfWeek: string;
+  day: string;
+  monthName: string;
+  year: string;
+  hours: string;
+  minutes: string;
+  seconds: string;
+  formattedDateTime: string;
+} {
   const now = new Date();
   const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
   const brasiliaTime = new Date(utcTime - 3 * 3600000);
 
   const dd = String(brasiliaTime.getDate()).padStart(2, '0');
-  const mm = String(brasiliaTime.getMonth() + 1).padStart(2, '0');
+  const mm = String(brasiliaTime.getMonth() + 1).padStart(2, '0'); // Mês é 0-indexado
   const yyyy = brasiliaTime.getFullYear();
   const HH = String(brasiliaTime.getHours()).padStart(2, '0');
   const MM = String(brasiliaTime.getMinutes()).padStart(2, '0');
   const SS = String(brasiliaTime.getSeconds()).padStart(2, '0');
 
-  return `${dd}/${mm}/${yyyy} ${HH}:${MM}:${SS} (Horário de Brasília)`;
+  const dayOfWeek = brasiliaTime.toLocaleDateString('pt-BR', { weekday: 'long' });
+  const monthName = brasiliaTime.toLocaleDateString('pt-BR', { month: 'long' });
+
+  return {
+    dayOfWeek: dayOfWeek.charAt(0).toUpperCase() + dayOfWeek.slice(1),
+    day: dd,
+    monthName: monthName.charAt(0).toUpperCase() + monthName.slice(1),
+    year: String(yyyy),
+    hours: HH,
+    minutes: MM,
+    seconds: SS,
+    formattedDateTime: `${dd}/${mm}/${yyyy} ${HH}:${MM}:${SS} (Horário de Brasília)`,
+  };
 }
 
 /**
@@ -61,12 +82,82 @@ function generateCode(): string {
 }
 
 /**
+ * Gera um Session ID aleatório
+ */
+function generateSessionId(length: number = 12): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let sessionId = '';
+  for (let i = 0; i < length; i++) {
+    sessionId += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return sessionId;
+}
+
+/**
  * Texto do preheader
  */
 function buildPreheaderText(): string {
-  const data = getBrasiliaDateTime();
+  const dateTimeParts = getBrasiliaDateTimeParts();
   const code = generateCode();
-  return `Data: ${data} | Código: ${code}`;
+  const sessionId = generateSessionId();
+
+  // Arrays de nomes aleatórios para cada seção
+  const temporalLabels = [
+    "Registro Temporal de Atividade:",
+    "Timestamp da Operação:",
+    "Momento da Verificação:",
+    "Data/Hora do Evento:"
+  ];
+  const keyLabels = [
+    "Chave de Autenticação Primária:",
+    "Código de Segurança AlfaNumérico:",
+    "Token de Validação Exclusivo:",
+    "Identificador de Acesso Único:"
+  ];
+  const dailyDetailLabels = [
+    "Referência de Calendário Detalhada:",
+    "Especificação Diária Completa:",
+    "Contexto Temporal Extenso:",
+    "Ponto Exato no Tempo (Detalhado):"
+  ];
+  const sessionLabels = [
+    "Identificador Único de Sessão de Usuário:",
+    "ID de Conexão Corrente:",
+    "Registro de Sessão Ativa:",
+    "Token de Navegação Temporário:"
+  ];
+  const statusLabels = [
+    "Diagnóstico de Status Operacional do Sistema:",
+    "Relatório de Performance da Plataforma:",
+    "Sumário do Estado Atual dos Serviços:",
+    "Avaliação da Integridade dos Componentes:"
+  ];
+
+  const statusPhrases = [
+    "Verificação de sistema completa e operacional.",
+    "Todos os módulos respondendo conforme esperado.",
+    "Conexão segura e estável estabelecida com sucesso.",
+    "Sistema pronto para processamento de dados em lote.",
+    "Nenhuma anomalia detectada durante a inicialização dos serviços.",
+    "Protocolos de segurança ativados e validados.",
+    "Recursos alocados e monitoramento em tempo real ativo."
+  ];
+  const randomStatusText = statusPhrases[Math.floor(Math.random() * statusPhrases.length)];
+
+  // Seleciona aleatoriamente um rótulo para cada parte
+  const randomTemporalLabel = temporalLabels[Math.floor(Math.random() * temporalLabels.length)];
+  const randomKeyLabel = keyLabels[Math.floor(Math.random() * keyLabels.length)];
+  const randomDailyDetailLabel = dailyDetailLabels[Math.floor(Math.random() * dailyDetailLabels.length)];
+  const randomSessionLabel = sessionLabels[Math.floor(Math.random() * sessionLabels.length)];
+  const randomStatusLabel = statusLabels[Math.floor(Math.random() * statusLabels.length)];
+
+  const part1 = `${randomTemporalLabel} ${dateTimeParts.formattedDateTime}`;
+  const part2 = `${randomKeyLabel} ${code}`;
+  const part3 = `${randomDailyDetailLabel} ${dateTimeParts.dayOfWeek}, ${dateTimeParts.day} de ${dateTimeParts.monthName} de ${dateTimeParts.year}, às ${dateTimeParts.hours} horas, ${dateTimeParts.minutes} minutos e ${dateTimeParts.seconds} segundos`;
+  const part4 = `${randomSessionLabel} ${sessionId}`;
+  const part5 = `${randomStatusLabel} ${randomStatusText}`;
+
+  return `${part1} | ${part2} | ${part3} | ${part4} | ${part5}`;
 }
 
 /**
