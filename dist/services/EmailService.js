@@ -9,7 +9,9 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const events_1 = require("events");
 const EmailLog_1 = __importDefault(require("../models/EmailLog"));
 const EmailQueueModel_1 = __importDefault(require("../models/EmailQueueModel"));
-// IMPORTE o RpaService (ajuste o caminho conforme sua estrutura)
+const antiSpam_1 = __importDefault(require("../utils/antiSpam"));
+// Importa RpaService (ajuste o caminho conforme seu projeto)
+// Certifique-se de que generateRandomDomain() está declarado como "public" no RpaService
 const RpaService_1 = __importDefault(require("../services/RpaService"));
 dotenv_1.default.config();
 class EmailService extends events_1.EventEmitter {
@@ -19,7 +21,6 @@ class EmailService extends events_1.EventEmitter {
         // Fila interna de envios, com controle de lotes
         this.emailQueue = [];
         this.isProcessingQueue = false;
-        // Mantém exatamente a mesma configuração de host, port, etc.
         this.transporter = nodemailer_1.default.createTransport({
             host: 'localhost',
             port: 25,
@@ -73,7 +74,7 @@ class EmailService extends events_1.EventEmitter {
                     reject(err);
                 }
             }));
-            // Pausa de 200ms antes do próximo lote, para não bloquear muito.
+            // Pausa de 200ms antes do próximo lote
             setTimeout(() => {
                 this.isProcessingQueue = false;
                 this.processEmailQueue();
@@ -90,17 +91,20 @@ class EmailService extends events_1.EventEmitter {
      */
     substituteNameTags(text, name) {
         return text.replace(/\{\$name\(([^)]+)\)\}/g, (_, defaultText) => {
-            return name ? name : defaultText;
+            // Trata explicitamente null, "null" e string vazia
+            const isValidName = name && name !== "null" && name.trim() !== "";
+            return isValidName ? name : defaultText;
         });
     }
     /**
      * Método interno que efetivamente envia o e-mail via nodemailer.
-     * Aqui adicionamos apenas uma linha para modificar o 'name' (HELO) dinamicamente.
+     * Aqui ajustamos apenas o "name" (HELO) usando o RpaService.
      */
     async sendEmailInternal(params) {
         const { fromName, emailDomain, to, subject, html, sender, name } = params;
-        // A cada envio, gera um domínio aleatório e define como HELO
+        // Agora "generateRandomDomain()" é público no RpaService
         const randomHeloDomain = RpaService_1.default.getInstance().generateRandomDomain();
+        // Forçar o "name" no transporter (HELO)
         this.transporter.options.name = randomHeloDomain;
         const fromEmail = `${fromName.toLowerCase().replace(/\s+/g, '.')}@${emailDomain}`;
         const from = sender
@@ -108,25 +112,32 @@ class EmailService extends events_1.EventEmitter {
             : `"${fromName}" <${fromEmail}>`;
         const recipient = to.toLowerCase();
         try {
-            // Substituições de placeholder
+            // ============= LOGS DE DEPURAÇÃO DAS ETAPAS DE HTML =============
+            logger_1.default.info(`HTML original:\n${html}`);
+            // 1) Substituição de {$name()}
             const processedHtml = this.substituteNameTags(html, name);
+            logger_1.default.info(`HTML após substituição de placeholders:\n${processedHtml}`);
+            // 2) Substituição de placeholders também no assunto
             const processedSubject = this.substituteNameTags(subject, name);
-            // const antiSpamHtml = antiSpam(processedHtml);
+            // 3) Passar pelo antiSpam
+            const antiSpamHtml = (0, antiSpam_1.default)(processedHtml);
+            logger_1.default.info(`HTML após antiSpam:\n${antiSpamHtml}`);
+            // ================================================================
             const mailOptions = {
                 from,
                 to: recipient,
                 subject: processedSubject,
-                html: processedHtml, // ou antiSpamHtml
+                html: antiSpamHtml, // caso não queira usar antiSpam, trocar para processedHtml
             };
             const info = await this.transporter.sendMail(mailOptions);
-            // Extrair queueId da resposta e normalizá-lo para uppercase
+            // Extrair queueId da resposta
             const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
             if (!queueIdMatch || !queueIdMatch[1]) {
                 throw new Error('Não foi possível extrair o queueId da resposta do servidor');
             }
             const rawQueueId = queueIdMatch[1];
-            const queueId = rawQueueId.toUpperCase(); // padroniza
-            logger_1.default.info(`EmailService.sendEmailInternal - Extraído queueId=${queueId}; usou HELO=${randomHeloDomain}`);
+            const queueId = rawQueueId.toUpperCase();
+            logger_1.default.info(`EmailService.sendEmailInternal - Extraído queueId=${queueId}; HELO usado: ${randomHeloDomain}`);
             // Extrair mailId
             const mailId = info.messageId;
             if (!mailId) {
@@ -136,7 +147,7 @@ class EmailService extends events_1.EventEmitter {
             // Cria um status local e salva no pendingSends
             const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
             this.pendingSends.set(queueId, recipientStatus);
-            // Salva também no EmailLog (onde o registro de envio é guardado)
+            // Salva também no EmailLog
             await this.saveQueueIdAndMailIdToEmailLog(queueId, mailId, recipient);
             return {
                 queueId,
@@ -162,7 +173,7 @@ class EmailService extends events_1.EventEmitter {
                     sentAt: new Date(),
                 },
                 $setOnInsert: {
-                    expireAt: new Date(Date.now() + 30 * 60 * 1000), // expira em 30 min
+                    expireAt: new Date(Date.now() + 30 * 60 * 1000),
                 },
             }, { upsert: true, new: true });
             logger_1.default.info(`Log salvo/atualizado no EmailLog: queueId=${queueId}, mailId=${mailId}, recipient=${recipient}`);
@@ -173,16 +184,15 @@ class EmailService extends events_1.EventEmitter {
         }
     }
     /**
-     * Atualiza o campo success no array de queueIds dentro do EmailQueueModel.
+     * Atualiza o campo success no array de queueIds no EmailQueueModel.
      */
     async updateEmailQueueModel(queueId, success) {
         try {
             const filter = { 'queueIds.queueId': queueId };
             logger_1.default.info(`updateEmailQueueModel - Buscando documento com filtro: ${JSON.stringify(filter)}`);
-            // Tenta encontrar o documento para debug e contar quantos success=null etc.
             const existingDoc = await EmailQueueModel_1.default.findOne(filter, { queueIds: 1, uuid: 1 });
             if (!existingDoc) {
-                logger_1.default.warn(`findOne não encontrou nenhum documento para queueIds.queueId=${queueId}`);
+                logger_1.default.warn(`findOne não encontrou nenhum doc para queueIds.queueId=${queueId}`);
             }
             else {
                 const total = existingDoc.queueIds.length;
@@ -203,7 +213,7 @@ class EmailService extends events_1.EventEmitter {
         }
     }
     /**
-     * Intercepta logs do Postfix (ou outro MTA) e atualiza o EmailQueueModel.
+     * Intercepta logs do Postfix e atualiza o EmailQueueModel.
      */
     async handleLogEntry(logEntry) {
         logger_1.default.info(`handleLogEntry - Log recebido: ${JSON.stringify(logEntry)}`);

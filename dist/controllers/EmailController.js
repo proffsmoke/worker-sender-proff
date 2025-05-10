@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const logger_1 = __importDefault(require("../utils/logger"));
 const EmailQueueModel_1 = __importDefault(require("../models/EmailQueueModel"));
 const EmailService_1 = __importDefault(require("../services/EmailService"));
+const EmailRetryStatus_1 = __importDefault(require("../models/EmailRetryStatus"));
 class EmailController {
     constructor() {
         this.sendNormal = this.sendNormal.bind(this);
@@ -16,7 +17,8 @@ class EmailController {
      */
     async sendNormal(req, res, _next) {
         const { uuid } = req.body;
-        logger_1.default.info(`Recebido pedido de envio de e-mails para UUID=${uuid}`);
+        const taskId = req.body.taskId;
+        logger_1.default.info(`Recebido pedido de envio de e-mails para UUID=${uuid}${taskId ? ` (taskId: ${taskId})` : ''}`);
         // Resposta imediata
         res.status(200).json({ message: 'Emails enfileirados para envio.', uuid });
         // Processa em background (sem travar a requisição principal)
@@ -31,59 +33,79 @@ class EmailController {
      * - Para cada e-mail, envia e faz $push incremental no array queueIds.
      */
     async processEmails(body) {
-        const { emailDomain, emailList, fromName, uuid, subject, htmlContent, sender } = body;
-        logger_1.default.info(`Iniciando processamento dos e-mails para UUID=${uuid}`);
+        const { emailDomain, emailList, fromName, uuid, subject, htmlContent, sender, taskId, } = body;
+        const isDetailedTest = taskId === "FAKE_TASK_ID_FOR_DETAILED_TEST";
+        logger_1.default.info(`Iniciando processamento dos e-mails para UUID=${uuid}${isDetailedTest ? " (DETAILED TEST)" : ""}`);
         // Validação básica
         const requiredParams = ['emailDomain', 'emailList', 'fromName', 'uuid', 'subject', 'htmlContent', 'sender'];
         const missingParams = requiredParams.filter(param => !(param in body));
         if (missingParams.length > 0) {
-            throw new Error(`Parâmetros obrigatórios ausentes: ${missingParams.join(', ')}.`);
+            logger_1.default.error(`Parâmetros obrigatórios ausentes para UUID=${uuid}: ${missingParams.join(', ')}. Requisição ignorada.`);
+            return;
         }
-        // 1) Garante que o documento no Mongo exista
-        let emailQueue = await EmailQueueModel_1.default.findOne({ uuid });
-        if (!emailQueue) {
-            emailQueue = await EmailQueueModel_1.default.create({
-                uuid,
-                queueIds: [],
-                resultSent: false,
-            });
-            logger_1.default.info(`Criado novo documento EmailQueue para UUID=${uuid}`);
+        if (!isDetailedTest) {
+            let emailQueue = await EmailQueueModel_1.default.findOne({ uuid });
+            if (!emailQueue) {
+                emailQueue = await EmailQueueModel_1.default.create({
+                    uuid,
+                    queueIds: [],
+                    resultSent: false,
+                });
+                logger_1.default.info(`Criado novo documento EmailQueue para UUID=${uuid}`);
+            }
         }
-        // 2) Remove duplicados
+        else {
+            logger_1.default.info(`[DETAILED TEST] Pulando criação/interação com EmailQueueModel para UUID=${uuid}`);
+        }
+        // 2) Remove duplicados da lista da requisição atual
         const uniqueEmailList = [];
         const emailMap = new Map();
         for (const emailData of emailList) {
-            if (!emailMap.has(emailData.email)) {
-                emailMap.set(emailData.email, emailData);
-                uniqueEmailList.push(emailData);
+            const normalizedEmail = emailData.email.toLowerCase();
+            if (!emailMap.has(normalizedEmail)) {
+                emailMap.set(normalizedEmail, { ...emailData, email: normalizedEmail });
+                uniqueEmailList.push({ ...emailData, email: normalizedEmail });
             }
             else {
-                logger_1.default.info(`E-mail duplicado ignorado: ${emailData.email}`);
+                logger_1.default.info(`E-mail duplicado ignorado na requisição UUID=${uuid}: ${emailData.email}`);
             }
         }
         // 3) Envia cada e-mail e faz push incremental
         const emailService = EmailService_1.default.getInstance();
         for (const emailData of uniqueEmailList) {
             const { email, name } = emailData;
+            const emailAddress = email;
+            // Verificar status de falha permanente ANTES de tentar enviar
+            try {
+                const retryStatus = await EmailRetryStatus_1.default.findOne({ email: emailAddress });
+                if (retryStatus && retryStatus.isPermanentlyFailed) {
+                    logger_1.default.warn(`Envio para ${emailAddress} (UUID=${uuid}) PULADO. E-mail marcado como FALHA PERMANENTE.`);
+                    continue;
+                }
+            }
+            catch (statusError) {
+                logger_1.default.error(`Erro ao verificar EmailRetryStatus para ${emailAddress} (UUID=${uuid}):`, statusError);
+            }
             const emailPayload = {
                 emailDomain,
                 fromName,
-                to: email,
+                to: emailAddress,
                 subject,
                 html: htmlContent,
                 sender,
-                ...(name && { name }), // adiciona `name` somente se existir
+                ...(name && name !== "null" && { name }),
             };
             try {
-                // Envio (await) - não bloqueia completamente pois o service já lida em lotes
                 const result = await emailService.sendEmail(emailPayload, uuid);
-                if (result.queueId) {
-                    // Incrementa no Mongo o array com este queueId
+                if (isDetailedTest) {
+                    logger_1.default.info(`[DETAILED TEST] E-mail para ${emailAddress} (UUID=${uuid}) processado pelo EmailService. Resultado: ${JSON.stringify(result)}`);
+                }
+                else if (result.queueId) {
                     await EmailQueueModel_1.default.updateOne({ uuid }, {
                         $push: {
                             queueIds: {
                                 queueId: result.queueId.toUpperCase(),
-                                email: email.toLowerCase(),
+                                email: emailAddress,
                                 success: null,
                             },
                         },
@@ -91,24 +113,23 @@ class EmailController {
                             resultSent: false,
                         },
                     });
-                    // (Opcional) Loga quantos ainda estão null e quantos total
                     const updatedQueue = await EmailQueueModel_1.default.findOne({ uuid }, { queueIds: 1 });
                     if (updatedQueue) {
                         const total = updatedQueue.queueIds.length;
                         const nullCount = updatedQueue.queueIds.filter(q => q.success === null).length;
-                        logger_1.default.info(`QueueId inserido p/ UUID=${uuid}: queueId=${result.queueId}, email=${email}. ` +
+                        logger_1.default.info(`QueueId inserido p/ UUID=${uuid}: queueId=${result.queueId}, email=${emailAddress}. ` +
                             `Pendentes=${nullCount}, total=${total}.`);
                     }
                 }
-                else {
-                    logger_1.default.warn(`Nenhum queueId retornado para o e-mail ${email}`);
+                else if (!isDetailedTest) {
+                    logger_1.default.warn(`Nenhum queueId retornado para o e-mail ${emailAddress} (UUID=${uuid})`);
                 }
             }
             catch (err) {
-                logger_1.default.error(`Erro ao enfileirar e-mail para ${email}:`, err);
+                logger_1.default.error(`Erro ao enfileirar/processar e-mail para ${emailAddress} (UUID=${uuid}):`, err);
             }
         }
-        logger_1.default.info(`Processamento concluído para UUID=${uuid}`);
+        logger_1.default.info(`Processamento de e-mails concluído para UUID=${uuid}${isDetailedTest ? " (DETAILED TEST)" : ""}`);
     }
 }
 exports.default = new EmailController();

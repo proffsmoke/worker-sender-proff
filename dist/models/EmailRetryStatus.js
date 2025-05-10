@@ -34,16 +34,14 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
-const EmailLogSchema = new mongoose_1.Schema({
-    mailId: { type: String, required: true, index: true }, // UUID único
-    queueId: { type: String, required: true, unique: true, index: true }, // Queue ID único
-    email: { type: String, required: true, index: true },
-    success: { type: Boolean, default: null }, // Inicialmente null
-    updated: { type: Boolean, default: false }, // Inicialmente false
-    sentAt: { type: Date, default: Date.now, expires: '48h', index: true }, // Expira após 48h
-    errorMessage: { type: String, required: false }, // Opcional
+const EmailRetryStatusSchema = new mongoose_1.Schema({
+    email: { type: String, required: true, unique: true, index: true },
+    failureCount: { type: Number, default: 0 },
+    isPermanentlyFailed: { type: Boolean, default: false },
+    lastAttemptAt: { type: Date, default: Date.now },
+    lastError: { type: String, required: false },
 }, {
-    timestamps: true, // Adiciona campos createdAt e updatedAt automaticamente
-    collection: 'emailLogs', // Nome da coleção no MongoDB
+    timestamps: true, // Adiciona createdAt e updatedAt automaticamente
+    collection: 'emailRetryStatus', // Nome da coleção no MongoDB
 });
-exports.default = mongoose_1.default.model('EmailLog', EmailLogSchema);
+exports.default = mongoose_1.default.model('EmailRetryStatus', EmailRetryStatusSchema);

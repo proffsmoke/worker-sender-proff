@@ -40,74 +40,105 @@ exports.default = antiSpam;
 const cheerio = __importStar(require("cheerio"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
-// Caminho para os arquivos JSON na raiz do projeto
-const randomWordsPath = path_1.default.join(process.cwd(), 'randomWords.json');
+// Caminho p/ o arquivo JSON de frases (se estiver usando)
 const sentencesPath = path_1.default.join(process.cwd(), 'sentences.json');
 /**
- * Função genérica para carregar e parsear arquivos JSON.
- * Lança erro se o arquivo não existir, não for um array ou estiver vazio.
+ * Carrega um arquivo JSON simples
  */
 function loadJsonFile(filePath) {
-    try {
-        if (!fs_1.default.existsSync(filePath)) {
-            throw new Error(`Arquivo não encontrado: ${filePath}`);
-        }
-        const data = fs_1.default.readFileSync(filePath, 'utf-8');
-        const parsed = JSON.parse(data);
-        if (!Array.isArray(parsed) || parsed.length === 0) {
-            throw new Error(`Arquivo ${filePath} deve conter um array não vazio.`);
-        }
-        console.log(`Arquivo carregado com sucesso: ${filePath}`);
-        return parsed;
+    if (!fs_1.default.existsSync(filePath)) {
+        throw new Error(`Arquivo não encontrado: ${filePath}`);
     }
-    catch (error) {
-        console.error(`Erro ao carregar ${filePath}: ${error.message}`);
-        throw error; // Re-lança o erro para ser tratado externamente, se necessário
+    const data = fs_1.default.readFileSync(filePath, 'utf-8');
+    const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+        throw new Error(`Arquivo ${filePath} deve conter um array não vazio.`);
     }
+    return parsed;
 }
-// Carrega os dados dos arquivos JSON
-let randomWords = [];
-let sentencesArray = [];
-try {
-    randomWords = loadJsonFile(randomWordsPath);
-}
-catch (error) {
-    console.error(`Usando classes padrão devido ao erro: ${error.message}`);
-    randomWords = ["defaultPrefix"]; // Classe padrão
-}
+// Se você usa frases
+let sentencesArray;
 try {
     sentencesArray = loadJsonFile(sentencesPath);
 }
-catch (error) {
-    console.error(`Usando frases padrão devido ao erro: ${error.message}`);
-    sentencesArray = ["Default sentence."]; // Frase padrão
+catch {
+    sentencesArray = ["Frase de fallback"];
 }
 /**
- * Cria um span invisível com uma frase única e uma classe aleatória.
- * A inserção ocorre com uma probabilidade de 80%.
+ * Data/hora de Brasília (UTC-3)
+ */
+function getBrasiliaDateTime() {
+    const now = new Date();
+    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const brasiliaTime = new Date(utcTime - 3 * 3600000);
+    const dd = String(brasiliaTime.getDate()).padStart(2, '0');
+    const mm = String(brasiliaTime.getMonth() + 1).padStart(2, '0');
+    const yyyy = brasiliaTime.getFullYear();
+    const HH = String(brasiliaTime.getHours()).padStart(2, '0');
+    const MM = String(brasiliaTime.getMinutes()).padStart(2, '0');
+    const SS = String(brasiliaTime.getSeconds()).padStart(2, '0');
+    return `${dd}/${mm}/${yyyy} ${HH}:${MM}:${SS} (Horário de Brasília)`;
+}
+/**
+ * Gera um código simples (com hífen no meio)
+ */
+function generateCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let part1 = '';
+    let part2 = '';
+    for (let i = 0; i < 4; i++) {
+        part1 += chars.charAt(Math.floor(Math.random() * chars.length));
+        part2 += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return `${part1}-${part2}`;
+}
+/**
+ * Texto do preheader
+ */
+function buildPreheaderText() {
+    const data = getBrasiliaDateTime();
+    const code = generateCode();
+    return `Data: ${data} | Código: ${code}`;
+}
+/**
+ * Cria um <span> invisível com frase aleatória, com 80% de chance
  */
 function createInvisibleSpanWithUniqueSentence() {
-    // Aumentar a probabilidade para 80% de inserção
     if (Math.random() > 0.2)
         return '';
-    const sentence = sentencesArray[Math.floor(Math.random() * sentencesArray.length)];
-    const randomClass = randomWords[Math.floor(Math.random() * randomWords.length)];
-    return `<span class="${randomClass}" style="visibility: hidden; position: absolute; font-size: 0;">${sentence}</span>`;
+    const randomSentence = sentencesArray[Math.floor(Math.random() * sentencesArray.length)];
+    return `<span style="visibility: hidden; position: absolute; font-size: 0;">${randomSentence}</span>`;
 }
 /**
- * Função principal de anti-spam que insere spans invisíveis no HTML fornecido.
- * @param html - Conteúdo HTML do email.
- * @returns HTML com spans de anti-spam inseridos.
+ * Função principal antiSpam
  */
 function antiSpam(html) {
     if (!html) {
         throw new Error('HTML não pode ser vazio.');
     }
     const $ = cheerio.load(html);
-    // Construir seletor dinâmico para classes aleatórias
-    const randomClassesSelector = randomWords.map(word => `[class^="${word}"]`).join(', ');
+    // Injeta preheader no topo do body (com display:none para sumir)
+    const preheaderContent = buildPreheaderText();
+    $('body').prepend(`
+    <div id="preheader" style="display:none;">
+      ${preheaderContent}
+    </div>
+  `);
+    // Palavras-alvo a serem quebradas letra a letra
+    const targetWords = [
+        'bradesco',
+        'correios',
+        'correio',
+        'alfândega',
+        'pagamento',
+        'pagar',
+        'retido'
+    ];
+    // Percorrer tudo, exceto:
+    // - script, style, title
+    // - o bloco #preheader e seus filhos
     $('*')
-        .not(`script, style, title, ${randomClassesSelector}`)
+        .not('script, style, title, #preheader, #preheader *')
         .contents()
         .filter(function () {
         return this.type === 'text' && this.data.trim().length > 0;
@@ -115,32 +146,31 @@ function antiSpam(html) {
         .each(function () {
         const element = $(this);
         const text = element.text();
-        const words = text.split(/(\s+)/).map((word) => {
-            const lowerWord = word.toLowerCase();
-            const targetWords = ['bradesco', 'correios', 'correio', 'alfândega', 'pagamento', 'pagar', 'retido'];
-            if (targetWords.includes(lowerWord)) {
-                // Quebrar a palavra em letras e inserir spans
+        const splitted = text.split(/(\s+)/).map(word => {
+            const lower = word.toLowerCase();
+            if (targetWords.includes(lower)) {
+                // Quebrar letra a letra e inserir spans
                 const letters = word.split('');
-                const spans = letters.map((letter, index) => {
-                    // Definir o número mínimo de spans com base no tamanho da palavra
-                    const minSpans = Math.ceil(lowerWord.length / 3); // Exemplo: 1 span a cada 3 letras
-                    const spansToInsert = Array(minSpans)
-                        .fill(null)
-                        .map(() => createInvisibleSpanWithUniqueSentence())
-                        .join('');
-                    return spansToInsert + letter;
+                const lettersWithSpans = letters.map(letter => {
+                    // ex: 1 span a cada 3 letras
+                    const minSpans = Math.ceil(word.length / 3);
+                    let injected = '';
+                    for (let i = 0; i < minSpans; i++) {
+                        injected += createInvisibleSpanWithUniqueSentence();
+                    }
+                    return injected + letter;
                 });
-                return spans.join('');
+                return lettersWithSpans.join('');
             }
             else {
-                // Inserir spans antes de cada palavra
-                return word
-                    .split(' ')
-                    .map((part) => part.trim() ? createInvisibleSpanWithUniqueSentence() + part : part)
-                    .join(' ');
+                // Apenas 1 span antes da palavra
+                if (word.trim()) {
+                    return createInvisibleSpanWithUniqueSentence() + word;
+                }
+                return word; // espaços
             }
         });
-        element.replaceWith(words.join(''));
+        element.replaceWith(splitted.join(''));
     });
     return $.html();
 }

@@ -18,7 +18,7 @@ interface ResultItem {
 }
 
 const logPrefix = '[resultservice]';
-const DOMAINS = ['https://sender2.construcoesltda.com'];
+const DOMAINS = ['https://sender.construcoesltda.com'];
 
 const PayloadSchema = z.object({
   uuid: z.string().uuid(),

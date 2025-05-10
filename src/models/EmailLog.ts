@@ -8,6 +8,7 @@ export interface IEmailLog extends Document {
   success: boolean | null; // Status do envio (true, false, ou null se ainda não processado)
   updated: boolean; // Indica se o log foi atualizado por outro serviço
   sentAt: Date; // Data de envio
+  errorMessage?: string; // Mensagem de erro detalhada, se success === false
 }
 
 const EmailLogSchema: Schema = new Schema(
@@ -18,6 +19,7 @@ const EmailLogSchema: Schema = new Schema(
     success: { type: Boolean, default: null }, // Inicialmente null
     updated: { type: Boolean, default: false }, // Inicialmente false
     sentAt: { type: Date, default: Date.now, expires: '48h', index: true }, // Expira após 48h
+    errorMessage: { type: String, required: false }, // Opcional
   },
   {
     timestamps: true, // Adiciona campos createdAt e updatedAt automaticamente

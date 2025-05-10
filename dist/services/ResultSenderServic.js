@@ -9,7 +9,7 @@ const zod_1 = require("zod");
 const EmailQueueModel_1 = __importDefault(require("../models/EmailQueueModel"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const logPrefix = '[resultservice]';
-const DOMAINS = ['https://sender2.construcoesltda.com'];
+const DOMAINS = ['https://sender.construcoesltda.com'];
 const PayloadSchema = zod_1.z.object({
     uuid: zod_1.z.string().uuid(),
     results: zod_1.z.array(zod_1.z.object({

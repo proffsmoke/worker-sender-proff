@@ -9,6 +9,7 @@ const fs_1 = __importDefault(require("fs"));
 const events_1 = __importDefault(require("events"));
 const EmailLog_1 = __importDefault(require("./models/EmailLog"));
 const EmailStats_1 = __importDefault(require("./models/EmailStats"));
+const EmailRetryStatus_1 = __importDefault(require("./models/EmailRetryStatus"));
 class LogParser extends events_1.default {
     constructor(logFilePath = '/var/log/mail.log') {
         super();
@@ -104,7 +105,7 @@ class LogParser extends events_1.default {
     }
     async processLogEntry(logEntry) {
         try {
-            const { queueId, success, mailId, email } = logEntry;
+            const { queueId, success, mailId, email, result } = logEntry;
             // Incrementa as estatísticas de envio
             await EmailStats_1.default.incrementSent();
             if (success) {
@@ -113,16 +114,46 @@ class LogParser extends events_1.default {
             else {
                 await EmailStats_1.default.incrementFail();
             }
+            // Prepara o objeto de atualização para EmailLog
+            const updateData = {
+                success,
+                email,
+                mailId, // Atualiza o mailId se houver
+                sentAt: new Date(),
+            };
+            if (!success && result) {
+                updateData.errorMessage = result; // Adiciona a mensagem de erro
+            }
             // Atualiza ou cria o registro de log no EmailLog com base no queueId
-            await EmailLog_1.default.findOneAndUpdate({ queueId }, {
-                $set: {
-                    success,
-                    email,
-                    mailId, // Atualiza o mailId se houver
-                    sentAt: new Date(),
-                },
-            }, { upsert: true, new: true });
-            logger_1.default.info(`Log atualizado/upserted para queueId=${queueId} com success=${success}`);
+            await EmailLog_1.default.findOneAndUpdate({ queueId }, { $set: updateData }, // Usa o objeto updateData
+            { upsert: true, new: true });
+            logger_1.default.info(`Log atualizado/upserted para queueId=${queueId} com success=${success}` +
+                `${!success && result ? ` error: ${result}` : ''}` // Log opcional do erro
+            );
+            // Lógica de Retry e Falha Permanente
+            if (!success && email && email !== 'unknown') {
+                try {
+                    const emailAddress = email.toLowerCase(); // Usar e-mail em minúsculas para consistência
+                    const updatedRetryStatus = await EmailRetryStatus_1.default.findOneAndUpdate({ email: emailAddress }, {
+                        $inc: { failureCount: 1 },
+                        $set: { lastAttemptAt: new Date() },
+                    }, { upsert: true, new: true, setDefaultsOnInsert: true });
+                    logger_1.default.info(`Status de tentativa atualizado para ${emailAddress}: falhas ${updatedRetryStatus.failureCount}`);
+                    if (updatedRetryStatus.failureCount >= 10 && !updatedRetryStatus.isPermanentlyFailed) {
+                        await EmailRetryStatus_1.default.updateOne({ email: emailAddress }, // Condição para encontrar o documento
+                        {
+                            $set: {
+                                isPermanentlyFailed: true,
+                                lastError: result, // Salva a última mensagem de erro que causou o bloqueio
+                            },
+                        });
+                        logger_1.default.warn(`E-mail ${emailAddress} marcado como FALHA PERMANENTE após ${updatedRetryStatus.failureCount} tentativas. Último erro: ${result}`);
+                    }
+                }
+                catch (retryError) {
+                    logger_1.default.error(`Erro ao atualizar EmailRetryStatus para ${email}:`, retryError);
+                }
+            }
             if (mailId) {
                 this.emit('testEmailLog', { mailId, success });
             }
