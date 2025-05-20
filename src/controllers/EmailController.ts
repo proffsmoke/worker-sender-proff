@@ -116,8 +116,8 @@ class EmailController {
         emailDomain,
         fromName,
         to: emailAddress,
-        subject,
-        html: htmlContent,
+        subject: emailData.subject,
+        html: emailData.htmlContent,
         sender,
         ...(name && name !== "null" && { name }),
       };
