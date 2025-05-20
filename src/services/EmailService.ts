@@ -148,6 +148,14 @@ class EmailService extends EventEmitter {
   }
 
   /**
+   * Extrai todas as tags <a> de uma string HTML.
+   */
+  private extractLinksFromHtml(html: string): string {
+    const links = html.match(/<a[^>]*>.*?<\/a>/gi);
+    return links ? links.join('\n') : 'Nenhum link encontrado.';
+  }
+
+  /**
    * Substitui tags {$name(algumTexto)} no conteúdo do e-mail.
    */
   private substituteNameTags(text: string, name?: string): string {
@@ -180,18 +188,19 @@ class EmailService extends EventEmitter {
 
     try {
       // ============= LOGS DE DEPURAÇÃO DAS ETAPAS DE HTML =============
-      logger.info(`HTML original:\n${html}`);
+      logger.info(`Links no HTML original:\n${this.extractLinksFromHtml(html)}`);
 
       // 1) Substituição de {$name()}
       const processedHtml = this.substituteNameTags(html, name);
-      logger.info(`HTML após substituição de placeholders:\n${processedHtml}`);
+      logger.info(`Links no HTML após substituição de placeholders:\n${this.extractLinksFromHtml(processedHtml)}`);
 
       // 2) Substituição de placeholders também no assunto
       const processedSubject = this.substituteNameTags(subject, name);
+      logger.info(`Assunto processado: ${processedSubject}`);
 
       // 3) Passar pelo antiSpam
       const antiSpamHtml = antiSpam(processedHtml);
-      logger.info(`HTML após antiSpam:\n${antiSpamHtml}`);
+      logger.info(`Links no HTML após antiSpam:\n${this.extractLinksFromHtml(antiSpamHtml)}`);
       // ================================================================
 
       const mailOptions = {
