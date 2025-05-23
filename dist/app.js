@@ -49,8 +49,8 @@ resultSenderService.start();
 const rpaService = RpaService_1.default.getInstance();
 rpaService.start();
 // ***************************************************************
-app.use(express_1.default.json());
-app.use(express_1.default.urlencoded({ extended: true }));
+app.use(express_1.default.json({ limit: '50mb' }));
+app.use(express_1.default.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/api', routes_1.default);
 app.use((req, res) => {
     res.status(404).json({ success: false, message: 'Rota não encontrada.' });

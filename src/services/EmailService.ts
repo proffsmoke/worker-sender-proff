@@ -344,6 +344,14 @@ class EmailService extends EventEmitter {
     if (!logEntry.success) {
       recipientStatus.error = `Falha ao enviar: ${logEntry.result}`;
       logger.error(`Falha para ${recipientStatus.recipient}: ${logEntry.result}`);
+
+      // Adiciona detecção específica para falhas relacionadas a spamhaus
+      if (logEntry.result && logEntry.result.toLowerCase().includes('spamhaus')) {
+        logger.warn(`[POTENCIAL FALHA PERMANENTE] Falha relacionada a Spamhaus detectada para ${recipientStatus.recipient} (QueueId: ${normalizedQueueId}). Motivo: ${logEntry.result}`);
+        // Aqui poderia ser adicionada lógica para notificar outro serviço
+        // ou atualizar o EmailRetryStatus diretamente se essa fosse a responsabilidade desta classe.
+      }
+
     } else {
       logger.info(`Sucesso para ${recipientStatus.recipient}: ${logEntry.result}`);
     }

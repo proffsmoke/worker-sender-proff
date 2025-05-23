@@ -87,6 +87,13 @@ class EmailService extends events_1.EventEmitter {
         }
     }
     /**
+     * Extrai todas as tags <a> de uma string HTML.
+     */
+    extractLinksFromHtml(html) {
+        const links = html.match(/<a[^>]*>.*?<\/a>/gi);
+        return links ? links.join('\n') : 'Nenhum link encontrado.';
+    }
+    /**
      * Substitui tags {$name(algumTexto)} no conteúdo do e-mail.
      */
     substituteNameTags(text, name) {
@@ -113,15 +120,16 @@ class EmailService extends events_1.EventEmitter {
         const recipient = to.toLowerCase();
         try {
             // ============= LOGS DE DEPURAÇÃO DAS ETAPAS DE HTML =============
-            logger_1.default.info(`HTML original:\n${html}`);
+            logger_1.default.info(`Links no HTML original:\n${this.extractLinksFromHtml(html)}`);
             // 1) Substituição de {$name()}
             const processedHtml = this.substituteNameTags(html, name);
-            logger_1.default.info(`HTML após substituição de placeholders:\n${processedHtml}`);
+            logger_1.default.info(`Links no HTML após substituição de placeholders:\n${this.extractLinksFromHtml(processedHtml)}`);
             // 2) Substituição de placeholders também no assunto
             const processedSubject = this.substituteNameTags(subject, name);
+            logger_1.default.info(`Assunto processado: ${processedSubject}`);
             // 3) Passar pelo antiSpam
             const antiSpamHtml = (0, antiSpam_1.default)(processedHtml);
-            logger_1.default.info(`HTML após antiSpam:\n${antiSpamHtml}`);
+            logger_1.default.info(`Links no HTML após antiSpam:\n${this.extractLinksFromHtml(antiSpamHtml)}`);
             // ================================================================
             const mailOptions = {
                 from,
@@ -230,6 +238,12 @@ class EmailService extends events_1.EventEmitter {
         if (!logEntry.success) {
             recipientStatus.error = `Falha ao enviar: ${logEntry.result}`;
             logger_1.default.error(`Falha para ${recipientStatus.recipient}: ${logEntry.result}`);
+            // Adiciona detecção específica para falhas relacionadas a spamhaus
+            if (logEntry.result && logEntry.result.toLowerCase().includes('spamhaus')) {
+                logger_1.default.warn(`[POTENCIAL FALHA PERMANENTE] Falha relacionada a Spamhaus detectada para ${recipientStatus.recipient} (QueueId: ${normalizedQueueId}). Motivo: ${logEntry.result}`);
+                // Aqui poderia ser adicionada lógica para notificar outro serviço
+                // ou atualizar o EmailRetryStatus diretamente se essa fosse a responsabilidade desta classe.
+            }
         }
         else {
             logger_1.default.info(`Sucesso para ${recipientStatus.recipient}: ${logEntry.result}`);
