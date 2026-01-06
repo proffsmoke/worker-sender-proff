@@ -5,7 +5,10 @@
   "scripts": {
     "build": "tsc",
     "dev": "ts-node src/server.ts",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test": "TS_NODE_PROJECT=tsconfig.test.json TS_NODE_TRANSPILE_ONLY=1 node --test -r ts-node/register test/**/*.test.ts",
+    "test:unit": "TS_NODE_PROJECT=tsconfig.test.json TS_NODE_TRANSPILE_ONLY=1 node --test -r ts-node/register test/unit/**/*.test.ts",
+    "test:e2e": "TS_NODE_PROJECT=tsconfig.test.json TS_NODE_TRANSPILE_ONLY=1 node --test -r ts-node/register test/e2e/**/*.test.ts"
   },
   "keywords": [],
   "author": "",

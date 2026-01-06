@@ -135,6 +135,7 @@ class EmailController {
                 queueIds: {
                   queueId: result.queueId.toUpperCase(),
                   email: emailAddress,
+                  // Sucesso definitivo só após log do Postfix.
                   success: null,
                 },
               },

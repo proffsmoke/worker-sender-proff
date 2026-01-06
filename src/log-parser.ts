@@ -5,6 +5,13 @@ import EventEmitter from 'events';
 import EmailLog from './models/EmailLog';
 import EmailStats from './models/EmailStats';
 import EmailRetryStatus from './models/EmailRetryStatus';
+import {
+  DeliveryParseResult,
+  QueueMapping,
+  normalizeMailId,
+  parseDeliveryLine,
+  parseQueueMappingLine,
+} from './log-parser-utils';
 
 export interface LogEntry {
   timestamp: string;
@@ -22,6 +29,9 @@ class LogParser extends EventEmitter {
   private logHashes: Set<string> = new Set();
   private readonly MAX_CACHE_SIZE = 1000;
   private isMonitoringStarted = false;
+  private queueIdByMailId: Map<string, string> = new Map();
+  private mailIdByQueueId: Map<string, string> = new Map();
+  private pendingEntriesByQueueId: Map<string, LogEntry> = new Map();
 
   constructor(logFilePath: string = '/var/log/mail.log') {
     super();
@@ -72,24 +82,75 @@ class LogParser extends EventEmitter {
     logger.info(`Monitoring started for log file: ${this.logFilePath}`);
   }
 
-  private parseLogLine(line: string): LogEntry | null {
-    // Extrai informações completas do log
-    const queueMatch = line.match(/postfix\/smtp\[\d+\]: (\w+): .* status=\w+ \((.*)\)/);
-    const emailMatch = line.match(/to=<([^>]+)>/);
-    const messageIdMatch = line.match(/message-id=<([^>]+)>/);
+  public getQueueIdByMailId(mailId: string): string | undefined {
+    return this.queueIdByMailId.get(normalizeMailId(mailId));
+  }
 
-    if (!queueMatch) return null;
+  public getMailIdByQueueId(queueId: string): string | undefined {
+    return this.mailIdByQueueId.get(queueId.toUpperCase());
+  }
 
-    const [, queueId, errorDetails] = queueMatch;
-    const email = emailMatch ? emailMatch[1] : 'unknown';
-    const mailId = messageIdMatch ? messageIdMatch[1] : undefined;
+  private handleQueueMapping(mapping: QueueMapping): void {
+    const normalizedQueueId = mapping.queueId.toUpperCase();
+    const normalizedMailId = normalizeMailId(mapping.mailId);
+
+    const existingQueueId = this.queueIdByMailId.get(normalizedMailId);
+    if (existingQueueId && existingQueueId !== normalizedQueueId) {
+      logger.warn(
+        `MailId ${normalizedMailId} já estava associado a queueId=${existingQueueId}. ` +
+        `Novo queueId=${normalizedQueueId} será mantido para consistência.`
+      );
+    }
+
+    this.queueIdByMailId.set(normalizedMailId, normalizedQueueId);
+    this.mailIdByQueueId.set(normalizedQueueId, normalizedMailId);
+    this.emit('queueIdResolved', { queueId: normalizedQueueId, mailId: normalizedMailId });
+
+    const pendingEntry = this.pendingEntriesByQueueId.get(normalizedQueueId);
+    if (pendingEntry) {
+      pendingEntry.mailId = normalizedMailId;
+      this.pendingEntriesByQueueId.delete(normalizedQueueId);
+      void this.handleParsedLogEntry(pendingEntry).catch((error) => {
+        logger.error(`Erro ao processar log pendente para queueId=${normalizedQueueId}`, error);
+      });
+    }
+  }
+
+  private async handleParsedLogEntry(logEntry: LogEntry): Promise<void> {
+    const logHash = `${logEntry.queueId}-${logEntry.result}`;
+    if (this.logHashes.has(logHash)) {
+      logger.info(`Duplicate log ignored: ${logHash}`);
+      return;
+    }
+
+    this.recentLogs.push(logEntry);
+    this.logHashes.add(logHash);
+
+    if (this.recentLogs.length > this.MAX_CACHE_SIZE) {
+      const oldestLog = this.recentLogs.shift();
+      if (oldestLog) {
+        this.logHashes.delete(`${oldestLog.queueId}-${oldestLog.result}`);
+      }
+    }
+
+    logger.info(`Parsed log entry: ${JSON.stringify(logEntry)}`);
+    await this.processLogEntry(logEntry);
+
+    // Emite o log para o EmailService (via evento 'log')
+    this.emit('log', logEntry);
+  }
+
+  private buildLogEntry(delivery: DeliveryParseResult): LogEntry {
+    const mailId = delivery.mailId
+      ? normalizeMailId(delivery.mailId)
+      : this.mailIdByQueueId.get(delivery.queueId.toUpperCase());
 
     return {
       timestamp: new Date().toISOString(),
-      queueId,
-      email,
-      result: errorDetails,
-      success: line.includes('status=sent'),
+      queueId: delivery.queueId.toUpperCase(),
+      email: delivery.email || 'unknown',
+      result: delivery.detail,
+      success: delivery.status === 'sent',
       mailId,
     };
   }
@@ -97,30 +158,36 @@ class LogParser extends EventEmitter {
   private async handleLogLine(line: string): Promise<void> {
     try {
       logger.info(`Processing log line: ${line}`);
-      const logEntry = this.parseLogLine(line);
-      if (!logEntry) return;
+      const mapping = parseQueueMappingLine(line);
+      if (mapping) {
+        this.handleQueueMapping(mapping);
+      }
 
-      const logHash = `${logEntry.queueId}-${logEntry.result}`;
-      if (this.logHashes.has(logHash)) {
-        logger.info(`Duplicate log ignored: ${logHash}`);
+      const delivery = parseDeliveryLine(line);
+      if (!delivery) {
         return;
       }
 
-      this.recentLogs.push(logEntry);
-      this.logHashes.add(logHash);
-
-      if (this.recentLogs.length > this.MAX_CACHE_SIZE) {
-        const oldestLog = this.recentLogs.shift();
-        if (oldestLog) {
-          this.logHashes.delete(`${oldestLog.queueId}-${oldestLog.result}`);
+      if (delivery.mailId) {
+        const normalizedMailId = normalizeMailId(delivery.mailId);
+        if (!this.queueIdByMailId.has(normalizedMailId)) {
+          this.queueIdByMailId.set(normalizedMailId, delivery.queueId.toUpperCase());
+          this.mailIdByQueueId.set(delivery.queueId.toUpperCase(), normalizedMailId);
+          this.emit('queueIdResolved', {
+            queueId: delivery.queueId.toUpperCase(),
+            mailId: normalizedMailId,
+          });
         }
       }
 
-      logger.info(`Parsed log entry: ${JSON.stringify(logEntry)}`);
-      await this.processLogEntry(logEntry);
+      const logEntry = this.buildLogEntry(delivery);
+      if (!logEntry.mailId) {
+        logger.warn(`MailId não encontrado para queueId=${logEntry.queueId}. Guardando log pendente.`);
+        this.pendingEntriesByQueueId.set(logEntry.queueId, logEntry);
+        return;
+      }
 
-      // Emite o log para o EmailService (via evento 'log')
-      this.emit('log', logEntry); 
+      await this.handleParsedLogEntry(logEntry);
     } catch (error) {
       logger.error(`Error processing log line: ${line}`, error);
     }

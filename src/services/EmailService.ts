@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import logger from '../utils/logger';
 import LogParser, { LogEntry } from '../log-parser';
+import { normalizeMailId } from '../log-parser-utils';
 import dotenv from 'dotenv';
 import { EventEmitter } from 'events';
 import EmailLog from '../models/EmailLog';
@@ -26,7 +27,7 @@ interface SendEmailParams {
 
 interface RecipientStatus {
   recipient: string;
-  success: boolean;
+  success: boolean | null;
   error?: string;
   queueId?: string;
   logEntry?: LogEntry;
@@ -86,11 +87,57 @@ class EmailService extends EventEmitter {
 
   private createRecipientStatus(
     recipient: string,
-    success: boolean,
+    success: boolean | null,
     error?: string,
     queueId?: string
   ): RecipientStatus {
     return { recipient, success, error, queueId };
+  }
+
+  private extractQueueIdFromResponse(response?: string): string | null {
+    if (!response) {
+      return null;
+    }
+
+    const patterns = [
+      /queued as[:\s]+([A-Za-z0-9]{6,})/i,
+      /queue id[:=\s]+([A-Za-z0-9]{6,})/i,
+      /\bid[:=\s]+([A-Za-z0-9]{6,})\b/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = response.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+
+    return null;
+  }
+
+  private async waitForQueueIdFromLog(mailId: string, timeoutMs: number): Promise<string | null> {
+    const normalizedMailId = normalizeMailId(mailId);
+    const existing = this.logParser.getQueueIdByMailId(normalizedMailId);
+    if (existing) {
+      return existing;
+    }
+
+    return new Promise((resolve) => {
+      const handler = (payload: { queueId: string; mailId: string }) => {
+        if (payload.mailId === normalizedMailId) {
+          clearTimeout(timeoutId);
+          this.logParser.removeListener('queueIdResolved', handler);
+          resolve(payload.queueId);
+        }
+      };
+
+      const timeoutId = setTimeout(() => {
+        this.logParser.removeListener('queueIdResolved', handler);
+        resolve(null);
+      }, timeoutMs);
+
+      this.logParser.on('queueIdResolved', handler);
+    });
   }
 
   /**
@@ -212,30 +259,42 @@ class EmailService extends EventEmitter {
 
       const info = await this.transporter.sendMail(mailOptions);
 
-      // Extrair queueId da resposta
-      const queueIdMatch = info.response.match(/queued as\s([A-Z0-9]+)/);
-      if (!queueIdMatch || !queueIdMatch[1]) {
-        throw new Error('Não foi possível extrair o queueId da resposta do servidor');
+      // Extrair mailId
+      const rawMailId = info.messageId || `mail-${Date.now()}`;
+      const mailId = normalizeMailId(rawMailId);
+      if (!info.messageId) {
+        logger.warn('Nao foi possivel extrair mailId da resposta. Usando fallback.');
       }
-      const rawQueueId = queueIdMatch[1];
-      const queueId = rawQueueId.toUpperCase();
+
+      const responseQueueId = this.extractQueueIdFromResponse(info.response);
+      const queueIdFromLog = await this.waitForQueueIdFromLog(mailId, 15000);
+      const queueId = queueIdFromLog
+        ? queueIdFromLog.toUpperCase()
+        : responseQueueId
+          ? responseQueueId.toUpperCase()
+          : '';
+
+      if (!queueIdFromLog) {
+        logger.warn(
+          `QueueId nao encontrado no log do postfix para mailId=${mailId}. ` +
+          `Fallback SMTP=${responseQueueId || 'none'}; response="${info.response}"`
+        );
+      }
+
+      if (!queueId) {
+        throw new Error(`QueueId nao encontrado para mailId=${mailId}`);
+      }
 
       logger.info(
-        `EmailService.sendEmailInternal - Extraído queueId=${queueId}; HELO usado: ${randomHeloDomain}`
+        `EmailService.sendEmailInternal - QueueId=${queueId}; HELO usado: ${randomHeloDomain}`
       );
 
-      // Extrair mailId
-      const mailId = info.messageId;
-      if (!mailId) {
-        throw new Error('Não foi possível extrair o mailId da resposta');
-      }
-
       logger.info(
-        `Email enviado com sucesso: de=${from}, para=${recipient}, queueId=${queueId}, mailId=${mailId}`
+        `Email enviado: de=${from}, para=${recipient}, queueId=${queueId}, mailId=${mailId}`
       );
 
       // Cria um status local e salva no pendingSends
-      const recipientStatus = this.createRecipientStatus(recipient, true, undefined, queueId);
+      const recipientStatus = this.createRecipientStatus(recipient, null, undefined, queueId);
       this.pendingSends.set(queueId, recipientStatus);
 
       // Salva também no EmailLog
@@ -267,7 +326,8 @@ class EmailService extends EventEmitter {
           $set: {
             mailId,
             email: recipient,
-            updated: true,
+            success: null,
+            updated: false,
             sentAt: new Date(),
           },
           $setOnInsert: {
